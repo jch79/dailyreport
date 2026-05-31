@@ -81,13 +81,29 @@ async function fbFullSyncFromCloud(){
     const repSnap = await _fbDb.collection(FB_COL_REPORTS)
                                 .orderBy('date','desc').limit(500).get();
     if(!repSnap.empty){
-      const reports = repSnap.docs.map(d=>{
+      const rawReports = repSnap.docs.map(d=>{
         const r={...d.data()};
         delete r._savedBy; delete r._savedByUid; delete r._updatedAt;
         return r;
       });
+      /* ── 날짜 중복 제거: 같은 date에서 savedAt이 가장 최신인 것만 유지 ── */
+      const dateMap = new Map();
+      rawReports.forEach(r=>{
+        if(!r.date) return;
+        const existing = dateMap.get(r.date);
+        if(!existing){
+          dateMap.set(r.date, r);
+        } else {
+          /* savedAt 비교: 더 최신 것을 유지 */
+          const existT = existing.savedAt ? new Date(existing.savedAt).getTime() : 0;
+          const newT   = r.savedAt        ? new Date(r.savedAt).getTime()        : 0;
+          if(newT > existT) dateMap.set(r.date, r);
+        }
+      });
+      const reports = Array.from(dateMap.values())
+        .sort((a,b)=>(b.date||'').localeCompare(a.date||''));
       localStorage.setItem('golf_v7', JSON.stringify(reports));
-      console.log('[FB] 일보 ' + reports.length + '건 동기화');
+      console.log('[FB] 일보 ' + rawReports.length + '건 수신 → 중복제거 후 ' + reports.length + '건 저장');
     }
 
     // 2. 공유 설정 (자재정보, 프리셋 등)
@@ -175,6 +191,39 @@ async function fbDeleteReport(dateStr){
   }catch(e){ return false; }
 }
 
+/* ── Firebase 중복 문서 정리 ── */
+async function fbDeduplicateCloud(){
+  if(!_fbUser || _fbRole==='viewer'){ showToast('권한이 없습니다.'); return; }
+  try{
+    const snap = await _fbDb.collection(FB_COL_REPORTS).orderBy('date','desc').limit(500).get();
+    if(snap.empty){ showToast('정리할 데이터 없음'); return; }
+    /* 날짜별로 그룹화 */
+    const dateMap = new Map();
+    snap.docs.forEach(doc=>{
+      const date = doc.data().date;
+      if(!date) return;
+      if(!dateMap.has(date)) dateMap.set(date, []);
+      dateMap.get(date).push(doc);
+    });
+    let deleted = 0;
+    for(const [date, docs] of dateMap.entries()){
+      if(docs.length <= 1) continue;
+      /* savedAt 기준 최신 1개 유지, 나머지 삭제 */
+      docs.sort((a,b)=>{
+        const at = a.data().savedAt ? new Date(a.data().savedAt).getTime() : 0;
+        const bt = b.data().savedAt ? new Date(b.data().savedAt).getTime() : 0;
+        return bt - at;
+      });
+      for(let i=1; i<docs.length; i++){
+        await docs[i].ref.delete();
+        deleted++;
+      }
+    }
+    showToast(deleted > 0 ? '☁️ 클라우드 중복 '+deleted+'건 정리 완료!' : '중복 없음 - 이미 깨끗합니다.');
+    if(deleted > 0) await fbFullSyncFromCloud();
+  }catch(e){ showToast('오류: '+e.message); }
+}
+
 async function fbGetReports(){
   if(!_fbUser) return null;
   try{
@@ -211,7 +260,7 @@ function fbUpdateUI(){
 
   /* viewer는 저장/초기화 버튼 잠금 */
   const isReadOnly = _fbUser && _fbRole === 'viewer';
-  ['btn-save-top', 'btn-clear-top', 'btn-undo'].forEach(id=>{
+  ['btn-save-report', 'btn-clear-top', 'btn-undo'].forEach(id=>{
     const el = document.getElementById(id);
     if(!el) return;
     el.disabled = isReadOnly;
@@ -670,6 +719,55 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
 
 #toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%) translateY(50px);background:#1a1a1a;color:#fff;padding:10px 20px;border-radius:10px;font-size:12px;opacity:0;transition:all .3s;pointer-events:none;z-index:999;font-weight:600;}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+/* ─── 모바일 반응형 ─── */
+@media (max-width: 600px) {
+  .panel { padding: 8px 6px; }
+  .card { padding: 10px 8px; margin-bottom: 10px; border-radius: 8px; }
+  .nav-tab { padding: 5px 8px; font-size: 11px; }
+  .nav-row1 { padding: 4px 0 2px; }
+  .nav-course { font-size: 12px; }
+  .nav-title-txt { font-size: 12px; }
+  /* 입력 폼 */
+  input[type=text], input[type=number], input[type=date], select, textarea {
+    font-size: 16px !important; /* iOS 자동 확대 방지 */
+  }
+  .btn { padding: 6px 10px; font-size: 12px; }
+  /* 히스토리 아이템 */
+  .hist-item { padding: 10px 8px; }
+  .hist-item span[style*="margin-left:auto"] { margin-left: 0 !important; margin-top: 6px; width: 100%; }
+  .hist-item > div:first-child { flex-wrap: wrap; gap: 4px; }
+  /* 작업자 태그 */
+  .worker-tag { padding: 4px 6px; }
+  /* 모달 */
+  .modal { width: 98% !important; max-width: 98% !important; padding: 12px 10px !important; }
+  .fb-modal-box { width: 96% !important; padding: 16px 14px 14px !important; }
+  /* 섹션 카드 제목 */
+  .sec-title { font-size: 13px; }
+  /* 날씨 그리드 */
+  .wx-grid { grid-template-columns: repeat(2, 1fr) !important; }
+  /* 차트 래퍼 */
+  .rain-chart-wrap, .irr-chart-wrap { overflow-x: auto; }
+  /* 탭 스크롤 */
+  .nav-row2 { justify-content: flex-start; }
+  /* 저장 버튼 크게 */
+  #btn-save-report {
+    position: fixed; bottom: 16px; right: 16px;
+    z-index: 800; border-radius: 50px;
+    padding: 12px 22px; font-size: 14px;
+    box-shadow: 0 4px 16px rgba(0,0,0,.25);
+  }
+  /* 히스토리 버튼 세로 정렬 */
+  .hist-item .btn { font-size: 10px; padding: 4px 6px; }
+  /* 테이블 모바일 스크롤 */
+  table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+}
+
+@media (max-width: 400px) {
+  body { font-size: 13px; }
+  .panel { padding: 6px 4px; }
+  .nav-tab { padding: 4px 6px; font-size: 10px; }
+}
+
 /* ─── 인쇄 스타일 ─── */
 #print-header { display:none; }
 @media print {
@@ -749,7 +847,7 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
   <div style="display:flex;gap:8px;justify-content:flex-end;margin-bottom:10px;align-items:center;">
     <button class="btn" onclick="undoForm()" id="btn-undo" style="border-color:#888;color:#555;opacity:0.4;cursor:not-allowed;" disabled title="내용 입력/삭제 직전 상태로 되돌리기">&#8635; 되돌리기</button>
     <button class="btn" id="btn-clear-top" onclick="clearForm()" style="border-color:#c0392b;color:#c0392b;">&#10006; 초기화</button>
-    <button class="btn btn-primary" id="btn-save-top" onclick="saveReport()" style="touch-action:manipulation;">&#10003; 저장하기</button>
+    <button class="btn btn-primary" id="btn-save-report" onclick="saveReport()" style="touch-action:manipulation;">&#10003; 저장하기</button>
   </div>
 
   <!-- 기본정보 카드 -->
@@ -1737,7 +1835,30 @@ const TPRESET_DEFAULT={
 };
 function getTaskPresets(cls){try{const s=localStorage.getItem(TPRESET_KEY);const d=s?JSON.parse(s):TPRESET_DEFAULT;return d[cls]||[];}catch(e){return TPRESET_DEFAULT[cls]||[];}}
 function saveTaskPresets(cls,arr){try{const s=localStorage.getItem(TPRESET_KEY);const d=s?JSON.parse(s):{...TPRESET_DEFAULT};d[cls]=arr;localStorage.setItem(TPRESET_KEY,JSON.stringify(d));if(typeof fbSaveSharedSettings==='function') setTimeout(fbSaveSharedSettings,300);}catch(e){}} /* 개인별 단가 저장 키 */
-const gd=()=>{try{return JSON.parse(localStorage.getItem(SK)||'[]');}catch(e){return[];}};
+/* ── gd(): localStorage 로드 + 날짜 중복 자동제거 ── */
+const gd=()=>{
+  try{
+    const arr=JSON.parse(localStorage.getItem(SK)||'[]');
+    const dateMap=new Map();
+    arr.forEach(r=>{
+      if(!r||!r.date)return;
+      const ex=dateMap.get(r.date);
+      if(!ex){dateMap.set(r.date,r);}
+      else{
+        const et=ex.savedAt?new Date(ex.savedAt).getTime():0;
+        const nt=r.savedAt?new Date(r.savedAt).getTime():0;
+        if(nt>et)dateMap.set(r.date,r);
+      }
+    });
+    if(dateMap.size<arr.length){
+      const cleaned=Array.from(dateMap.values()).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+      localStorage.setItem(SK,JSON.stringify(cleaned));
+      console.log('[dedup] '+arr.length+'건 → '+cleaned.length+'건으로 중복 정리');
+      return cleaned;
+    }
+    return arr;
+  }catch(e){return[];}
+};
 const sd=d=>localStorage.setItem(SK,JSON.stringify(d));
 const gp=()=>{try{return JSON.parse(localStorage.getItem(PK)||'[]');}catch(e){return[];}};
 /* 단가 getter/setter: {이름: {day:숫자, ot:숫자}} */
@@ -8928,7 +9049,8 @@ function showPdfGuide(ri){
 
     <div style="background:#f5f8ff;border-radius:8px;padding:12px;margin-bottom:14px;font-size:11px;color:#555;line-height:1.7;">
       <b>☁️ 받아오기</b>: 클라우드의 최신 데이터를 이 기기로 가져옵니다.<br>
-      <b>⬆️ 올려보내기</b>: 이 기기의 모든 데이터를 클라우드에 업로드합니다.
+      <b>⬆️ 올려보내기</b>: 이 기기의 모든 데이터를 클라우드에 업로드합니다.<br>
+      <b>🧹 중복 정리</b>: 클라우드에 같은 날짜가 2개 이상인 경우 최신 1개만 남깁니다.
     </div>
 
     <div id="fb-sync-status" style="font-size:12px;color:#555;min-height:20px;margin-bottom:12px;text-align:center;"></div>
@@ -8937,8 +9059,10 @@ function showPdfGuide(ri){
       <button class="fb-btn" onclick="fbSyncFromCloud()"
         style="background:#185FA5;color:#fff;flex:1;margin:0;">☁️ 받아오기</button>
       <button class="fb-btn" onclick="fbSyncToCloud()"
-        style="background:#3B6D11;color:#fff;flex:1;margin:0;" ${_fbRole==='viewer'?'disabled':''}>⬆️ 올려보내기</button>
+        style="background:#3B6D11;color:#fff;flex:1;margin:0;">⬆️ 올려보내기</button>
     </div>
+    <button class="fb-btn" onclick="fbDeduplicateCloud()"
+      style="background:#fff3e0;color:#e65100;border:1.5px solid #ffcc80;margin-top:8px;">🧹 클라우드 중복 날짜 정리</button>
     <button class="fb-btn" onclick="fbCloseSyncModal()"
       style="background:#f5f5f5;color:#666;border:1.5px solid #ddd;margin-top:8px;">닫기</button>
   </div>
