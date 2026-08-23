@@ -477,7 +477,7 @@ body{font-family:'맑은 고딕','Apple SD Gothic Neo',sans-serif;font-size:14px
 /* 1행: 골프장명 + 제목 */
 .nav-row1{display:flex;align-items:center;width:100%;padding:6px 0 2px;}
 /* 2행: 탭 + 버튼 */
-.nav-row2{display:flex;align-items:center;width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px;gap:2px;scrollbar-width:none;justify-content:flex-end;}
+.nav-row2{display:flex;align-items:center;width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px;gap:2px;scrollbar-width:none;justify-content:flex-start;}
 .nav-row2::-webkit-scrollbar{display:none;}
 .nav-course{font-size:13px;font-weight:600;color:#185FA5;cursor:pointer;margin-right:4px;text-decoration:underline dotted;white-space:nowrap;}
 .nav-dot{font-size:12px;color:#888;padding:0 3px;}
@@ -769,14 +769,15 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
 
   <!-- 상단 저장/초기화/되돌리기 버튼 + 퀵네비 바: nav 헤더 바로 아래에 함께 고정(엑셀 셀고정처럼) -->
   <div id="write-sticky-top" style="position:sticky;z-index:590;background:#fff;padding-top:8px;">
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-bottom:10px;align-items:center;">
-      <button class="btn" onclick="undoForm()" id="btn-undo" style="border-color:#888;color:#555;opacity:0.4;cursor:not-allowed;" disabled title="내용 입력/삭제 직전 상태로 되돌리기">&#8635; 되돌리기</button>
-      <button class="btn" id="btn-clear-top" onclick="clearForm()" style="border-color:#c0392b;color:#c0392b;">&#10006; 초기화</button>
-      <button class="btn btn-primary" id="btn-save-top" onclick="saveReport()" style="touch-action:manipulation;">&#10003; 저장하기</button>
+    <div id="write-toolbar" style="display:flex;gap:8px;align-items:center;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch;padding:2px 2px 10px;scrollbar-width:none;">
+      <button class="btn" onclick="undoForm()" id="btn-undo" style="flex-shrink:0;border-color:#888;color:#555;opacity:0.4;cursor:not-allowed;" disabled title="내용 입력/삭제 직전 상태로 되돌리기">&#8635; 되돌리기</button>
+      <button class="btn" id="btn-clear-top" onclick="clearForm()" style="flex-shrink:0;border-color:#c0392b;color:#c0392b;">&#10006; 초기화</button>
+      <button class="btn btn-primary" id="btn-save-top" onclick="saveReport()" style="flex-shrink:0;touch-action:manipulation;">&#10003; 저장하기</button>
+      <div style="width:1px;align-self:stretch;background:#e0e0e0;margin:0 2px;flex-shrink:0;"></div>
+      <!-- 섹션 바로가기 퀵네비 바 (위 버튼들과 한 줄로 이어져 함께 가로 스크롤됨) -->
+      <div id="quick-nav-bar" style="display:flex;gap:6px;flex-shrink:0;"></div>
     </div>
-
-    <!-- 섹션 바로가기 퀵네비 바 -->
-    <div id="quick-nav-bar" style="display:flex;gap:6px;overflow-x:auto;white-space:nowrap;padding:6px 2px 10px;-webkit-overflow-scrolling:touch;border-bottom:1px solid #eee;"></div>
+    <style>#write-toolbar::-webkit-scrollbar{display:none;}</style>
   </div>
 
   <!-- 기본정보 카드 -->
