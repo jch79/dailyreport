@@ -7674,7 +7674,7 @@ function pestTypeColor(t){ return PEST_TYPE_COLOR[t]||'#777'; }
 /* ── 카드 빌더: 농약 (컴팩트 2열용) ── */
 function buildPestCard(p, i){
   const tc = pestTypeColor(p.type);
-  const fracShort = (p.frac && p.frac!=='0') ? p.frac.replace(/FRAC\s*/i,'').split('(')[0].trim() : '';
+  const fracShort = (p.frac!=null && String(p.frac)!=='' && String(p.frac)!=='0') ? String(p.frac).replace(/FRAC\s*/i,'').split('(')[0].trim() : '';
   const seriesShort = (p.series && p.series!=='0') ? p.series : '';
   return `<div onclick="openMatInfoModal('pest',${i})"
     style="cursor:pointer;border:1px solid #c8dff5;border-radius:7px;padding:7px 8px;background:#fff;transition:background .12s;position:relative;min-width:0;"
@@ -7736,7 +7736,7 @@ function renderMaterialsTable(){
   const kwTerms = kwRaw.split(',').map(s=>s.trim()).filter(s=>s.length>0);
   const matchAny = (...fields)=>{
     if(kwTerms.length===0) return true;
-    return kwTerms.some(term=>fields.some(f=>(f||'').toLowerCase().includes(term)));
+    return kwTerms.some(term=>fields.some(f=>String(f||'').toLowerCase().includes(term)));
   };
 
   /* 농약 */
@@ -10922,7 +10922,7 @@ function renderMatSearchResults(){
       const tc=typeColors[t]||'#777';
       html+=`<div style="padding:4px 12px;font-size:10px;font-weight:700;color:${tc};background:${tc}10;border-bottom:1px solid ${tc}20;">— ${t} ${groups[t].length}종 —</div>`;
       groups[t].forEach(({p,i})=>{
-        const fracShort=(p.frac&&p.frac!=='0')?p.frac.replace(/FRAC\s*/i,'').split('(')[0].trim():'';
+        const fracShort=(p.frac!=null&&String(p.frac)!==''&&String(p.frac)!=='0')?String(p.frac).replace(/FRAC\s*/i,'').split('(')[0].trim():'';
         html+=`<div onclick="selectMatSearchItem(${i})" style="padding:9px 14px;border-bottom:1px solid #f0f0f0;cursor:pointer;" onmouseover="this.style.background='#edf5fc'" onmouseout="this.style.background=''">
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
             <span style="background:${tc};color:#fff;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700;">${t}</span>
