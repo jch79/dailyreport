@@ -55,6 +55,16 @@ _fbAuth.onAuthStateChanged(async user => {
     try{
       const snap = await _fbDb.collection(FB_COL_USERS).doc(user.uid).get();
       if(snap.exists){
+        /* 차단된 계정이면 로그인 자체는 성공했더라도 여기서 즉시 강제
+           로그아웃시켜 앱을 쓸 수 없게 막는다. 삭제와 달리 문서를 남겨두는
+           방식이라 재로그인해도 계속 차단 상태가 유지된다. */
+        if(snap.data().blocked){
+          _fbUser = null; _fbRole = null; _fbReady = true;
+          await _fbAuth.signOut();
+          fbUpdateUI();
+          alert('차단된 계정입니다. 관리자에게 문의해주세요.');
+          return;
+        }
         _fbRole = snap.data().role || 'viewer';
       } else {
         await _fbDb.collection(FB_COL_USERS).doc(user.uid).set({
@@ -369,11 +379,13 @@ async function fbLoadUserList(){
       ).join('');
       return `<div style="display:flex;align-items:center;gap:6px;padding:8px 0;border-bottom:1px solid #f0f0f0;flex-wrap:wrap;">
         <div style="flex:1;min-width:140px;">
-          <div style="font-size:12px;font-weight:600;color:#333;">${u.email||uid}</div>
+          <div style="font-size:12px;font-weight:600;color:#333;">${u.email||uid}${u.blocked?' <span style="font-size:10px;font-weight:700;color:#fff;background:#c0392b;padding:1px 6px;border-radius:100px;">🚫 차단됨</span>':''}</div>
           <div style="font-size:10px;color:#aaa;">${u.createdAt?'가입: '+new Date(u.createdAt.seconds*1000).toLocaleDateString('ko-KR'):''}</div>
         </div>
         <select id="role-sel-${uid}" style="font-size:12px;padding:4px 6px;border:1.5px solid #c8c8c8;border-radius:6px;">${roleOpts}</select>
         <button onclick="fbUpdateRole('${uid}')" style="font-size:11px;padding:4px 10px;border:1.5px solid #185FA5;border-radius:6px;background:#f0f6ff;color:#185FA5;cursor:pointer;font-weight:600;">변경</button>
+        <button onclick="fbToggleBlockUser('${uid}','${(u.email||'').replace(/'/g,"\\'")}',${!!u.blocked})"
+          style="font-size:11px;padding:4px 8px;border:1.5px solid ${u.blocked?'#888':'#B8690A'};border-radius:6px;background:${u.blocked?'#f5f5f5':'#fff8ee'};color:${u.blocked?'#666':'#B8690A'};cursor:pointer;font-weight:600;">${u.blocked?'차단 해제':'🚫 차단'}</button>
         <button onclick="fbDeleteUser('${uid}','${u.email||''}')" style="font-size:11px;padding:4px 8px;border:1.5px solid #c0392b;border-radius:6px;background:#fff5f5;color:#c0392b;cursor:pointer;">삭제</button>
       </div>`;
     }).join('');
@@ -391,6 +403,27 @@ async function fbUpdateRole(uid){
     showToast('권한이 변경되었습니다.');
     fbLoadUserList();
   }catch(e){ showToast('변경 실패: '+e.message); }
+}
+
+/* ── 계정 차단 / 차단 해제 ──
+   "삭제"는 앱 접근 기록만 지우고 실제 로그인 계정(Firebase Auth)은 그대로
+   남아있어서, 그 사람이 다시 로그인하면 열람자 권한으로 자동 재생성되는
+   한계가 있었음(로그인 자체는 클라이언트 코드로 막을 수 없어서). 대신
+   "차단"은 사용자 문서 자체는 남겨두고 blocked 플래그만 세워두는 방식으로,
+   로그인은 성공하더라도 onAuthStateChanged에서 이 플래그를 확인해 즉시
+   강제 로그아웃시키고 안내 메시지를 띄운다. 재로그인해도 계속 차단 상태가
+   유지된다(자동 재생성으로 풀리지 않음). */
+async function fbToggleBlockUser(uid, email, currentlyBlocked){
+  const next = !currentlyBlocked;
+  const msg = next
+    ? `"${email}" 계정을 차단할까요?\n이후 이 계정으로 로그인을 시도해도 즉시 로그아웃되며 앱을 사용할 수 없습니다.`
+    : `"${email}" 계정의 차단을 해제할까요?`;
+  if(!confirm(msg)) return;
+  try{
+    await _fbDb.collection(FB_COL_USERS).doc(uid).update({blocked: next});
+    showToast(next ? '계정을 차단했습니다.' : '차단을 해제했습니다.');
+    fbLoadUserList();
+  }catch(e){ showToast('처리 실패: '+e.message); }
 }
 
 async function fbDeleteUser(uid, email){
