@@ -4034,7 +4034,7 @@ function clearForm(){
   calcIrrTotal();
   clearTdrVals();;
   ['w-temp','w-feel','w-humid','w-wind','w-sky','w-avg','w-month-rain','w-minmax'].forEach(id=>document.getElementById(id).textContent='--');
-  document.getElementById('rain-grid').innerHTML='<div style="font-size:11px;color:#aaa;padding:10px;">자동 불러오기 후 표시됩니다</div>';
+  {const _rgEl=document.getElementById('rain-chart-container');if(_rgEl)_rgEl.innerHTML='<div style="font-size:11px;color:#aaa;padding:10px;">자동 불러오기 후 표시됩니다</div>';}
 }
 
 /* ── 검색 ── */
@@ -4549,7 +4549,7 @@ function copyToToday(idx){
   document.getElementById('inp-rain').value='';
   document.getElementById('inp-snow').value='';
   document.getElementById('inp-wdir').value='';
-  document.getElementById('rain-grid').innerHTML='<div style="font-size:11px;color:#aaa;padding:10px;">자동 불러오기 후 표시됩니다</div>';
+  {const _rgEl=document.getElementById('rain-chart-container');if(_rgEl)_rgEl.innerHTML='<div style="font-size:11px;color:#aaa;padding:10px;">자동 불러오기 후 표시됩니다</div>';}
 
   /* 예고 복사 */
   yegoData={...(r.yego||{})};
@@ -7499,7 +7499,7 @@ function init(){
       applyWeatherToUI(cached);
     }
   } else {
-    document.getElementById('rain-grid').innerHTML='<div style="font-size:11px;color:#aaa;padding:10px;">자동 불러오기 후 표시됩니다</div>';
+    {const _rgEl=document.getElementById('rain-chart-container');if(_rgEl)_rgEl.innerHTML='<div style="font-size:11px;color:#aaa;padding:10px;">자동 불러오기 후 표시됩니다</div>';}
     /* 캐시 없으면 자동 불러오기 시도 */
     setTimeout(()=>fetchWeather(),1200);
   }
