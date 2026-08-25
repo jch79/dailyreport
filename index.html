@@ -1612,6 +1612,20 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
     </div>
   </div>
 </div>
+<!-- 일용 근무현황 날짜별 편집 모달 -->
+<div id="daily-day-modal" onclick="closeDailyDayModal(event)" style="display:none;position:fixed;inset:0;z-index:8000;background:rgba(0,0,0,.45);align-items:center;justify-content:center;">
+  <div onclick="event.stopPropagation()" style="background:#fff;border-radius:14px;box-shadow:0 8px 32px rgba(0,0,0,.2);width:92%;max-width:340px;overflow:hidden;">
+    <div style="background:#EF9F27;color:#fff;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;">
+      <div style="font-size:13px;font-weight:700;" id="daily-day-modal-title">근무 상태 수정</div>
+      <button onclick="closeDailyDayModal()" style="background:none;border:none;color:#fff;font-size:18px;cursor:pointer;padding:0 2px;line-height:1;">✕</button>
+    </div>
+    <div style="padding:16px;display:flex;flex-direction:column;gap:10px;" id="daily-day-modal-body"></div>
+    <div style="padding:10px 16px;display:flex;gap:8px;justify-content:flex-end;border-top:1px solid #eee;" id="daily-day-modal-footer">
+      <button onclick="closeDailyDayModal()" style="padding:7px 16px;border:1.5px solid #c8c8c8;border-radius:7px;background:#fff;font-size:12px;cursor:pointer;">취소</button>
+      <button onclick="saveDailyDayEdit()" style="padding:7px 16px;border:none;border-radius:7px;background:#EF9F27;color:#fff;font-size:12px;font-weight:700;cursor:pointer;">저장</button>
+    </div>
+  </div>
+</div>
 <!-- 기온 추이 차트 날짜 기록 수정 모달 -->
 <div id="temp-day-modal" onclick="closeTempDayModal(event)" style="display:none;position:fixed;inset:0;z-index:8000;background:rgba(0,0,0,.45);align-items:center;justify-content:center;">
   <div onclick="event.stopPropagation()" style="background:#fff;border-radius:14px;box-shadow:0 8px 32px rgba(0,0,0,.2);width:92%;max-width:380px;overflow:hidden;">
@@ -6205,6 +6219,100 @@ function closeRegDayModal(e){
   _regDayEdit=null;
 }
 
+/* ── 일용 근무현황 날짜별 수정 ──
+   정규직과 달리 일용은 근무일(0.5/1/2일)과 OT까지 함께 조정할 수 있어야
+   해서, 버튼 클릭 즉시 저장되는 정규직 모달과 달리 상태를 모아뒀다가
+   '저장' 버튼으로 한 번에 반영하는 방식으로 만듦 */
+let _dailyDayEdit=null;
+function openDailyDayEdit(name, dateStr){
+  const [,mm,dd]=dateStr.split('-');
+  const dObj=new Date(dateStr+'T00:00:00');
+  const dayNames='일월화수목금토';
+  document.getElementById('daily-day-modal-title').textContent=`${name} · ${parseInt(mm)}/${parseInt(dd)}(${dayNames[dObj.getDay()]})`;
+
+  const all=gd();
+  const idx=all.findIndex(r=>recIsoDate(r.date)===dateStr);
+  const w=idx>=0?(all[idx].workers||[]).find(w=>w.name===name&&w.type==='일용'):null;
+  if(!w){
+    document.getElementById('daily-day-modal-body').innerHTML=`<div style="font-size:12px;color:#c0392b;">⚠ 이 날짜에 저장된 기록이 없어 수정할 수 없습니다.</div>`;
+    document.getElementById('daily-day-modal-footer').style.display='none';
+    document.getElementById('daily-day-modal').style.display='flex';
+    _dailyDayEdit=null;
+    return;
+  }
+  document.getElementById('daily-day-modal-footer').style.display='flex';
+  _dailyDayEdit={name, dateStr, isOff:!!w.off};
+  const curDays=String(w.days||'1');
+  const curOT=w.ot||'';
+  document.getElementById('daily-day-modal-body').innerHTML=`
+    <div style="display:flex;gap:8px;">
+      <button id="ddm-btn-attend" onclick="setDailyDayStatus(false)"
+        style="flex:1;padding:11px;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;border:2px solid ${!w.off?'#EF9F27':'#e5e5e5'};background:${!w.off?'#fff8ee':'#fff'};color:#EF9F27;">${!w.off?'✓ ':''}출근</button>
+      <button id="ddm-btn-off" onclick="setDailyDayStatus(true)"
+        style="flex:1;padding:11px;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;border:2px solid ${w.off?'#e74c3c':'#e5e5e5'};background:${w.off?'#fde8e8':'#fff'};color:#e74c3c;">${w.off?'✓ ':''}휴무</button>
+    </div>
+    <div id="ddm-attend-fields" style="display:${w.off?'none':'flex'};flex-direction:column;gap:8px;">
+      <div>
+        <label style="font-size:11px;color:#888;font-weight:600;">근무일</label>
+        <select id="ddm-days" style="width:100%;font-size:13px;padding:7px;border:1.5px solid #ddd;border-radius:7px;margin-top:3px;box-sizing:border-box;">
+          <option value="0.5" ${curDays==='0.5'?'selected':''}>0.5일</option>
+          <option value="1" ${curDays==='1'?'selected':''}>1일</option>
+          <option value="2" ${curDays==='2'?'selected':''}>2일</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:11px;color:#888;font-weight:600;">OT (시간)</label>
+        <input id="ddm-ot" type="number" min="0" max="24" step="0.5" value="${curOT}" placeholder="0"
+          style="width:100%;font-size:13px;padding:7px;border:1.5px solid #ddd;border-radius:7px;margin-top:3px;box-sizing:border-box;">
+      </div>
+    </div>`;
+  document.getElementById('daily-day-modal').style.display='flex';
+}
+function setDailyDayStatus(off){
+  if(!_dailyDayEdit)return;
+  _dailyDayEdit.isOff=off;
+  const attendBtn=document.getElementById('ddm-btn-attend'), offBtn=document.getElementById('ddm-btn-off');
+  attendBtn.style.border=!off?'2px solid #EF9F27':'2px solid #e5e5e5';
+  attendBtn.style.background=!off?'#fff8ee':'#fff';
+  attendBtn.textContent=(!off?'✓ ':'')+'출근';
+  offBtn.style.border=off?'2px solid #e74c3c':'2px solid #e5e5e5';
+  offBtn.style.background=off?'#fde8e8':'#fff';
+  offBtn.textContent=(off?'✓ ':'')+'휴무';
+  document.getElementById('ddm-attend-fields').style.display=off?'none':'flex';
+}
+function saveDailyDayEdit(){
+  if(!_dailyDayEdit)return;
+  const {name,dateStr,isOff}=_dailyDayEdit;
+  const all=gd();
+  const idx=all.findIndex(r=>recIsoDate(r.date)===dateStr);
+  if(idx<0){showToast('해당 날짜의 저장된 기록이 없습니다');closeDailyDayModal(null);return;}
+  const w=(all[idx].workers||[]).find(w=>w.name===name&&w.type==='일용');
+  if(!w){showToast('해당 날짜에 근무자 기록이 없습니다');closeDailyDayModal(null);return;}
+  w.off=isOff;
+  if(isOff){ w.leave=false; }
+  else {
+    w.days=document.getElementById('ddm-days').value;
+    w.ot=document.getElementById('ddm-ot').value||'0';
+  }
+  sd(all);
+  renderStats();
+  renderHistory();
+  closeDailyDayModal(null);
+  if(_fbUser && _fbRole !== 'viewer'){
+    fbSaveReport(all[idx]).then(ok=>{
+      showToast(ok ? '수정 + 클라우드 업로드 완료!' : '로컬 수정 완료 (클라우드 업로드 실패)');
+    });
+  } else {
+    showToast('수정됐습니다');
+  }
+}
+function closeDailyDayModal(e){
+  const m=document.getElementById('daily-day-modal');
+  if(e&&e.target!==m)return;
+  m.style.display='none';
+  _dailyDayEdit=null;
+}
+
 /* ── 기온 추이 차트 날짜 기록 수정 ── */
 let _tempEditDate=null;
 function openTempDayEdit(dateStr){
@@ -6417,21 +6525,22 @@ function renderCalendarMatrix(elId, workerType, accentColor, bgLight, borderColo
       if(!rec)return`<td style="min-width:22px;border:1px solid #e8e8e8;background:${isW?'#fdf5f5':'#fafafa'};"></td>`;
       const w=(rec.workers||[]).find(x=>x.name===name&&x.type===workerType);
       if(!w)return`<td style="min-width:22px;border:1px solid #e8e8e8;background:${isW?'#fdf5f5':'#fafafa'};"></td>`;
+      const nameEscClick=name.replace(/'/g,"\\'");
       if(w.off){
         off++;
         if(!_dailyStatFilter.off){
-          return`<td title="${d} 휴무" style="min-width:22px;padding:1px;text-align:center;border:1px solid #e0e0e0;background:${isW?'#fdf5f5':'#fafafa'};"></td>`;
+          return`<td title="${d} 휴무 (클릭하여 수정)" onclick="openDailyDayEdit('${nameEscClick}','${d}')" style="cursor:pointer;min-width:22px;padding:1px;text-align:center;border:1px solid #e0e0e0;background:${isW?'#fdf5f5':'#fafafa'};"></td>`;
         }
-        return`<td title="${d} 휴무" style="min-width:22px;padding:1px;text-align:center;border:1px solid #e0e0e0;background:#fde8e8;"><div style="width:16px;height:16px;border-radius:3px;background:${C_OFF};margin:auto;display:flex;align-items:center;justify-content:center;"><span style="font-size:9px;color:#fff;font-weight:700;">휴</span></div></td>`;
+        return`<td title="${d} 휴무 (클릭하여 수정)" onclick="openDailyDayEdit('${nameEscClick}','${d}')" style="cursor:pointer;min-width:22px;padding:1px;text-align:center;border:1px solid #e0e0e0;background:#fde8e8;"><div style="width:16px;height:16px;border-radius:3px;background:${C_OFF};margin:auto;display:flex;align-items:center;justify-content:center;"><span style="font-size:9px;color:#fff;font-weight:700;">휴</span></div></td>`;
       }
       const wDays=parseFloat(w.days||'1');totalDays+=wDays;
       const dayOT=parseFloat(w.ot||0);totalOT+=dayOT;
       if(!_dailyStatFilter.attend){
-        return`<td title="${d} 출근 ${wDays}일${dayOT?' OT'+dayOT+'h':''}" style="min-width:22px;padding:1px;text-align:center;border:1px solid #e0e0e0;background:${isW?'#fdf5f5':'#fafafa'};"></td>`;
+        return`<td title="${d} 출근 ${wDays}일${dayOT?' OT'+dayOT+'h':''} (클릭하여 수정)" onclick="openDailyDayEdit('${nameEscClick}','${d}')" style="cursor:pointer;min-width:22px;padding:1px;text-align:center;border:1px solid #e0e0e0;background:${isW?'#fdf5f5':'#fafafa'};"></td>`;
       }
       const dayLabel=wDays!==1?`<div style="font-size:8px;color:#fff;font-weight:700;line-height:1;">${wDays}</div>`:'';
       const otLabel=dayOT?`<div style="font-size:8px;color:#E67E22;font-weight:700;line-height:1;">${dayOT}h</div>`:'';
-      return`<td title="${d} 출근 ${wDays}일${dayOT?' OT'+dayOT+'h':''}" style="min-width:22px;padding:1px;text-align:center;border:1px solid #e0e0e0;background:${isW?'#fef8f0':'#fffaf5'};"><div style="display:flex;flex-direction:column;align-items:center;"><div style="width:16px;height:16px;border-radius:3px;background:${C_ATTEND};margin:auto 0;display:flex;align-items:center;justify-content:center;"><span style="font-size:9px;color:#fff;font-weight:700;">${wDays===0.5?'반':'출'}</span></div>${dayLabel}${otLabel}</div></td>`;
+      return`<td title="${d} 출근 ${wDays}일${dayOT?' OT'+dayOT+'h':''} (클릭하여 수정)" onclick="openDailyDayEdit('${nameEscClick}','${d}')" style="cursor:pointer;min-width:22px;padding:1px;text-align:center;border:1px solid #e0e0e0;background:${isW?'#fef8f0':'#fffaf5'};"><div style="display:flex;flex-direction:column;align-items:center;"><div style="width:16px;height:16px;border-radius:3px;background:${C_ATTEND};margin:auto 0;display:flex;align-items:center;justify-content:center;"><span style="font-size:9px;color:#fff;font-weight:700;">${wDays===0.5?'반':'출'}</span></div>${dayLabel}${otLabel}</div></td>`;
     }).join('');
     const sumCell=`<td style="min-width:72px;padding:3px 6px;border:1px solid ${borderColor};font-size:10px;font-weight:700;white-space:nowrap;background:#fffdf8;">
       <span style="color:#333;">${totalDays.toFixed(1)}일</span>${off>0?`<span style="color:#e74c3c;"> · 휴 ${off}</span>`:''}${totalOT>0?`<br><span style="color:#E67E22;font-size:10px;">OT ${totalOT.toFixed(1)}h</span>`:''}
