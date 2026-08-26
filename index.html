@@ -265,6 +265,11 @@ function fbUpdateUI(){
    로그인 모달
 ════════════════════════════════════════════ */
 function fbShowLoginModal(){
+  /* 로그인 화면을 실제로 띄워야 하는 상황이면, 저장 후 새로고침
+     깜빡임 방지용으로 걸어둔 클래스가 남아있더라도(CSS !important로
+     모달을 숨기고 있을 수 있음) 반드시 제거해서 게이트가 확실히
+     보이도록 함 */
+  document.documentElement.classList.remove('fb-was-logged-in');
   document.getElementById('fb-login-modal').style.display='flex';
 }
 function fbCloseLoginModal(){
