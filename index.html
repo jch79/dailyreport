@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>코스관리 작업일보</title>
+<!-- 로그인 게이트 깜빡임 방지: 같은 세션에서 방금 전 로그인 확인이 됐었다면
+     (예: 저장 후 location.reload()) 로그인 화면이 그려지기도 전에 즉시 숨김 처리.
+     실제로 로그아웃 상태였다면 onAuthStateChanged가 이후 다시 로그인 화면을 띄움. -->
+<script>try{if(sessionStorage.getItem('golf_fb_logged_in')==='1'){document.documentElement.classList.add('fb-was-logged-in');}}catch(e){}</script>
 
 <!-- ══════════════════════════════════════════
      Firebase SDK (v9 compat mode)
@@ -60,6 +64,7 @@ _fbAuth.onAuthStateChanged(async user => {
            방식이라 재로그인해도 계속 차단 상태가 유지된다. */
         if(snap.data().blocked){
           _fbUser = null; _fbRole = null; _fbReady = true;
+          try{ sessionStorage.removeItem('golf_fb_logged_in'); }catch(e){}
           await _fbAuth.signOut();
           fbUpdateUI();
           fbShowLoginModal();
@@ -84,7 +89,14 @@ _fbAuth.onAuthStateChanged(async user => {
   _fbReady = true;
   fbUpdateUI();
   /* 로그인 게이트: 정상 로그인 상태면 닫고, 로그아웃 상태면 다시 띄움 */
-  if(_fbUser){ fbCloseLoginModal(); } else { fbShowLoginModal(); }
+  if(_fbUser){
+    fbCloseLoginModal();
+    /* 다음 새로고침(예: 저장 후) 때 로그인 화면이 깜빡이지 않도록 세션에 기록 */
+    try{ sessionStorage.setItem('golf_fb_logged_in','1'); }catch(e){}
+  } else {
+    fbShowLoginModal();
+    try{ sessionStorage.removeItem('golf_fb_logged_in'); }catch(e){}
+  }
   if(user){ setTimeout(fbFullSyncFromCloud, 800); }
 });
 
@@ -497,6 +509,11 @@ async function fbCreateUserByAdmin(){
 .fb-input:focus{outline:none;border-color:#185FA5;}
 .fb-btn{width:100%;padding:10px;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;margin-bottom:6px;}
 .fb-err{font-size:11px;color:#c0392b;min-height:16px;margin-bottom:6px;}
+/* 저장 후 새로고침처럼, 같은 세션에서 이미 로그인했던 것이 확인된 경우
+   로그인 게이트를 처음부터 숨겨 깜빡임(로그인화면→기록탭)을 방지.
+   Firebase Auth 상태 확인(onAuthStateChanged)이 실제로 로그인 아님을
+   확인하면 fbShowLoginModal()이 다시 띄우므로 보안상 문제 없음. */
+html.fb-was-logged-in #fb-login-modal{display:none !important;}
 </style>
 <!-- ★ 내장 데이터 자동 복원: 내보내기로 저장된 파일을 열면 실행됨 -->
 <script id="embedded-data" type="application/json">null</script>
