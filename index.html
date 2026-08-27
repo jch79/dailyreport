@@ -2742,6 +2742,25 @@ function removePreset(i){
 function saveWeatherCache(data){localStorage.setItem(WCK,JSON.stringify({...data,cachedAt:new Date().toISOString()}));}
 function loadWeatherCache(){try{return JSON.parse(localStorage.getItem(WCK)||'null');}catch(e){return null;};}
 
+/* ── 일통계(평균기온/최저·최고/월누적강우량) 수동수정 보존 ──
+ * "클릭하여 수정"(editWeatherStat)으로 특정 날짜에 직접 고친 값은 날짜별로 별도 저장해두고,
+ * 이후 그 날짜에 대해 자동 불러오기(fetchWeather)를 다시 실행하더라도 이 값을 그대로
+ * 유지한다 — 강우량의 manual 플래그와 같은 목적의 별도 저장소(날짜:필드 형태라 rainData30과
+ * 구조가 달라 분리함). */
+const WSK='golf_weather_stat_manual_v1';
+function loadStatManual(){try{return JSON.parse(localStorage.getItem(WSK)||'{}');}catch(e){return {};}}
+function saveStatManualAll(all){try{localStorage.setItem(WSK,JSON.stringify(all));}catch(e){}}
+function setStatManual(dateISO,field,value){
+  const all=loadStatManual();
+  if(!all[dateISO])all[dateISO]={};
+  all[dateISO][field]=value;
+  saveStatManualAll(all);
+}
+function getStatManual(dateISO,field){
+  const all=loadStatManual();
+  return all[dateISO]&&Object.prototype.hasOwnProperty.call(all[dateISO],field)?all[dateISO][field]:undefined;
+}
+
 /* ── 강우/기온 데이터 누적 병합 ──
  * 기존 캐시(구 데이터) + 새 API 데이터를 날짜 기준으로 병합.
  * 같은 날짜는 새 API 데이터 우선(isToday 마킹 보존).
@@ -2765,7 +2784,11 @@ function mergeRainData(cachedArr, newArr){
       if(d.tmin!=null) exist.tmin=d.tmin;
       /* rain: 사용자가 수동 입력한 날짜는 절대 덮어쓰지 않음. 아니면 오늘만 API 우선 */
       if(!exist.manual && d.isToday) exist.rain=d.rain;
-      exist.isToday=d.isToday||exist.isToday||false;
+      /* isToday는 항상 이번에 새로 조회한 값을 그대로 신뢰함(OR로 예전 플래그와 합치지 않음).
+         그렇지 않으면 어제까지 "오늘"이었던 날짜의 isToday=true가 계속 남아있어,
+         이후 여러 날짜가 동시에 "오늘"로 표시되고 캐시 날짜 조회(find)가 그중 더 오래된
+         날짜를 먼저 찾아버리는 문제가 생김 */
+      exist.isToday=!!d.isToday;
       map.set(d.date,exist);
     }
   });
@@ -2785,9 +2808,13 @@ function applyWeatherToUI(w){
     const _pickerISO=document.getElementById('inp-date-picker')?.value||'';
     const _isToday=(!_pickerISO||_pickerISO===_todayISO);
     if(_isToday){
-      if(w.avg&&w.avg!='--')document.getElementById('w-avg').textContent=w.avg;
-      if(w.monthRain&&w.monthRain!='--')document.getElementById('w-month-rain').textContent=w.monthRain;
-      if(w.minmax&&w.minmax!='--')document.getElementById('w-minmax').textContent=w.minmax;
+      /* 수동으로 고쳐둔 값이 있으면 캐시 스냅샷보다 그 값을 우선 적용 */
+      const _mAvg=getStatManual(_todayISO,'avg');
+      const _mMinmax=getStatManual(_todayISO,'minmax');
+      const _mMonthRain=getStatManual(_todayISO,'monthRain');
+      document.getElementById('w-avg').textContent=(_mAvg!==undefined)?_mAvg:((w.avg&&w.avg!='--')?w.avg:document.getElementById('w-avg').textContent);
+      document.getElementById('w-month-rain').textContent=(_mMonthRain!==undefined)?_mMonthRain:((w.monthRain&&w.monthRain!='--')?w.monthRain:document.getElementById('w-month-rain').textContent);
+      document.getElementById('w-minmax').textContent=(_mMinmax!==undefined)?_mMinmax:((w.minmax&&w.minmax!='--')?w.minmax:document.getElementById('w-minmax').textContent);
     }
   }
   if(w.cachedAt){
@@ -2804,12 +2831,17 @@ function applyWeatherToUI(w){
     _tempOffset=calcTempOffset();
     renderTempChart();
     /* 캐시 복원 시 "금일 강우량" 입력칸도 차트(오늘 항목)와 항상 같은 값으로 동기화
-       — 이걸 빼먹으면 입력칸은 비어있고 차트만 값이 있어 서로 달라 보이는 원인이 됨 */
+       — 이걸 빼먹으면 입력칸은 비어있고 차트만 값이 있어 서로 달라 보이는 원인이 됨
+       ※ 단, 캐시가 어제(혹은 그 이전) 기준으로 남아있는 상태(날짜가 바뀐 직후, 아직
+       fetchWeather()의 실제 갱신 전)라면 isToday로 표시된 항목은 실제로는 "어제" 데이터임.
+       이 경우 그 값을 오늘 입력칸에 그대로 넣으면 안 됨 — 어제 수동입력한 강우량이
+       오늘 자동측정값인 것처럼 오인되어 표시되는 원인이 되므로, 항목의 날짜가 실제
+       오늘 날짜와 정확히 같을 때만 반영한다. */
     {
       const _todayEntry=w.rainData30.find(d=>d.isToday);
       const _pickerISO2=document.getElementById('inp-date-picker')?.value||'';
       const _todayISO2=(()=>{const _n=new Date();return`${_n.getFullYear()}-${String(_n.getMonth()+1).padStart(2,'0')}-${String(_n.getDate()).padStart(2,'0')}`;})();
-      if(_todayEntry&&(!_pickerISO2||_pickerISO2===_todayISO2)){
+      if(_todayEntry&&_todayEntry.date===_todayISO2&&(!_pickerISO2||_pickerISO2===_todayISO2)){
         const _inpRain=document.getElementById('inp-rain');
         if(_inpRain)_inpRain.value=_todayEntry.rain||0;
       }
@@ -3661,7 +3693,8 @@ async function fetchWeather(){
         const monthPrefix=`${tyyyy}-${tmo}`;
         const mRain=rainData30.filter(d=>d.date.startsWith(monthPrefix)&&d.date<=todayISO).reduce((s,d)=>s+(d.rain||0),0);
         const _p2=document.getElementById('inp-date-picker')?.value||'';
-        if(!_p2||_p2===todayISO) document.getElementById('w-month-rain').textContent=mRain.toFixed(1);
+        const _manualMR=getStatManual(todayISO,'monthRain');
+        if(!_p2||_p2===todayISO) document.getElementById('w-month-rain').textContent=(_manualMR!==undefined)?_manualMR:mRain.toFixed(1);
       }
 
     } else if(isPast){
@@ -3722,7 +3755,8 @@ async function fetchWeather(){
         /* 월 누적 */
         const monthPrefix=`${tyyyy}-${tmo}`;
         const mRain=rainData30.filter(d=>d.date.startsWith(monthPrefix)&&d.date<=targetDate).reduce((s,d)=>s+(d.rain||0),0);
-        document.getElementById('w-month-rain').textContent=mRain.toFixed(1);
+        const _manualMRPast=getStatManual(targetDate,'monthRain');
+        document.getElementById('w-month-rain').textContent=(_manualMRPast!==undefined)?_manualMRPast:mRain.toFixed(1);
       }catch(ePast){console.warn('[날씨] isPast forecast 실패',ePast);}
     }
 
@@ -3737,8 +3771,14 @@ async function fetchWeather(){
       const _todayISO=(()=>{const _n=new Date();return`${_n.getFullYear()}-${String(_n.getMonth()+1).padStart(2,'0')}-${String(_n.getDate()).padStart(2,'0')}`;})();
       const _pickerISO=document.getElementById('inp-date-picker')?.value||'';
       if(!_pickerISO||_pickerISO===_todayISO){
-        if(avg&&avg!='--')document.getElementById('w-avg').textContent=avg;
-        if(minmax&&minmax!='--')document.getElementById('w-minmax').textContent=minmax;
+        /* 사용자가 "클릭하여 수정"으로 직접 고쳐둔 값이 있으면(오늘 재조회 시에도)
+           그 값을 그대로 유지하고 API 값으로 덮어쓰지 않음 */
+        const _manualAvg=getStatManual(_todayISO,'avg');
+        const _manualMinmax=getStatManual(_todayISO,'minmax');
+        if(_manualAvg!==undefined) document.getElementById('w-avg').textContent=_manualAvg;
+        else if(avg&&avg!='--') document.getElementById('w-avg').textContent=avg;
+        if(_manualMinmax!==undefined) document.getElementById('w-minmax').textContent=_manualMinmax;
+        else if(minmax&&minmax!='--') document.getElementById('w-minmax').textContent=minmax;
       }
     }
 
@@ -6067,6 +6107,17 @@ function saveWxStatModal(){
   const el=document.getElementById(targetElId);
   if(el)el.textContent=val;
   closeWxStatModal();
+
+  /* ── 수동 수정 값을 날짜별로 영구 저장 — 이후 이 날짜에 대해 자동 불러오기를
+     다시 실행해도 이 값이 덮어써지지 않도록 보호 ── */
+  {
+    const _now=new Date();
+    const _todayISO=`${_now.getFullYear()}-${String(_now.getMonth()+1).padStart(2,'0')}-${String(_now.getDate()).padStart(2,'0')}`;
+    const _curDate=document.getElementById('inp-date-picker')?.value||_todayISO;
+    const _fieldMap={'w-avg':'avg','w-minmax':'minmax','w-month-rain':'monthRain'};
+    const _field=_fieldMap[targetElId];
+    if(_field) setStatManual(_curDate,_field,val);
+  }
 
   /* ── 차트 즉시 반영 ── */
   if(targetElId==='w-minmax'||targetElId==='w-avg'){
