@@ -669,7 +669,7 @@ textarea{resize:vertical;min-height:55px;}
 .task-block.etc    .task-block-hdr{background:#5F5E5A;color:#fff;border-radius:7px 7px 0 0;}
 
 .task-col-hdr{display:grid;grid-template-columns:120px 34px 34px 34px 1fr 120px 1fr 40px;gap:0;font-size:10px;font-weight:700;text-align:center;border-bottom:2px solid #c0c0c0;}
-.task-block.work .task-col-hdr{grid-template-columns:120px 34px 34px 34px 1.25fr 120px 0.8fr 40px;}
+.task-block.work .task-col-hdr{grid-template-columns:192px 34px 34px 34px 1.25fr 120px 0.8fr 40px;}
 .task-block.mowing .task-col-hdr{background:#daeaf9;color:#0C447C;}
 .task-block.work   .task-col-hdr{background:#d4eac0;color:#27500A;}
 .task-block.etc    .task-col-hdr{background:#e8e7e3;color:#444;}
@@ -678,7 +678,7 @@ textarea{resize:vertical;min-height:55px;}
 .task-col-hdr .tl{text-align:left;padding-left:8px;}
 
 .task-row{display:grid;grid-template-columns:120px 34px 34px 34px 1fr 120px 1fr 40px;gap:0;align-items:stretch;border-top:1.5px solid #d8d8d8;}
-.task-block.work .task-row{grid-template-columns:120px 34px 34px 34px 1.25fr 120px 0.8fr 40px;}
+.task-block.work .task-row{grid-template-columns:192px 34px 34px 34px 1.25fr 120px 0.8fr 40px;}
 .task-block.mowing .task-row:nth-child(even){background:#f2f8fd;}
 .task-block.work   .task-row:nth-child(even){background:#f2f9ec;}
 .task-block.etc    .task-row:nth-child(even){background:#f5f5f2;}
@@ -4160,7 +4160,20 @@ function clearForm(){
 }
 
 /* ── 검색 ── */
-function hl(t,k){if(!t||!k)return t||'';return t.replace(new RegExp(`(${k.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')})`,'gi'),'<mark>$1</mark>');}
+/* 검색어를 한 글자씩 사이에 공백 허용(\s*)을 넣은 정규식으로 만들어서,
+   "8월14일"로 검색해도 원문의 "8월 14일"(공백 포함) 부분이 정확히 하이라이트되도록 함 */
+function _wsTolerantPattern(k){
+  return _searchNorm(k).split('').map(ch=>ch.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('\\s*');
+}
+function hl(t,k){
+  if(!t||!k)return t||'';
+  const p=_wsTolerantPattern(k);
+  if(!p)return t;
+  return t.replace(new RegExp(`(${p})`,'gi'),'<mark>$1</mark>');
+}
+/* 검색어/대상 문자열 모두 공백을 제거하고 소문자로 통일해서 비교 —
+   "8월 14일"처럼 원본에 띄어쓰기가 있어도 "8월14일"로 붙여서 검색하면 찾아지도록 함 */
+function _searchNorm(s){return (s==null?'':String(s)).toLowerCase().replace(/\s+/g,'');}
 function runSearch(){
   const kw=document.getElementById('search-kw').value.trim();
   const el=document.getElementById('search-results');
@@ -4168,7 +4181,7 @@ function runSearch(){
   if(!kw){el.innerHTML='<div class="no-res">검색어를 입력하세요</div>';return;}
   let rc=gr().filter(x=>x!==kw);rc.unshift(kw);if(rc.length>8)rc=rc.slice(0,8);sr(rc);renderRecentChips();
 
-  const all=gd();const kwL=kw.toLowerCase();const results=[];
+  const all=gd();const kwL=_searchNorm(kw);const results=[];
   const sCls={Mowing:'mow',Work:'wrk','기타':'etc','자재사용':'mat','날씨':'etc','비고':'etc','볼스피드':'etc','관수':'etc','예고':'etc','작업자':'etc'};
 
   all.forEach((r,ri)=>{
@@ -4182,15 +4195,15 @@ function runSearch(){
     };
 
     /* ① 날짜·코스 */
-    if(r.date?.toLowerCase().includes(kwL)) push('날짜','날짜',r.date);
-    if(r.course?.toLowerCase().includes(kwL)) push('날짜','코스',r.course);
+    if(_searchNorm(r.date).includes(kwL)) push('날짜','날짜',r.date);
+    if(_searchNorm(r.course).includes(kwL)) push('날짜','코스',r.course);
 
     /* ② 작업 내용 (tasks) */
     (r.tasks||[]).forEach(sec=>{
       sec.tasks.forEach(task=>{
         const ws=Array.isArray(task.workers)?task.workers.join(' '):(task.worker||'');
         const fields=[task.name,task.detail,task.equip,ws];
-        if(fields.some(f=>f&&f.toLowerCase().includes(kwL))){
+        if(fields.some(f=>f&&_searchNorm(f).includes(kwL))){
           const detail=[task.detail,task.equip?`장비:${task.equip}`:'',ws?`작업자:${ws}`:''].filter(Boolean).join(' · ');
           push(sec.section,task.name||'작업',detail);
         }
@@ -4199,40 +4212,40 @@ function runSearch(){
 
     /* ③ 작업자 */
     (r.workers||[]).forEach(w=>{
-      if([w.name,w.type,w.memo].some(f=>f&&f.toLowerCase().includes(kwL)))
+      if([w.name,w.type,w.memo].some(f=>f&&_searchNorm(f).includes(kwL)))
         push('작업자',w.name||'작업자',[w.type,w.off?(w.leave?'연차':'휴무'):'',w.ot&&!w.off?`OT${w.ot}h`:''].filter(Boolean).join(' '));
     });
 
     /* ④ 날씨 */
     const wr=r.weather||{};
     const wxFields=[wr.sky,wr.temp,wr.wind,wr.wdir,wr.note,wr.avg,wr.minmax,wr.monthRain];
-    if(wxFields.some(f=>f&&String(f).toLowerCase().includes(kwL)))
+    if(wxFields.some(f=>f&&_searchNorm(String(f)).includes(kwL)))
       push('날씨','날씨정보',[wr.sky,wr.temp?`${wr.temp}°`:'',wr.wind?`풍속:${wr.wind}`:'',wr.note].filter(Boolean).join(' '));
 
     /* ⑤ 볼스피드 */
     const bs=r.ballSpeed||{};
     const bsFields=[bs.am,bs.pm,bs.target,bs.note];
-    if(bsFields.some(f=>f&&String(f).toLowerCase().includes(kwL)))
+    if(bsFields.some(f=>f&&_searchNorm(String(f)).includes(kwL)))
       push('볼스피드','볼스피드',[bs.am?`오전:${bs.am}m`:'',bs.pm?`오후:${bs.pm}m`:'',bs.note].filter(Boolean).join(' '));
 
     /* ⑥ 관수 */
     const irr=r.irrigation||{};
-    if(irr.note?.toLowerCase().includes(kwL)) push('관수','관수 메모',irr.note);
+    if(_searchNorm(irr.note).includes(kwL)) push('관수','관수 메모',irr.note);
 
     /* ⑦ 예고 */
-    if(r.yegoNote?.toLowerCase().includes(kwL)) push('예고','예고 메모',r.yegoNote);
+    if(_searchNorm(r.yegoNote).includes(kwL)) push('예고','예고 메모',r.yegoNote);
 
     /* ⑧ 비고·특이사항 */
-    if(r.notes?.toLowerCase().includes(kwL)) push('비고','특이사항',r.notes);
-    if(r.remark?.toLowerCase().includes(kwL)) push('비고','비고',r.remark);
+    if(_searchNorm(r.notes).includes(kwL)) push('비고','특이사항',r.notes);
+    if(_searchNorm(r.remark).includes(kwL)) push('비고','비고',r.remark);
 
     /* ⑨ 비료·농약 자재 사용 — 처리지역 + 전체 컬럼 */
     (r.matUseRows||[]).forEach(block=>{
       /* 처리지역명 단독 매칭 */
-      if((block.areaName||'').toLowerCase().includes(kwL))
+      if(_searchNorm(block.areaName||'').includes(kwL))
         push('자재사용','처리지역',`처리지역: ${block.areaName}`);
       /* 처리지역 메모 단독 매칭 */
-      if((block.memo||'').toLowerCase().includes(kwL))
+      if(_searchNorm(block.memo||'').includes(kwL))
         push('자재사용','처리지역 메모',`처리지역:${block.areaName||''} · 메모:${block.memo}`);
       (block.items||[]).forEach(item=>{
         const typeLabel=item.type==='pest'?'농약':item.type==='fert'?'비료':'직접입력';
@@ -4254,7 +4267,7 @@ function runSearch(){
           item.nutr,      typeLabel,    block.areaName,
           pestKind,       block.memo,
         ];
-        if(fields.some(f=>f&&String(f).toLowerCase().includes(kwL))){
+        if(fields.some(f=>f&&_searchNorm(String(f)).includes(kwL))){
           const detail=[
             block.areaName?`처리지역:${block.areaName}`:'',
             block.memo?`메모:${block.memo}`:'',
@@ -4283,14 +4296,14 @@ function runSearch(){
       const fields=[p.name,p.type,p.product,p.form,p.size,p.active,p.content,
                     p.maker,p.origin,p.target,p.effect,p.absorption,p.moa,
                     p.category,p.frac,p.series,p.summary];
-      if(fields.some(f=>f&&String(f).toLowerCase().includes(kwL)))
+      if(fields.some(f=>f&&_searchNorm(String(f)).includes(kwL)))
         matResults.push({matType:'pest',listIdx:idx,name:p.name,sub:p.type||'',detail:[p.product,p.active,p.target].filter(Boolean).join(' · ')});
     });
     const fertList=getFertList();
     fertList.forEach((p,idx)=>{
       const nutr=['N','P','K','Ca','Mg','Mn','Fe','Si','S'].filter(k=>p[k]).map(k=>k+':'+p[k]+'%').join(' ');
       const fields=[p.name,p.form,p.maker,p.target,p.summary,nutr,p.size,p.price];
-      if(fields.some(f=>f&&String(f).toLowerCase().includes(kwL)))
+      if(fields.some(f=>f&&_searchNorm(String(f)).includes(kwL)))
         matResults.push({matType:'fert',listIdx:idx,name:p.name,sub:'비료',detail:[p.form,nutr,p.target].filter(Boolean).join(' · ')});
     });
   }catch(e){}
@@ -4429,7 +4442,10 @@ function loadForEditFromSearch(){
 function renderHistory(){
   const _rhSY=window.scrollY; /* 스크롤 위치 기억 — DOM 재구성 후 복원 */
   const all=gd();
-  const q=(document.getElementById('hist-search').value||'').toLowerCase();
+  /* 검색어도 대상 문자열과 똑같이 공백 제거+소문자 통일(_searchNorm)해서 비교해야
+     "8월14일"처럼 띄어쓰기 없이 입력해도 "8월 14일"(원본에 공백 있음)이 찾아짐.
+     예전에는 .toLowerCase()만 적용해서 띄어쓰기까지 정확히 일치해야만 검색됐음 */
+  const q=_searchNorm(document.getElementById('hist-search').value||'');
   const mo=document.getElementById('hist-month').value;
   const sortKey=document.getElementById('hist-sort')?.value||'newest';
 
@@ -4451,29 +4467,29 @@ function renderHistory(){
     filtered=filtered.filter(r=>{
       const wr=r.weather||{},bs=r.ballSpeed||{},irr=r.irrigation||{};
       /* 날짜·코스 */
-      if(r.date?.toLowerCase().includes(q))return true;
-      if(r.course?.toLowerCase().includes(q))return true;
+      if(_searchNorm(r.date).includes(q))return true;
+      if(_searchNorm(r.course).includes(q))return true;
       /* 작업 내용 */
       if((r.tasks||[]).some(s=>s.tasks&&s.tasks.some(t=>
-        [t.name,t.detail,t.equip,...(Array.isArray(t.workers)?t.workers:[t.worker||''])].some(f=>f&&f.toLowerCase().includes(q))
+        [t.name,t.detail,t.equip,...(Array.isArray(t.workers)?t.workers:[t.worker||''])].some(f=>f&&_searchNorm(f).includes(q))
       )))return true;
       /* 작업자 */
-      if((r.workers||[]).some(w=>[w.name,w.type,w.memo].some(f=>f&&f.toLowerCase().includes(q))))return true;
+      if((r.workers||[]).some(w=>[w.name,w.type,w.memo].some(f=>f&&_searchNorm(f).includes(q))))return true;
       /* 날씨 */
-      if([wr.sky,wr.temp,wr.wind,wr.wdir,wr.note,wr.avg,wr.minmax,wr.monthRain].some(f=>f&&String(f).toLowerCase().includes(q)))return true;
+      if([wr.sky,wr.temp,wr.wind,wr.wdir,wr.note,wr.avg,wr.minmax,wr.monthRain].some(f=>f&&_searchNorm(String(f)).includes(q)))return true;
       /* 볼스피드 */
-      if([bs.am,bs.pm,bs.target,bs.note].some(f=>f&&String(f).toLowerCase().includes(q)))return true;
+      if([bs.am,bs.pm,bs.target,bs.note].some(f=>f&&_searchNorm(String(f)).includes(q)))return true;
       /* 관수 메모 */
-      if(irr.note?.toLowerCase().includes(q))return true;
+      if(_searchNorm(irr.note).includes(q))return true;
       /* 예고 */
-      if(r.yegoNote?.toLowerCase().includes(q))return true;
+      if(_searchNorm(r.yegoNote).includes(q))return true;
       /* 비고·특이사항 */
-      if(r.notes?.toLowerCase().includes(q))return true;
-      if(r.remark?.toLowerCase().includes(q))return true;
+      if(_searchNorm(r.notes).includes(q))return true;
+      if(_searchNorm(r.remark).includes(q))return true;
       /* 자재사용 */
       if((r.matUseRows||[]).some(block=>{
-        if((block.areaName||'').toLowerCase().includes(q))return true;
-        if((block.memo||'').toLowerCase().includes(q))return true;
+        if(_searchNorm(block.areaName||'').includes(q))return true;
+        if(_searchNorm(block.memo||'').includes(q))return true;
         return(block.items||[]).some(item=>{
           const typeLabel=item.type==='pest'?'농약':item.type==='fert'?'비료':'직접입력';
           /* 농약 종류(살균제/살충제 등) 조회 */
@@ -4488,7 +4504,7 @@ function renderHistory(){
           return[item.brandName,item.size,item.form,item.product,item.series,
                  item.category,item.frac,item.amount,item.compInfo,item.nutr,
                  typeLabel,pestKind,block.memo]
-            .some(f=>f&&String(f).toLowerCase().includes(q));
+            .some(f=>f&&_searchNorm(String(f)).includes(q));
         });
       }))return true;
       return false;
@@ -4522,13 +4538,13 @@ function renderHistory(){
         const fields=[p.name,p.type,p.product,p.form,p.size,p.active,p.content,
                       p.maker,p.origin,p.target,p.effect,p.absorption,p.moa,
                       p.category,p.frac,p.series,p.summary];
-        if(fields.some(f=>f&&String(f).toLowerCase().includes(q)))
+        if(fields.some(f=>f&&_searchNorm(String(f)).includes(q)))
           histMatResults.push({matType:'pest',listIdx:idx,name:p.name,sub:p.type||'',detail:[p.product,p.active,p.target].filter(Boolean).join(' · ')});
       });
       getFertList().forEach((p,idx)=>{
         const nutr=['N','P','K','Ca','Mg','Mn','Fe','Si','S'].filter(k=>p[k]).map(k=>k+':'+p[k]+'%').join(' ');
         const fields=[p.name,p.form,p.maker,p.target,p.summary,nutr,p.size,p.price];
-        if(fields.some(f=>f&&String(f).toLowerCase().includes(q)))
+        if(fields.some(f=>f&&_searchNorm(String(f)).includes(q)))
           histMatResults.push({matType:'fert',listIdx:idx,name:p.name,sub:'비료',detail:[p.form,nutr,p.target].filter(Boolean).join(' · ')});
       });
     }catch(e){}
@@ -4556,12 +4572,16 @@ function renderHistory(){
   }else if(histMatEl){histMatEl.style.display='none';}
   if(!filtered.length){el.innerHTML='<div class="no-res">검색 결과 없음</div>';return;}
 
-  /* 검색어 하이라이트 함수 */
+  /* 검색어 하이라이트 함수 — 공백 유무 차이가 있어도(예: 검색어 "8월14일" vs 원문 "8월 14일")
+     실제 일치한 부분(공백 포함 원문 그대로)을 정확히 하이라이트함 */
   function hlQ(str){
     if(!q||!str)return str||'';
-    const idx=str.toLowerCase().indexOf(q);
-    if(idx<0)return str;
-    return str.slice(0,idx)+`<mark style="background:#fff176;border-radius:2px;">${str.slice(idx,idx+q.length)}</mark>`+str.slice(idx+q.length);
+    const p=_wsTolerantPattern(q);
+    if(!p)return str;
+    const m=str.match(new RegExp(p,'i'));
+    if(!m)return str;
+    const idx=m.index;
+    return str.slice(0,idx)+`<mark style="background:#fff176;border-radius:2px;">${m[0]}</mark>`+str.slice(idx+m[0].length);
   }
 
   /* 검색어와 일치하는 섹션 요약 */
@@ -4571,13 +4591,13 @@ function renderHistory(){
     /* 작업 */
     (r.tasks||[]).forEach(s=>s.tasks&&s.tasks.forEach(t=>{
       [t.name,t.detail,t.equip].forEach(f=>{
-        if(f&&f.toLowerCase().includes(q))hits.push(`작업: ${hlQ(f)}`);
+        if(f&&_searchNorm(f).includes(q))hits.push(`작업: ${hlQ(f)}`);
       });
     }));
     /* 작업자 */
     (r.workers||[]).forEach(w=>{
       [w.name,w.memo].forEach(f=>{
-        if(f&&f.toLowerCase().includes(q))hits.push(`인원: ${hlQ(f)}`);
+        if(f&&_searchNorm(f).includes(q))hits.push(`인원: ${hlQ(f)}`);
       });
     });
     /* 자재 */
@@ -4588,13 +4608,13 @@ function renderHistory(){
           try{const pd=getPestList().find(x=>x.name===item.brandName);return pd?.type||'';}catch(e){return'';}
         })();
         [item.brandName,item.product,item.series,item.category,pestKind].forEach(f=>{
-          if(f&&f.toLowerCase().includes(q))hits.push(`자재: ${hlQ(f)}`);
+          if(f&&_searchNorm(f).includes(q))hits.push(`자재: ${hlQ(f)}`);
         });
       });
     });
     /* 비고 */
     [r.notes,r.remark,r.yegoNote].forEach(f=>{
-      if(f&&f.toLowerCase().includes(q))hits.push(`비고: ${hlQ(f)}`);
+      if(f&&_searchNorm(f).includes(q))hits.push(`비고: ${hlQ(f)}`);
     });
     if(!hits.length)return '';
     const uniq=[...new Set(hits)].slice(0,3);
@@ -7589,16 +7609,19 @@ function renderElapsedCalendar(){
     const active=items.filter(it=>it.startDate<=dateISO && (!it.endDate||dateISO<=it.endDate));
     const isToday=dateISO===todayISO;
     /* 줄바꿈 허용(white-space:normal)으로 바꿔서, 칸 너비를 넘는 텍스트가
-       그리드 컬럼을 넓히는 대신 칸 안에서 두 줄로 줄바꿈되도록 함 */
-    const tags=active.slice(0,4).map(it=>{
+       그리드 컬럼을 넓히는 대신 칸 안에서 두 줄로 줄바꿈되도록 함.
+       ※ 예전에는 4개까지만 보여주고 나머지는 "+N개 더"로 숨겼으나,
+       모든 항목을 다 볼 수 있도록 개수 제한 없이 전부 표시함 —
+       그만큼 칸이 길어지는 건 아래 min-height:88px 고정을 없애서
+       칸이 내용에 맞게 자연스럽게 늘어나도록 함(overflow:hidden도 제거). */
+    const tags=active.map(it=>{
       const el=_elapDaysBetween(dateISO,it.startDate);
       return`<div title="${matEscHtml(it.name)}${it.content?' · '+matEscHtml(it.content):''}"
         style="font-size:10.5px;line-height:1.3;background:#5B9BD5;color:#fff;border-radius:4px;padding:2px 5px;margin-top:2px;white-space:normal;word-break:keep-all;overflow-wrap:break-word;">${matEscHtml(it.name)} ${el}일</div>`;
     }).join('');
-    const more=active.length>4?`<div style="font-size:9.5px;color:#2C6FA8;margin-top:2px;">+${active.length-4}개 더</div>`:'';
-    cells+=`<div style="min-width:0;min-height:88px;border:1.5px solid ${isToday?'#5B9BD5':'#eee'};border-radius:7px;padding:4px 5px;background:${isToday?'#eef6fc':'#fff'};overflow:hidden;">
+    cells+=`<div style="min-width:0;min-height:88px;border:1.5px solid ${isToday?'#5B9BD5':'#eee'};border-radius:7px;padding:4px 5px;background:${isToday?'#eef6fc':'#fff'};">
       <div style="font-size:12px;font-weight:${isToday?800:500};color:${isToday?'#2C6FA8':'#999'};">${d}</div>
-      ${tags}${more}
+      ${tags}
     </div>`;
   }
   body.innerHTML=`
@@ -7611,7 +7634,7 @@ function renderElapsedCalendar(){
       ${dows.map(w=>`<div style="text-align:center;font-size:12px;font-weight:700;color:#999;">${w}</div>`).join('')}
     </div>
     <div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px;overflow-x:hidden;">${cells}</div>
-    <div style="margin-top:12px;font-size:11.5px;color:#aaa;">날짜 칸에 표시된 항목은 그 날짜 기준 경과일입니다. 항목이 4개를 넘으면 "+N개 더"로 표시됩니다.</div>`;
+    <div style="margin-top:12px;font-size:11.5px;color:#aaa;">날짜 칸에 표시된 항목은 그 날짜 기준 경과일이며, 해당 날짜의 모든 항목이 전부 표시됩니다. 내용이 길면 달력 전체를 위아래로 스크롤해서 볼 수 있습니다.</div>`;
 }
 function renderElapsedItems(){
   const el=document.getElementById('elapsed-items-list');
