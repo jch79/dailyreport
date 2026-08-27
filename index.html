@@ -9006,6 +9006,62 @@ function moveCol(blockId, colIdx, dir){
 /* ── 자재사용량 월별 차트 페이지 상태 ── */
 let _matuChartPage = 0; /* 0~1 (6개씩 2페이지) */
 
+/* ── 처리지역별(좌그린/우그린/티전면) N·P·K 순성분 요약 카드 ──
+   "자재사용량 분석" 제목 위에, 상단 지역 필터와 무관하게 항상 세 지역 기준을
+   한눈에 볼 수 있도록 표시. 선택된 연도(matu-year) 전체 기간 합계임. */
+function renderNpkSummaryCards(selYear, allRecs, fertList){
+  const wrap = document.getElementById('matu-npk-summary-cards');
+  if(!wrap) return;
+  const LEFT_NAMES  = ['그린전면','좌그린'];
+  const RIGHT_NAMES = ['그린전면','우그린'];
+  const TEE_NAME    = '티전면';
+  const CATS = [
+    {label:'🟦 좌그린 기준', match:(n)=>LEFT_NAMES.some(x=>String(n||'').trim()===x)},
+    {label:'🟩 우그린 기준', match:(n)=>RIGHT_NAMES.some(x=>String(n||'').trim()===x)},
+    {label:'⛳ 티전면',      match:(n)=>_searchNorm(n)===_searchNorm(TEE_NAME)},
+  ];
+  const recs = (allRecs||[]).filter(r=>r.date?.startsWith(selYear));
+  const totals = CATS.map(c=>({label:c.label, N:0, P:0, K:0}));
+
+  recs.forEach(r=>{
+    (r.matUseRows||[]).forEach(block=>{
+      const catIdxs = [];
+      CATS.forEach((c,i)=>{ if(c.match(block.areaName)) catIdxs.push(i); });
+      if(!catIdxs.length) return;
+      (block.items||[]).forEach(item=>{
+        if(item.type!=='fert') return;
+        const amtG = parseGram(item.amount);
+        if(!amtG) return;
+        let p = (item._listIdx!==undefined) ? fertList[item._listIdx] : null;
+        if(!p || (p.name&&item.brandName&&p.name.trim()!==String(item.brandName).trim())){
+          p = fertList.find(f=>f.name.trim()===String(item.brandName||'').trim());
+        }
+        if(!p) return;
+        ['N','P','K'].forEach(n=>{
+          const ratio = parseFloat(p[n]);
+          if(!isNaN(ratio) && ratio>0){
+            const g = amtG*ratio/100;
+            catIdxs.forEach(ci=>{ totals[ci][n]+=g; });
+          }
+        });
+      });
+    });
+  });
+
+  wrap.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;margin-bottom:12px;">
+      ${totals.map(t=>`
+        <div style="border:1.5px solid #c2dda8;border-radius:10px;padding:9px 12px;background:#f8fff4;">
+          <div style="font-size:11.5px;font-weight:800;color:#2d6a1e;margin-bottom:5px;">${t.label} <span style="font-weight:600;color:#9ab789;">· ${selYear}년</span></div>
+          <div style="display:flex;gap:11px;font-size:12.5px;font-weight:700;">
+            <span style="color:#1a5fa8;">N ${t.N.toFixed(1)}g</span>
+            <span style="color:#c0392b;">P ${t.P.toFixed(1)}g</span>
+            <span style="color:#7B4F00;">K ${t.K.toFixed(1)}g</span>
+          </div>
+        </div>`).join('')}
+    </div>`;
+}
+
 function renderMatUsePanel(page){
   const chartWrap  = document.getElementById('matu-chart-wrap');
   const legendWrap = document.getElementById('matu-legend');
@@ -9079,6 +9135,7 @@ function renderMatUsePanel(page){
   for(let m=1;m<=12;m++) monthData[m] = {};
 
   const fertList = getFertList();
+  renderNpkSummaryCards(selYear, allRecs, fertList);
 
   recs.forEach(r=>{
     const mo = parseInt(r.date?.slice(5,7));
@@ -11326,12 +11383,14 @@ function showPdfGuide(ri){
 <!-- ══════════════ 자재정보 ══════════════ -->
 <div class="panel" id="panel-matuse" style="padding:12px;">
 
-  <!-- 1행: 타이틀 + 우측 select 그룹 -->
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px;">
-    <div style="font-size:15px;font-weight:800;color:#2d6a1e;display:flex;align-items:center;gap:8px;">
+  <!-- 1행: 타이틀 + N·P·K 요약 카드(좌그린/우그린/티전면) + 우측 select 그룹 -->
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:10px 14px;">
+    <div style="font-size:15px;font-weight:800;color:#2d6a1e;display:flex;align-items:center;gap:8px;padding-top:4px;flex-shrink:0;">
       🧪 자재사용량 분석
     </div>
-    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+    <!-- 처리지역(좌그린/우그린/티전면) 기준 N·P·K 순성분 요약 카드 -->
+    <div id="matu-npk-summary-cards" style="flex:1 1 320px;min-width:260px;"></div>
+    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;flex-shrink:0;">
       <select id="matu-year" onchange="renderMatUsePanel()"
         style="padding:5px 10px;border:1.5px solid #c2dda8;border-radius:7px;font-size:12px;font-weight:700;color:#2d6a1e;background:#f8fff4;">
       </select>
