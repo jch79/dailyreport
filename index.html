@@ -3030,6 +3030,19 @@ function calcIrrTotal(){
     grand+=v.total;
     const el=document.getElementById(`irr-${z.key}-sum`);
     if(el)el.textContent=`합 ${v.total}분`;
+    /* 관수 물량(톤) = (자동+수동 관수 시간 합, 분) × 분당물량(L/min) ÷ 1000 */
+    const volEl=document.getElementById(`irr-${z.key}-vol`);
+    if(volEl){
+      if(z.flowRate){
+        const liters=v.total*z.flowRate;
+        const tons=liters/1000;
+        volEl.textContent=`💧 ${tons.toFixed(2)}톤`;
+        volEl.title=`${z.valveNo?`전자변수 ${z.valveNo} · `:''}분당물량 ${z.flowRate}L/min × ${v.total}분 = ${liters.toFixed(0)}L`;
+      } else {
+        volEl.textContent='⚙ 물량 미설정 (탭하여 설정)';
+        volEl.title='';
+      }
+    }
   });
   document.getElementById('irr-total').textContent=grand;
 }
@@ -3080,6 +3093,8 @@ function renderIrrZoneCards(){
         <span>${z.label}</span>
         <div style="display:flex;align-items:center;gap:4px;">
           <span id="irr-${z.key}-sum" style="font-size:10px;color:rgba(255,255,255,0.85);font-weight:600;">합 0분</span>
+          <button onclick="openIrrZoneFlowModal('${z.key}')" title="전자변수/분당물량 설정 → 관수 물량(톤) 자동계산"
+            style="background:rgba(255,255,255,0.25);border:none;border-radius:3px;color:#fff;font-size:10px;font-weight:700;padding:0 4px;cursor:pointer;line-height:1.4;">⚙</button>
           <button onclick="deleteIrrZone('${z.key}')" title="${z.label} 구역 삭제"
             style="background:rgba(255,255,255,0.25);border:none;border-radius:3px;color:#fff;font-size:10px;font-weight:700;padding:0 4px;cursor:pointer;line-height:1.4;">✕</button>
         </div>
@@ -3102,6 +3117,8 @@ function renderIrrZoneCards(){
           </div>
         </div>
       </div>
+      <div id="irr-${z.key}-vol" onclick="openIrrZoneFlowModal('${z.key}')"
+        style="text-align:center;font-size:10px;font-weight:700;color:${c};padding:3px 4px 5px;cursor:pointer;border-top:1px dashed ${border};">물량 미설정</div>
     </div>`;
   }).join('');
   // 구역 추가 버튼
@@ -3135,6 +3152,64 @@ function deleteIrrZone(key){
   calcIrrTotal();
   renderIrrBarChart();
   showToast(`"${z.label}" 구역을 삭제했습니다`);
+}
+
+/* ── 구역별 전자변수/분당물량 설정 → 관수 물량(톤) 자동계산 ──
+   구역 카드의 ⚙ 버튼(또는 물량 표시줄)을 누르면 뜨는 모달. 여기서
+   전자변수(밸브 번호 등 식별용, 선택)와 분당물량(L/min, 필수)을 입력해두면,
+   그 구역의 자동+수동 관수 시간 합(분) × 분당물량으로 관수 물량(톤)을
+   계산해 카드에 항상 표시한다. */
+function openIrrZoneFlowModal(key){
+  const zones=getIrrZones();
+  const z=zones.find(x=>x.key===key);
+  if(!z)return;
+  let modal=document.getElementById('irr-flow-modal');
+  if(!modal){
+    modal=document.createElement('div');
+    modal.id='irr-flow-modal';
+    modal.className='modal-wrap';
+    modal.onclick=(e)=>{ if(e.target===modal) modal.style.display='none'; };
+    modal.innerHTML=`<div class="modal" style="max-width:360px;">
+      <div class="modal-hdr">
+        <div class="modal-ttl">💧 <span id="irr-flow-modal-title"></span> 물량 설정</div>
+        <button class="btn btn-sm" onclick="document.getElementById('irr-flow-modal').style.display='none'">닫기</button>
+      </div>
+      <div style="font-size:11.5px;color:#666;margin-bottom:12px;line-height:1.6;">
+        전자변수(밸브 번호 등)와 분당물량을 입력해두면,<br>
+        <b>자동+수동 관수 시간 합 × 분당물량</b>으로 관수 물량(톤)을<br>
+        자동 계산해 카드에 표시합니다.
+      </div>
+      <label style="font-size:11.5px;font-weight:700;color:#555;">전자변수 (밸브 번호 등, 선택)</label>
+      <input id="irr-flow-modal-valve" type="text" placeholder="예: SV-12"
+        style="width:100%;box-sizing:border-box;margin:4px 0 12px;padding:8px 10px;border:1.5px solid #ccc;border-radius:7px;font-size:13px;">
+      <label style="font-size:11.5px;font-weight:700;color:#555;">분당물량 (L/min)</label>
+      <input id="irr-flow-modal-rate" type="number" min="0" step="0.1" placeholder="예: 120"
+        style="width:100%;box-sizing:border-box;margin:4px 0 16px;padding:8px 10px;border:1.5px solid #ccc;border-radius:7px;font-size:13px;">
+      <button onclick="saveIrrZoneFlow()" style="width:100%;padding:10px;border:none;border-radius:8px;background:#185FA5;color:#fff;font-size:13px;font-weight:700;cursor:pointer;">저장</button>
+    </div>`;
+    document.body.appendChild(modal);
+  }
+  modal.dataset.zoneKey=key;
+  document.getElementById('irr-flow-modal-title').textContent=z.label;
+  document.getElementById('irr-flow-modal-valve').value=z.valveNo||'';
+  document.getElementById('irr-flow-modal-rate').value=(z.flowRate!=null)?z.flowRate:'';
+  modal.style.display='flex';
+}
+function saveIrrZoneFlow(){
+  const modal=document.getElementById('irr-flow-modal');
+  const key=modal?.dataset.zoneKey;
+  const zones=getIrrZones();
+  const z=zones.find(x=>x.key===key);
+  if(!z)return;
+  const valveNo=document.getElementById('irr-flow-modal-valve').value.trim();
+  const rate=parseFloat(document.getElementById('irr-flow-modal-rate').value);
+  z.valveNo=valveNo||null;
+  z.flowRate=(!isNaN(rate)&&rate>0)?rate:null;
+  setIrrZones(zones);
+  modal.style.display='none';
+  renderIrrZoneCards();
+  calcIrrTotal();
+  showToast(`"${z.label}" 물량 설정을 저장했습니다`);
 }
 
 /* ── 구역 추가 모달 ── */
@@ -7686,9 +7761,14 @@ function renderElapsedItems(){
     const ended=!!it.endDate;
     const [sy,smo,sd]=it.startDate.split('-');
     const startLabel=`${parseInt(smo)}월${parseInt(sd)}일`;
+    let endLabel='';
+    if(ended){
+      const [ey,emo,ed]=it.endDate.split('-');
+      endLabel=`${parseInt(emo)}월${parseInt(ed)}일`;
+    }
     return`<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid ${ended?'#e5d5c0':'#f0dcc0'};background:${ended?'#faf6ef':'#fffaf2'};border-radius:8px;margin-bottom:6px;flex-wrap:wrap;">
       <div style="flex:1;min-width:160px;">
-        <div style="font-weight:700;font-size:12.5px;color:#8a4b00;">${matEscHtml(it.name)} <span style="font-weight:500;color:#b08a5a;font-size:10.5px;">· 시작일: ${startLabel}</span>${ended?' <span style="font-weight:500;color:#c0392b;font-size:10px;">(종료됨)</span>':''}</div>
+        <div style="font-weight:700;font-size:12.5px;color:#8a4b00;">${matEscHtml(it.name)} <span style="font-weight:500;color:#b08a5a;font-size:10.5px;">· 시작일: ${startLabel}</span>${ended?` <span style="font-weight:500;color:#c0392b;font-size:10px;">(종료일: ${endLabel})</span>`:''}</div>
         <input type="text" value="${matEscHtml(it.content)}" placeholder="내용 (예: 라지패치 전면처리)" ${ended?'disabled':''}
           onchange="updateElapsedContent('${it.id}',this.value)"
           style="width:100%;margin-top:3px;font-size:11px;color:#555;border:1px solid #eadcc4;border-radius:5px;padding:3px 6px;background:${ended?'#f2ede4':'#fff'};box-sizing:border-box;">
