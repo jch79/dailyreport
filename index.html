@@ -793,9 +793,9 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
   </div>
   <!-- 2행: 탭 + 액션 버튼 (가로 스크롤) -->
   <div class="nav-row2">
-    <div class="nav-tab active" onclick="showPanel('write',this)">✏️ 작성</div>
+    <div class="nav-tab" onclick="showPanel('write',this)">✏️ 작성</div>
     <div class="nav-tab" onclick="showPanel('search',this)">🔍 검색</div>
-    <div class="nav-tab" onclick="showPanel('history',this)">📋 기록</div>
+    <div class="nav-tab active" onclick="showPanel('history',this)">📋 기록</div>
     <div class="nav-tab" onclick="showPanel('stats',this)">📊 통계</div>
     <div class="nav-tab" onclick="showPanel('materials',this)">🌿 자재정보</div>
     <div class="nav-tab" onclick="showPanel('matuse',this);renderMatUsePanel()">🧪 자재사용량</div>
@@ -833,7 +833,7 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
 </div>
 
 <!-- ══════════════ 작성 ══════════════ -->
-<div class="panel active" id="panel-write">
+<div class="panel" id="panel-write">
 
   <!-- 상단 저장/초기화/되돌리기 버튼 + 퀵네비 바: nav 헤더 바로 아래에 함께 고정(엑셀 셀고정처럼) -->
   <div id="write-sticky-top" style="position:sticky;z-index:590;background:#fff;padding-top:8px;">
@@ -1443,7 +1443,7 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
 </div>
 
 <!-- ══════════════ 기록 ══════════════ -->
-<div class="panel" id="panel-history">
+<div class="panel active" id="panel-history">
   <div style="display:flex;gap:7px;margin-bottom:10px;flex-wrap:wrap;align-items:center;">
     <input type="text" id="hist-search" placeholder="날짜·작업자·작업내용·장비·약품·자재명·성분 검색..." oninput="renderHistory()" style="flex:1;min-width:120px;">
     <select id="hist-month" onchange="renderHistory()" style="min-width:90px;"><option value="">전체 월</option></select>
@@ -7728,8 +7728,9 @@ function _showJustSavedRecord(){
 }
 
 function init(){
+  /* 로그인 후 처음 보이는 탭: 기록 탭 (예전엔 작성 탭이 기본이었음) */
   document.querySelectorAll('.panel').forEach(p=>p.style.display='none');
-  document.getElementById('panel-write').style.display='block';
+  document.getElementById('panel-history').style.display='block';
   setToday();
   const cn=gcn();document.getElementById('nav-course-name').textContent=cn;document.getElementById('inp-course').value=cn;
   /* 날씨 지역 복원 */
