@@ -136,6 +136,7 @@ async function fbFullSyncFromCloud(){
       if(sh.writeSec)    localStorage.setItem('golf_write_sec_order_v1', JSON.stringify(sh.writeSec));
       if(sh.weatherLoc)  localStorage.setItem('golf_weather_location', JSON.stringify(sh.weatherLoc));
       if(sh.irrZones)    {localStorage.setItem('golf_irr_zones_v1', JSON.stringify(sh.irrZones));if(typeof renderIrrZoneCards==='function'){renderIrrZoneCards();calcIrrTotal();renderIrrBarChart();}}
+      if(sh.npkCards)    localStorage.setItem('golf_matu_npk_cards_v1', JSON.stringify(sh.npkCards));
       if(sh.regLeaveMeta) localStorage.setItem('golf_reg_leave_meta_v1', JSON.stringify(sh.regLeaveMeta));
       if(sh.elapsedItems) {localStorage.setItem('golf_elapsed_items_v1', JSON.stringify(sh.elapsedItems));if(typeof renderElapsedItems==='function') renderElapsedItems();}
       console.log('[FB] 공유 설정 동기화 완료');
@@ -176,6 +177,7 @@ async function fbSaveSharedSettings(){
     const ws=localStorage.getItem('golf_write_sec_order_v1'); if(ws) settings.writeSec=JSON.parse(ws);
     const wl=localStorage.getItem('golf_weather_location'); if(wl) settings.weatherLoc=JSON.parse(wl);
     const iz=localStorage.getItem('golf_irr_zones_v1'); if(iz) settings.irrZones=JSON.parse(iz);
+    const nc=localStorage.getItem('golf_matu_npk_cards_v1'); if(nc) settings.npkCards=JSON.parse(nc);
     const rl=localStorage.getItem('golf_reg_leave_meta_v1'); if(rl) settings.regLeaveMeta=JSON.parse(rl);
     const el=localStorage.getItem('golf_elapsed_items_v1'); if(el) settings.elapsedItems=JSON.parse(el);
     settings._updatedAt = firebase.firestore.FieldValue.serverTimestamp();
@@ -7309,7 +7311,7 @@ function checkBackupReminder(){
 function exportDataFile(){
   /* 모든 localStorage 키 수집 */
   const allKeys=[SK,PK,RK,CNK,RATE_KEY,DSK,WCK,LOC_KEY,IRR_ZONES_KEY,MAT_PEST_KEY,MAT_FERT_KEY,MAT_AREA_PRESET_KEY,
-    TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY];
+    TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY];
   const exportObj={};
   allKeys.forEach(k=>{
     const v=localStorage.getItem(k);
@@ -7389,7 +7391,7 @@ function importDataFile(event){
 
       /* 기존 관련 키 지우기 */
       [SK,PK,RK,CNK,RATE_KEY,DSK,WCK,LOC_KEY,IRR_ZONES_KEY,MAT_PEST_KEY,MAT_FERT_KEY,MAT_AREA_PRESET_KEY,
-        TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY].forEach(k=>localStorage.removeItem(k));
+        TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY].forEach(k=>localStorage.removeItem(k));
 
       /* 새 데이터 적재 */
       importedKeys.forEach(k=>{
@@ -9006,28 +9008,49 @@ function moveCol(blockId, colIdx, dir){
 /* ── 자재사용량 월별 차트 페이지 상태 ── */
 let _matuChartPage = 0; /* 0~1 (6개씩 2페이지) */
 
-/* ── 처리지역별(좌그린/우그린/티전면) N·P·K 순성분 요약 카드 ──
-   "자재사용량 분석" 제목 위에, 상단 지역 필터와 무관하게 항상 세 지역 기준을
-   한눈에 볼 수 있도록 표시. 선택된 연도(matu-year) 전체 기간 합계임. */
+/* ── 처리지역별 N·P·K 순성분 요약 카드 (추가/삭제 가능) ──
+   "자재사용량 분석" 제목 옆에, 상단 지역 필터와 무관하게 사용자가 고른
+   처리지역 기준들을 한눈에 볼 수 있도록 표시. 선택된 연도(matu-year)
+   전체 기간 합계임. 관수 기록의 "구역별 관수 시간" 카드처럼 카드를
+   추가/삭제할 수 있음 — 저장된 카드 구성은 golf_matu_npk_cards_v1 에 보관. */
+const NPK_CARDS_KEY='golf_matu_npk_cards_v1';
+const NPK_LEFT_NAMES  = ['그린전면','좌그린'];
+const NPK_RIGHT_NAMES = ['그린전면','우그린'];
+function getNpkCards(){
+  try{
+    const s=localStorage.getItem(NPK_CARDS_KEY);
+    if(s)return JSON.parse(s);
+  }catch(e){}
+  /* 처음 사용 시 기본 3개(좌그린/우그린/티전면 기준) */
+  return [
+    {id:'__left_green__', label:'🟦 좌그린 기준'},
+    {id:'__right_green__',label:'🟩 우그린 기준'},
+    {id:'티전면',          label:'⛳ 티전면'},
+  ];
+}
+function setNpkCards(cards){
+  try{
+    localStorage.setItem(NPK_CARDS_KEY,JSON.stringify(cards));
+    if(typeof fbSaveSharedSettings==='function')setTimeout(fbSaveSharedSettings,500);
+  }catch(e){}
+}
+function npkCardMatch(card,blockName){
+  if(card.id==='__left_green__')  return NPK_LEFT_NAMES.some(x=>String(blockName||'').trim()===x);
+  if(card.id==='__right_green__') return NPK_RIGHT_NAMES.some(x=>String(blockName||'').trim()===x);
+  return _searchNorm(blockName)===_searchNorm(card.id);
+}
 function renderNpkSummaryCards(selYear, allRecs, fertList){
   const wrap = document.getElementById('matu-npk-summary-cards');
   if(!wrap) return;
-  const LEFT_NAMES  = ['그린전면','좌그린'];
-  const RIGHT_NAMES = ['그린전면','우그린'];
-  const TEE_NAME    = '티전면';
-  const CATS = [
-    {label:'🟦 좌그린 기준', match:(n)=>LEFT_NAMES.some(x=>String(n||'').trim()===x)},
-    {label:'🟩 우그린 기준', match:(n)=>RIGHT_NAMES.some(x=>String(n||'').trim()===x)},
-    {label:'⛳ 티전면',      match:(n)=>_searchNorm(n)===_searchNorm(TEE_NAME)},
-  ];
+  const cards = getNpkCards();
   const recs = (allRecs||[]).filter(r=>r.date?.startsWith(selYear));
-  const totals = CATS.map(c=>({label:c.label, N:0, P:0, K:0}));
+  const totals = cards.map(c=>({id:c.id, label:c.label, N:0, P:0, K:0}));
 
   recs.forEach(r=>{
     (r.matUseRows||[]).forEach(block=>{
-      const catIdxs = [];
-      CATS.forEach((c,i)=>{ if(c.match(block.areaName)) catIdxs.push(i); });
-      if(!catIdxs.length) return;
+      const cardIdxs = [];
+      cards.forEach((c,i)=>{ if(npkCardMatch(c,block.areaName)) cardIdxs.push(i); });
+      if(!cardIdxs.length) return;
       (block.items||[]).forEach(item=>{
         if(item.type!=='fert') return;
         const amtG = parseGram(item.amount);
@@ -9041,7 +9064,7 @@ function renderNpkSummaryCards(selYear, allRecs, fertList){
           const ratio = parseFloat(p[n]);
           if(!isNaN(ratio) && ratio>0){
             const g = amtG*ratio/100;
-            catIdxs.forEach(ci=>{ totals[ci][n]+=g; });
+            cardIdxs.forEach(ci=>{ totals[ci][n]+=g; });
           }
         });
       });
@@ -9051,15 +9074,87 @@ function renderNpkSummaryCards(selYear, allRecs, fertList){
   wrap.innerHTML = `
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;margin-bottom:12px;">
       ${totals.map(t=>`
-        <div style="border:1.5px solid #c2dda8;border-radius:10px;padding:9px 12px;background:#f8fff4;">
-          <div style="font-size:11.5px;font-weight:800;color:#2d6a1e;margin-bottom:5px;">${t.label} <span style="font-weight:600;color:#9ab789;">· ${selYear}년</span></div>
+        <div style="position:relative;border:1.5px solid #c2dda8;border-radius:10px;padding:9px 12px;background:#f8fff4;">
+          <button onclick="deleteNpkCard('${String(t.id).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;')}')" title="카드 삭제"
+            style="position:absolute;top:5px;right:6px;background:none;border:none;color:#b7cfa5;font-size:12px;font-weight:700;cursor:pointer;line-height:1;padding:2px;">✕</button>
+          <div style="font-size:11.5px;font-weight:800;color:#2d6a1e;margin-bottom:5px;padding-right:14px;">${matEscHtml(t.label)} <span style="font-weight:600;color:#9ab789;">· ${selYear}년</span></div>
           <div style="display:flex;gap:11px;font-size:12.5px;font-weight:700;">
             <span style="color:#1a5fa8;">N ${t.N.toFixed(1)}g</span>
             <span style="color:#c0392b;">P ${t.P.toFixed(1)}g</span>
             <span style="color:#7B4F00;">K ${t.K.toFixed(1)}g</span>
           </div>
         </div>`).join('')}
+      <div onclick="openAddNpkCardModal()"
+        style="border:2px dashed #ccc;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;min-height:56px;background:#fafafa;transition:background .15s;"
+        onmouseover="this.style.background='#f0f7ff'" onmouseout="this.style.background='#fafafa'">
+        <span style="font-size:17px;color:#aaa;line-height:1;">+</span>
+        <span style="font-size:10px;color:#aaa;font-weight:600;">카드 추가</span>
+      </div>
     </div>`;
+}
+
+/* ── 카드 삭제 ── */
+function deleteNpkCard(id){
+  const cards=getNpkCards();
+  const c=cards.find(x=>x.id===id);
+  if(!c)return;
+  if(!confirm(`"${c.label}" 카드를 삭제하시겠습니까?`))return;
+  setNpkCards(cards.filter(x=>x.id!==id));
+  renderMatUsePanel();
+  showToast(`"${c.label}" 카드를 삭제했습니다`);
+}
+
+/* ── 카드 추가 모달: 실제 저장된 기록에 등장한 처리지역 목록 + 좌/우그린 기준 프리셋 중에서 선택 ── */
+function openAddNpkCardModal(){
+  const existIds=new Set(getNpkCards().map(c=>c.id));
+  const allAreasSet=new Set();
+  gd().forEach(r=>(r.matUseRows||[]).forEach(b=>{ if(b.areaName) allAreasSet.add(String(b.areaName).trim()); }));
+  const presetOpts=[
+    {id:'__left_green__', label:'🟦 좌그린 기준 (그린전면+좌그린)'},
+    {id:'__right_green__',label:'🟩 우그린 기준 (그린전면+우그린)'},
+  ].filter(p=>!existIds.has(p.id));
+  const areaOpts=getOrderedAreas([...allAreasSet]).filter(a=>!existIds.has(a));
+
+  const btnStyle='padding:6px 11px;border:1.5px solid #97C459;border-radius:6px;background:#fff;color:#2d6a1e;font-size:12px;font-weight:700;cursor:pointer;';
+  /* onclick="..." 속성 안에 안전하게 넣기 위한 이스케이프(JS 문자열 이스케이프 + 속성 경계용 큰따옴표 이스케이프) */
+  function escAttr(s){ return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  const presetHtml=presetOpts.map(p=>`<button onclick="addNpkCard('${escAttr(p.id)}','${escAttr(p.label)}')" style="${btnStyle}">${matEscHtml(p.label)}</button>`).join('');
+  const areaHtml=areaOpts.map(a=>{
+    return`<button onclick="addNpkCard('${escAttr(a)}','${escAttr('📍 '+a)}')" style="${btnStyle}">📍 ${matEscHtml(a)}</button>`;
+  }).join('');
+
+  let body=`<div style="font-size:11.5px;color:#555;margin-bottom:10px;">카드로 추가할 처리지역 기준을 선택하세요.</div>`;
+  if(presetHtml) body+=`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">${presetHtml}</div>`;
+  if(areaHtml) body+=`<div style="display:flex;flex-wrap:wrap;gap:6px;">${areaHtml}</div>`;
+  if(!presetHtml && !areaHtml) body+=`<div style="font-size:12px;color:#aaa;padding:10px 0;">추가할 수 있는 처리지역이 없습니다.<br>이미 모든 지역이 카드로 추가되어 있거나, 자재사용 기록에 저장된 처리지역이 없습니다.</div>`;
+
+  let modal=document.getElementById('add-npk-card-modal');
+  if(!modal){
+    modal=document.createElement('div');
+    modal.id='add-npk-card-modal';
+    modal.className='modal-wrap';
+    modal.onclick=(e)=>{ if(e.target===modal) modal.style.display='none'; };
+    modal.innerHTML=`<div class="modal" style="max-width:420px;">
+      <div class="modal-hdr">
+        <div class="modal-ttl">➕ N·P·K 카드 추가</div>
+        <button class="btn btn-sm" onclick="document.getElementById('add-npk-card-modal').style.display='none'">닫기</button>
+      </div>
+      <div id="add-npk-card-modal-body"></div>
+    </div>`;
+    document.body.appendChild(modal);
+  }
+  document.getElementById('add-npk-card-modal-body').innerHTML=body;
+  modal.style.display='flex';
+}
+function addNpkCard(id,label){
+  const cards=getNpkCards();
+  if(cards.some(c=>c.id===id)){showToast('⚠️ 이미 추가된 카드입니다');return;}
+  cards.push({id,label});
+  setNpkCards(cards);
+  const modal=document.getElementById('add-npk-card-modal');
+  if(modal)modal.style.display='none';
+  renderMatUsePanel();
+  showToast(`"${label}" 카드를 추가했습니다`);
 }
 
 function renderMatUsePanel(page){
