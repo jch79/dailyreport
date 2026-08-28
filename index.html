@@ -3028,8 +3028,8 @@ function calcIrrTotal(){
     if(volEl){
       if(z.flowRate){
         const tons=v.total*z.flowRate;
-        volEl.textContent=`💧 ${tons.toFixed(2)}톤`;
-        volEl.title=`${z.valveNo?`전자변수 ${z.valveNo} · `:''}분당물량 ${z.flowRate}ton/min × ${v.total}분 = ${tons.toFixed(2)}톤`;
+        volEl.textContent=`💧 ${_fmtTons(tons)}톤`;
+        volEl.title=`${z.valveNo?`전자변수 ${z.valveNo} · `:''}분당물량 ${z.flowRate}ton/min × ${v.total}분 = ${_fmtTons(tons)}톤`;
       } else {
         volEl.textContent='⚙ 물량 미설정 (탭하여 설정)';
         volEl.title='';
@@ -3493,6 +3493,10 @@ function sumIrrTons(records){
   return tons;
 }
 
+/* ── 큰 톤수를 천단위 콤마와 소수점 2자리로 표기 (예: 66,728.25) ── */
+function _fmtTons(n){
+  return(n||0).toLocaleString('ko-KR',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
 function renderIrrBarChart(page){
   if(typeof page==='number')_irrPage=page;
   const el=document.getElementById('irr-bar-chart');
@@ -3672,9 +3676,9 @@ function renderIrrBarChart(page){
     <div style="margin-top:8px;padding:7px 10px;background:#f5f8ff;border:1px solid #daeaf9;border-radius:8px;font-size:11px;color:#555;">
       <span style="font-weight:700;color:#185FA5;margin-right:6px;">💧 사용물량 집계</span>
       ${hasAnyFlowRate?`
-        <span style="margin-right:10px;">연간사용량 <b style="color:#185FA5;">${yearTons.toFixed(2)}톤</b></span>
-        <span style="margin-right:10px;">${curMM}월 사용량 <b style="color:#185FA5;">${monthTons.toFixed(2)}톤</b></span>
-        <span>금일사용량 <b style="color:#185FA5;">${todayTons.toFixed(2)}톤</b></span>
+        <span style="margin-right:10px;">연간사용량 <b style="color:#185FA5;">${_fmtTons(yearTons)}톤</b></span>
+        <span style="margin-right:10px;">${curMM}월 사용량 <b style="color:#185FA5;">${_fmtTons(monthTons)}톤</b></span>
+        <span>금일사용량 <b style="color:#185FA5;">${_fmtTons(todayTons)}톤</b></span>
       `:`<span style="color:#ccc;">구역 카드의 ⚙ 버튼에서 분당물량(ton/min)을 설정하면 사용물량이 표시됩니다</span>`}
     </div>`;
 }
