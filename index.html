@@ -7827,6 +7827,14 @@ function applyDatePicker(val){
   window._bsManualNav={}; /* 볼스피드 수동이동 리셋 */
   renderTempChart();
   renderElapsedItems();
+
+  /* 날짜 피커로 고른 날짜에 이미 저장된 기록이 있으면 불러올지 물어봄 —
+     안 그러면 관수 시간 등 그 날짜에 저장해둔 내용이 화면에 반영되지 않아서
+     "분명 저장했는데 안 보인다"는 혼란을 준다. (차트는 저장된 데이터를 직접
+     읽어 그리므로 정상 표시되지만, 작성 폼의 입력칸들은 그대로 남아있었음) */
+  const dateLabel=formatDateStr(yyyy,mm,dd);
+  const idx=gd().findIndex(r=>r.date===dateLabel);
+  if(idx>=0) loadForEdit(idx);
 }
 function setToday(){
   const t=new Date();
