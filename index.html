@@ -1197,14 +1197,7 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
       <span style="display:inline-block;width:4px;height:14px;border-radius:2px;background:#378ADD;"></span>
       최근 30일 관수 현황
     </div>
-    <!-- 집계 기간 선택 -->
-    <div id="irr-sum-btns" style="display:flex;gap:4px;margin-bottom:4px;flex-wrap:wrap;">
-      <span style="font-size:10px;color:#888;align-self:center;">합계 기간:</span>
-      <button onclick="setIrrSumDays(5)" id="irr-sum-5" style="font-size:10px;padding:2px 8px;border:1.5px solid #85B7EB;border-radius:5px;background:#fff;color:#185FA5;cursor:pointer;font-weight:700;">5일</button>
-      <button onclick="setIrrSumDays(7)" id="irr-sum-7" style="font-size:10px;padding:2px 8px;border:1.5px solid #85B7EB;border-radius:5px;background:#185FA5;color:#fff;cursor:pointer;font-weight:700;">7일</button>
-      <button onclick="setIrrSumDays(10)" id="irr-sum-10" style="font-size:10px;padding:2px 8px;border:1.5px solid #85B7EB;border-radius:5px;background:#fff;color:#185FA5;cursor:pointer;font-weight:700;">10일</button>
-      <button onclick="setIrrSumDays(15)" id="irr-sum-15" style="font-size:10px;padding:2px 8px;border:1.5px solid #85B7EB;border-radius:5px;background:#fff;color:#185FA5;cursor:pointer;font-weight:700;">15일</button>
-    </div>
+    <!-- (예전 "집계 기간 5/7/10/15일" 선택 버튼 — 사용물량 집계로 대체되며 더 이상 쓰이지 않아 제거) -->
     <div id="irr-bar-chart" style="margin-bottom:4px;min-width:0;overflow:hidden;"></div>
 
     <!-- 최근 10일 TDR350 측정값 (나중) -->
@@ -3030,14 +3023,13 @@ function calcIrrTotal(){
     grand+=v.total;
     const el=document.getElementById(`irr-${z.key}-sum`);
     if(el)el.textContent=`합 ${v.total}분`;
-    /* 관수 물량(톤) = (자동+수동 관수 시간 합, 분) × 분당물량(L/min) ÷ 1000 */
+    /* 관수 물량(톤) = (자동+수동 관수 시간 합, 분) × 분당물량(ton/min) */
     const volEl=document.getElementById(`irr-${z.key}-vol`);
     if(volEl){
       if(z.flowRate){
-        const liters=v.total*z.flowRate;
-        const tons=liters/1000;
+        const tons=v.total*z.flowRate;
         volEl.textContent=`💧 ${tons.toFixed(2)}톤`;
-        volEl.title=`${z.valveNo?`전자변수 ${z.valveNo} · `:''}분당물량 ${z.flowRate}L/min × ${v.total}분 = ${liters.toFixed(0)}L`;
+        volEl.title=`${z.valveNo?`전자변수 ${z.valveNo} · `:''}분당물량 ${z.flowRate}ton/min × ${v.total}분 = ${tons.toFixed(2)}톤`;
       } else {
         volEl.textContent='⚙ 물량 미설정 (탭하여 설정)';
         volEl.title='';
@@ -3156,7 +3148,7 @@ function deleteIrrZone(key){
 
 /* ── 구역별 전자변수/분당물량 설정 → 관수 물량(톤) 자동계산 ──
    구역 카드의 ⚙ 버튼(또는 물량 표시줄)을 누르면 뜨는 모달. 여기서
-   전자변수(밸브 번호 등 식별용, 선택)와 분당물량(L/min, 필수)을 입력해두면,
+   전자변수(밸브 번호 등 식별용, 선택)와 분당물량(ton/min, 필수)을 입력해두면,
    그 구역의 자동+수동 관수 시간 합(분) × 분당물량으로 관수 물량(톤)을
    계산해 카드에 항상 표시한다. */
 function openIrrZoneFlowModal(key){
@@ -3182,8 +3174,8 @@ function openIrrZoneFlowModal(key){
       <label style="font-size:11.5px;font-weight:700;color:#555;">전자변수 (밸브 번호 등, 선택)</label>
       <input id="irr-flow-modal-valve" type="text" placeholder="예: SV-12"
         style="width:100%;box-sizing:border-box;margin:4px 0 12px;padding:8px 10px;border:1.5px solid #ccc;border-radius:7px;font-size:13px;">
-      <label style="font-size:11.5px;font-weight:700;color:#555;">분당물량 (L/min)</label>
-      <input id="irr-flow-modal-rate" type="number" min="0" step="0.1" placeholder="예: 120"
+      <label style="font-size:11.5px;font-weight:700;color:#555;">분당물량 (ton/min)</label>
+      <input id="irr-flow-modal-rate" type="number" min="0" step="0.01" placeholder="예: 6.50"
         style="width:100%;box-sizing:border-box;margin:4px 0 16px;padding:8px 10px;border:1.5px solid #ccc;border-radius:7px;font-size:13px;">
       <button onclick="saveIrrZoneFlow()" style="width:100%;padding:10px;border:none;border-radius:8px;background:#185FA5;color:#fff;font-size:13px;font-weight:700;cursor:pointer;">저장</button>
     </div>`;
@@ -3462,6 +3454,45 @@ function irrNav(page){
   renderIrrBarChart(page);
 }
 
+/* ── 구역별 관수 시간 합산 — 저장 키 패턴 모두 포함 (여러 화면에서 공용) ── */
+function getZoneTotal(irr,key){
+  if(key==='green-left'){
+    /* v52: gl_a/gl_m | v50: green-left_auto | v49: green_left_auto | 구버전: green_auto */
+    const a=parseInt(irr.gl_a)||parseInt(irr['green-left_auto'])||parseInt(irr.green_left_auto)||parseInt(irr.green_auto)||0;
+    const m=parseInt(irr.gl_m)||parseInt(irr['green-left_man']) ||parseInt(irr.green_left_man) ||parseInt(irr.green_man) ||0;
+    return a+m;
+  }
+  if(key==='green-right'){
+    /* v52: gr_a/gr_m | v50: green-right_auto | v49: green_right_auto */
+    const a=parseInt(irr.gr_a)||parseInt(irr['green-right_auto'])||parseInt(irr.green_right_auto)||0;
+    const m=parseInt(irr.gr_m)||parseInt(irr['green-right_man']) ||parseInt(irr.green_right_man) ||0;
+    return a+m;
+  }
+  /* 동적 추가 구역 — key_auto / key_man 패턴 */
+  return(parseInt(irr[key+'_auto'])||parseInt(irr[key])||0)+(parseInt(irr[key+'_man'])||0);
+}
+/* ── 특정 날짜 문자열("26년 08월 27일 (목)")에서 연/월/일 추출 ── */
+function _irrParseDate(dateStr){
+  const m=String(dateStr||'').match(/(\d+)년\s*(\d+)월\s*(\d+)일/);
+  if(!m)return null;
+  const yy=parseInt(m[1]);
+  return{yyyy:yy<50?2000+yy:1900+yy, mm:parseInt(m[2]), dd:parseInt(m[3])};
+}
+/* ── 레코드 목록의 관수 물량(톤) 합계 — 구역별 분당물량(ton/min) × 관수시간(분) ── */
+function sumIrrTons(records){
+  const zones=getIrrZones();
+  let tons=0;
+  records.forEach(r=>{
+    const irr=r.irrigation;
+    if(!irr)return;
+    zones.forEach(z=>{
+      if(!z.flowRate)return;
+      tons+=getZoneTotal(irr,z.key)*z.flowRate;
+    });
+  });
+  return tons;
+}
+
 function renderIrrBarChart(page){
   if(typeof page==='number')_irrPage=page;
   const el=document.getElementById('irr-bar-chart');
@@ -3494,23 +3525,7 @@ function renderIrrBarChart(page){
   /* 오래된→최신 순으로 표시 */
   const recent=sorted.slice(start,start+PAGE).reverse();
 
-  /* 구역별 합산 — 저장 키 패턴 모두 포함 */
-  function getZoneTotal(irr,key){
-    if(key==='green-left'){
-      /* v52: gl_a/gl_m | v50: green-left_auto | v49: green_left_auto | 구버전: green_auto */
-      const a=parseInt(irr.gl_a)||parseInt(irr['green-left_auto'])||parseInt(irr.green_left_auto)||parseInt(irr.green_auto)||0;
-      const m=parseInt(irr.gl_m)||parseInt(irr['green-left_man']) ||parseInt(irr.green_left_man) ||parseInt(irr.green_man) ||0;
-      return a+m;
-    }
-    if(key==='green-right'){
-      /* v52: gr_a/gr_m | v50: green-right_auto | v49: green_right_auto */
-      const a=parseInt(irr.gr_a)||parseInt(irr['green-right_auto'])||parseInt(irr.green_right_auto)||0;
-      const m=parseInt(irr.gr_m)||parseInt(irr['green-right_man']) ||parseInt(irr.green_right_man) ||0;
-      return a+m;
-    }
-    /* 동적 추가 구역 — key_auto / key_man 패턴 */
-    return(parseInt(irr[key+'_auto'])||parseInt(irr[key])||0)+(parseInt(irr[key+'_man'])||0);
-  }
+  /* 구역별 합산 — 저장 키 패턴 모두 포함 (getZoneTotal은 상단 공용 함수 사용) */
 
   const COL_MIN=32;   /* 최소 컬럼 너비 (좁은 창) */
   const COL_MAX=72;   /* 최대 컬럼 너비 (넓은 창) */
@@ -3597,20 +3612,24 @@ function renderIrrBarChart(page){
     `<div style="font-size:9px;color:#bbb;text-align:right;padding-right:4px;">${v}분</div>`
   ).reverse().join('');
 
-  /* 하단 기간 집계 — _irrSumDays 기준으로 최신 N일 */
-  const sumDays=_irrSumDays;
-  /* sorted는 내림차순이므로 앞에서 sumDays개 슬라이스 */
-  const sumData=sorted.slice(0,sumDays);
-  const zoneSums=IRR_ZONES.map((z,zi)=>{
-    const sum=sumData.reduce((s,r)=>s+getZoneTotal(r.irrigation||{},z.key),0);
-    return{z,sum};
+  /* 하단: 사용물량 집계 — 연간/해당월/금일 사용량을 구역별 분당물량(ton/min) 기준으로 합산 */
+  const _todayReal=new Date();
+  const curYYYY=_todayReal.getFullYear(), curMM=_todayReal.getMonth()+1, curDD=_todayReal.getDate();
+  let yearTons=0, monthTons=0, todayTons=0;
+  all.filter(r=>r.irrigation).forEach(r=>{
+    const p=_irrParseDate(r.date);
+    if(!p)return;
+    const tons=sumIrrTons([r]);
+    if(tons<=0)return;
+    if(p.yyyy===curYYYY){
+      yearTons+=tons;
+      if(p.mm===curMM){
+        monthTons+=tons;
+        if(p.dd===curDD) todayTons+=tons;
+      }
+    }
   });
-  const periodTotal=zoneSums.reduce((s,x)=>s+x.sum,0);
-  const summaryItems=zoneSums.filter(x=>x.sum>0).map(x=>
-    `<span style="display:inline-flex;align-items:center;gap:3px;">
-      <span style="width:8px;height:8px;border-radius:2px;background:${x.z.color};display:inline-block;flex-shrink:0;"></span>
-      <b style="color:#333;">${x.z.label}</b> <span style="color:#185FA5;font-weight:700;">${x.sum}분</span>
-    </span>`).join('');
+  const hasAnyFlowRate=getIrrZones().some(z=>z.flowRate);
 
   /* 날짜 범위 */
   const firstLabel=days[0]?.label||'';
@@ -3649,11 +3668,14 @@ function renderIrrBarChart(page){
       ${navBtnIrr(isNewest,`irrNav(${Math.max(0,start-PAGE)})`,'&#8250;','이후 30일')}
     </div>
     ${dots}
-    <!-- 기간 집계 -->
+    <!-- 사용물량 집계 -->
     <div style="margin-top:8px;padding:7px 10px;background:#f5f8ff;border:1px solid #daeaf9;border-radius:8px;font-size:11px;color:#555;">
-      <span style="font-weight:700;color:#185FA5;margin-right:6px;">📊 최근 ${sumDays}일 관수 합계</span>
-      <span style="margin-right:10px;color:#888;">총 <b style="color:#185FA5;">${periodTotal}분</b></span>
-      ${summaryItems||'<span style="color:#ccc;">기록 없음</span>'}
+      <span style="font-weight:700;color:#185FA5;margin-right:6px;">💧 사용물량 집계</span>
+      ${hasAnyFlowRate?`
+        <span style="margin-right:10px;">연간사용량 <b style="color:#185FA5;">${yearTons.toFixed(2)}톤</b></span>
+        <span style="margin-right:10px;">${curMM}월 사용량 <b style="color:#185FA5;">${monthTons.toFixed(2)}톤</b></span>
+        <span>금일사용량 <b style="color:#185FA5;">${todayTons.toFixed(2)}톤</b></span>
+      `:`<span style="color:#ccc;">구역 카드의 ⚙ 버튼에서 분당물량(ton/min)을 설정하면 사용물량이 표시됩니다</span>`}
     </div>`;
 }
 
