@@ -9277,13 +9277,14 @@ function _npkCardMonthlyData(card, selYear, fertList){
   });
   return monthData;
 }
-function _npkCardTrendSvg(monthData){
+function _npkCardTrendSvg(monthData, cardId, selYear){
   const MONTHS_KO=['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
   const NUTR_COLORS2={N:'#1a5fa8',P:'#c0392b',K:'#7B4F00'};
   const NUTR_LABELS2={N:'질소(N)',P:'인산(P)',K:'칼리(K)'};
   const keys=['N','P','K'];
   const seriesData={};
   keys.forEach(k=>{ seriesData[k]=[]; for(let m=1;m<=12;m++) seriesData[k].push(monthData[m][k]||0); });
+  const cardIdArg=`'${String(cardId).replace(/\\/g,'\\\\').replace(/'/g,"\\'")}'`;
 
   const SVG_W=760, SVG_H=280;
   const PAD_L=52, PAD_R=16, PAD_T=20, PAD_B=42;
@@ -9318,10 +9319,11 @@ function _npkCardTrendSvg(monthData){
       if(vals[i]>0){ path+=(inSeg?'L ':'M ')+x+' '+y+' '; inSeg=true; } else inSeg=false;
     }
     paths+=`<path d="${path}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" opacity="0.9"/>`;
-    ptsd.forEach(({v,x,y})=>{
+    ptsd.forEach(({v,i,x,y})=>{
       const lbl=v>=1000?(v/1000).toFixed(1)+'k':v.toFixed(1);
-      dots+=`<text x="${x}" y="${y-9}" text-anchor="middle" font-size="8" font-weight="700" fill="${color}" font-family="맑은 고딕,sans-serif">${lbl}</text>`;
-      dots+=`<circle cx="${x}" cy="${y}" r="4" fill="${color}" stroke="#fff" stroke-width="1.5"/>`;
+      const mo=i+1;
+      dots+=`<text x="${x}" y="${y-9}" text-anchor="middle" font-size="8" font-weight="700" fill="${color}" font-family="맑은 고딕,sans-serif" style="pointer-events:none;">${lbl}</text>`;
+      dots+=`<circle cx="${x}" cy="${y}" r="6" fill="${color}" stroke="#fff" stroke-width="1.5" style="cursor:pointer;" onclick="showMatUseMonthDetail(${mo},${selYear},'${k}',${cardIdArg})"><title>${MONTHS_KO[i]} ${NUTR_LABELS2[k]} ${lbl}g · 탭하여 상세 내역 보기</title></circle>`;
     });
   });
   const legend=keys.map(k=>`
@@ -9359,7 +9361,7 @@ function openNpkCardTrendModal(cardId){
     document.body.appendChild(modal);
   }
   document.getElementById('npk-card-trend-title').textContent=`${card.label} · ${selYear}년`;
-  document.getElementById('npk-card-trend-body').innerHTML=_npkCardTrendSvg(monthData);
+  document.getElementById('npk-card-trend-body').innerHTML=_npkCardTrendSvg(monthData,card.id,selYear);
   modal.style.display='flex';
 }
 
@@ -10576,13 +10578,16 @@ function showMatUseAnnualNutrPopup(){
    월 상세 팝업 (자재사용량 테이블 형태)
    filterNutr : 특정 성분만 필터 (null=전체)
    ══════════════════════════════════════════════ */
-function showMatUseMonthDetail(mo, year, filterNutr){
+function showMatUseMonthDetail(mo, year, filterNutr, areaOverride){
   const MONTHS_KO=['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
   const NUTR_COLORS={N:'#1a5fa8',P:'#c0392b',K:'#7B4F00',Ca:'#6c3483',Mg:'#1a7a6a',Fe:'#d4572a',Mn:'#b8860b',Si:'#607d8b',S:'#8B6914'};
   const NUTRIENTS=['N','P','K','Ca','Mg','Fe','Mn','Si','S'];
 
   const selType = document.getElementById('matu-type')?.value||'fert';
-  const selArea = document.getElementById('matu-area')?.value||'';
+  /* areaOverride가 주어지면(예: N·P·K 카드 팝업에서 진입) 상단 지역 드롭다운과
+     무관하게 그 값을 그대로 지역 필터로 사용 — __left_green__/__right_green__/
+     실제 지역명 문자열 모두 areaMatchP가 이미 그대로 처리 가능함 */
+  const selArea = (areaOverride!==undefined && areaOverride!==null) ? areaOverride : (document.getElementById('matu-area')?.value||'');
   const fertList= getFertList();
   const pestList= getPestList();
   const unit    = selType==='fert' ? 'g' : 'ml';
@@ -10738,17 +10743,21 @@ function showMatUseMonthDetail(mo, year, filterNutr){
     ${nutrTotalCells}
   </tr></tfoot>`;
 
-  /* ── 성분 빠른필터 칩 (비료 모드만) — 항상 전체 성분 기준으로 표시 ── */
+  /* ── 성분 빠른필터 칩 (비료 모드만) — 항상 전체 성분 기준으로 표시 ──
+     areaOverride를 유지한 채 재호출해야 카드에서 진입한 지역 컨텍스트가
+     성분 필터를 바꿔도 계속 유지됨 */
+  const _areaOverrideArg = (areaOverride!==undefined && areaOverride!==null)
+    ? `'${String(areaOverride).replace(/'/g,"\\'")}'` : 'undefined';
   const filterChips = selType==='fert' ? `
     <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px;align-items:center;">
       <span style="font-size:11px;color:#888;font-weight:600;margin-right:2px;">성분 필터:</span>
-      <span onclick="document.getElementById('madu-modal-wrap').remove();showMatUseMonthDetail(${mo},${year},null)"
+      <span onclick="document.getElementById('madu-modal-wrap').remove();showMatUseMonthDetail(${mo},${year},null,${_areaOverrideArg})"
         style="display:inline-flex;align-items:center;gap:3px;padding:3px 10px;border-radius:100px;font-size:11px;font-weight:700;cursor:pointer;
           background:${!filterNutr?'#2d6a1e':'#f0f0f0'};color:${!filterNutr?'#fff':'#555'};border:1.5px solid ${!filterNutr?'#2d6a1e':'#ddd'};">
         전체
       </span>
       ${allUsedNutrs.map(n=>`
-        <span onclick="document.getElementById('madu-modal-wrap').remove();showMatUseMonthDetail(${mo},${year},'${n}')"
+        <span onclick="document.getElementById('madu-modal-wrap').remove();showMatUseMonthDetail(${mo},${year},'${n}',${_areaOverrideArg})"
           style="display:inline-flex;align-items:center;gap:3px;padding:3px 10px;border-radius:100px;font-size:11px;font-weight:700;cursor:pointer;
             background:${filterNutr===n?NUTR_COLORS[n]:'#f5f5f5'};color:${filterNutr===n?'#fff':NUTR_COLORS[n]};
             border:1.5px solid ${NUTR_COLORS[n]};">
@@ -10845,7 +10854,7 @@ function showMatUseMonthDetail(mo, year, filterNutr){
     el.addEventListener('click', ()=>{
       const n = el.dataset.nutr;
       wrap.remove();
-      showMatUseMonthDetail(mo, year, n||null);
+      showMatUseMonthDetail(mo, year, n||null, areaOverride);
     });
   });
 
@@ -10854,7 +10863,7 @@ function showMatUseMonthDetail(mo, year, filterNutr){
     el.addEventListener('click', ()=>{
       const n = el.dataset.nutr;
       wrap.remove();
-      showMatUseMonthDetail(mo, year, n||null);
+      showMatUseMonthDetail(mo, year, n||null, areaOverride);
     });
   });
 }
