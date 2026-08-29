@@ -42,8 +42,15 @@ _fbAuth.setPersistence(firebase.auth.Auth.Persistence.SESSION);
 
 /* ─── 현재 로그인 사용자 정보 ─── */
 let _fbUser    = null;   // firebase.User 객체
-let _fbRole    = null;   // 'admin' | 'member' | 'viewer'
+let _fbRole    = null;   // 'admin' | 'member' | 'partial' | 'viewer'
+let _fbSectionPerms = null; // role이 'partial'일 때만 사용: {weather:true, irr:true, ...} 형태로 섹션별 수정 가능 여부
 let _fbReady   = false;  // Auth 초기화 완료 여부
+
+/* ── 작성 탭 섹션 정의 (팀 관리에서 부분편집 권한을 나눌 때도 이 목록/이름을 그대로 사용) ── */
+const WRITE_SEC_LABELS = {
+  weather:'운영/날씨', ballspeed:'볼스피드', irr:'관수 기록', workers:'작업자',
+  tasks:'작업 내용', notes:'비고', materials_use:'비료·농약 자재 사용', elapsed:'경과일 기록'
+};
 
 /* ─── Firestore 컬렉션 경로 ─── */
 const FB_COL_REPORTS  = 'reports';
@@ -72,6 +79,7 @@ _fbAuth.onAuthStateChanged(async user => {
           return;
         }
         _fbRole = snap.data().role || 'viewer';
+        _fbSectionPerms = snap.data().sectionPerms || null;
       } else {
         await _fbDb.collection(FB_COL_USERS).doc(user.uid).set({
           email: user.email,
@@ -81,10 +89,12 @@ _fbAuth.onAuthStateChanged(async user => {
           approved: false
         });
         _fbRole = 'viewer';
+        _fbSectionPerms = null;
       }
-    }catch(e){ _fbRole = 'viewer'; }
+    }catch(e){ _fbRole = 'viewer'; _fbSectionPerms = null; }
   } else {
     _fbRole = null;
+    _fbSectionPerms = null;
   }
   _fbReady = true;
   fbUpdateUI();
@@ -231,6 +241,38 @@ async function fbSavePresets(list){}
 /* ════════════════════════════════════════════
    UI 업데이트 (로그인/로그아웃 상태 반영)
 ════════════════════════════════════════════ */
+/* ── 섹션별 부분 수정 권한 ──
+   role이 'partial'인 계정은 _fbSectionPerms에 담긴 섹션만 수정 가능.
+   admin/member는 전체, viewer는 전체 불가(기존 로직 그대로 유지). */
+function canEditSection(secId){
+  if(_fbRole==='admin'||_fbRole==='member') return true;
+  if(_fbRole==='partial') return !!(_fbSectionPerms && _fbSectionPerms[secId]);
+  return false;
+}
+/* 작성 탭의 각 섹션(.write-sec-wrap)에 잠금 표시를 달고 CSS로 상호작용을
+   막는다. 섹션 내부 콘텐츠는 이후 다른 함수(initTasks, renderWorkers,
+   renderIrrZoneCards 등)가 계속 innerHTML로 다시 그리지만, 잠금은 바깥
+   래퍼(.write-sec-wrap)에 클래스로 걸어두는 방식이라 내부가 다시 그려져도
+   계속 유지된다 — 매 렌더마다 다시 호출해줄 필요가 없음. */
+function applySectionLocks(){
+  const isFullAccess = (_fbRole==='admin'||_fbRole==='member');
+  document.querySelectorAll('.write-sec-wrap[data-sec-id]').forEach(wrap=>{
+    const secId = wrap.dataset.secId;
+    const editable = isFullAccess || canEditSection(secId);
+    wrap.classList.toggle('sec-locked', !editable);
+    let badge = wrap.querySelector(':scope > .sec-lock-badge');
+    if(!editable){
+      if(!badge){
+        badge = document.createElement('div');
+        badge.className='sec-lock-badge';
+        badge.textContent = `🔒 "${WRITE_SEC_LABELS[secId]||secId}" 섹션은 수정 권한이 없습니다 (열람만 가능)`;
+        wrap.insertBefore(badge, wrap.firstChild);
+      }
+    } else if(badge){
+      badge.remove();
+    }
+  });
+}
 function fbUpdateUI(){
   const bar = document.getElementById('fb-auth-bar');
   if(!bar) return;
@@ -240,8 +282,8 @@ function fbUpdateUI(){
       <span style="font-size:11px;color:#888;">☁️ 클라우드 공유</span>
       <button onclick="fbShowLoginModal()" style="font-size:11px;padding:3px 10px;border:1.5px solid #185FA5;border-radius:6px;background:#f0f6ff;color:#185FA5;cursor:pointer;font-weight:600;">로그인</button>`;
   } else {
-    const roleLabel = {admin:'🔑 관리자', member:'✏️ 팀원', viewer:'👁️ 열람자'}[_fbRole] || '알수없음';
-    const roleColor = {admin:'#c0392b', member:'#185FA5', viewer:'#888'}[_fbRole] || '#888';
+    const roleLabel = {admin:'🔑 관리자', member:'✏️ 팀원', partial:'🧩 부분편집자', viewer:'👁️ 열람자'}[_fbRole] || '알수없음';
+    const roleColor = {admin:'#c0392b', member:'#185FA5', partial:'#B8690A', viewer:'#888'}[_fbRole] || '#888';
     bar.innerHTML = `
       <span style="font-size:11px;color:#555;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${_fbUser.email}">
         ☁️ <b style="color:${roleColor};">${roleLabel}</b> · ${_fbUser.email.split('@')[0]}
@@ -261,6 +303,7 @@ function fbUpdateUI(){
     el.style.opacity = isReadOnly ? '0.4' : '';
   });
   if(typeof syncStickyTop==='function') setTimeout(syncStickyTop,50);
+  applySectionLocks();
 }
 
 /* ════════════════════════════════════════════
@@ -366,8 +409,8 @@ async function fbSyncFromCloud(){
 
 /* 로컬 → 클라우드 동기화 (일보 + 설정 모두) */
 async function fbSyncToCloud(){
-  if(!_fbUser || _fbRole==='viewer'){
-    showToast('저장 권한이 없습니다.');return;
+  if(!_fbUser || _fbRole==='viewer'||_fbRole==='partial'){
+    showToast(_fbRole==='partial' ? '전체 동기화는 관리자/팀원만 가능합니다.' : '저장 권한이 없습니다.');return;
   }
   const all = gd();
   if(!all.length){ showToast('업로드할 데이터가 없습니다.'); return; }
@@ -406,19 +449,29 @@ async function fbLoadUserList(){
     listEl.innerHTML = snap.docs.map(doc=>{
       const u = doc.data();
       const uid = doc.id;
-      const roleOpts = ['admin','member','viewer'].map(r=>
-        `<option value="${r}" ${u.role===r?'selected':''}>${{admin:'관리자',member:'팀원',viewer:'열람자'}[r]}</option>`
+      const roleOpts = ['admin','member','partial','viewer'].map(r=>
+        `<option value="${r}" ${u.role===r?'selected':''}>${{admin:'관리자',member:'팀원',partial:'부분편집자',viewer:'열람자'}[r]}</option>`
       ).join('');
+      const perms = u.sectionPerms||{};
+      const permChips = Object.keys(WRITE_SEC_LABELS).map(secId=>`
+        <label style="display:inline-flex;align-items:center;gap:3px;font-size:10.5px;background:${perms[secId]?'#fff3e0':'#f5f5f5'};border:1.5px solid ${perms[secId]?'#EF9F27':'#ddd'};color:${perms[secId]?'#8a5a06':'#888'};border-radius:100px;padding:2px 8px;cursor:pointer;">
+          <input type="checkbox" id="perm-${uid}-${secId}" ${perms[secId]?'checked':''} style="width:11px;height:11px;margin:0;">
+          ${WRITE_SEC_LABELS[secId]}
+        </label>`).join('');
       return `<div style="display:flex;align-items:center;gap:6px;padding:8px 0;border-bottom:1px solid #f0f0f0;flex-wrap:wrap;">
         <div style="flex:1;min-width:140px;">
           <div style="font-size:12px;font-weight:600;color:#333;">${u.email||uid}${u.blocked?' <span style="font-size:10px;font-weight:700;color:#fff;background:#c0392b;padding:1px 6px;border-radius:100px;">🚫 차단됨</span>':''}</div>
           <div style="font-size:10px;color:#aaa;">${u.createdAt?'가입: '+new Date(u.createdAt.seconds*1000).toLocaleDateString('ko-KR'):''}</div>
         </div>
-        <select id="role-sel-${uid}" style="font-size:12px;padding:4px 6px;border:1.5px solid #c8c8c8;border-radius:6px;">${roleOpts}</select>
+        <select id="role-sel-${uid}" onchange="fbTogglePermRow('${uid}')" style="font-size:12px;padding:4px 6px;border:1.5px solid #c8c8c8;border-radius:6px;">${roleOpts}</select>
         <button onclick="fbUpdateRole('${uid}')" style="font-size:11px;padding:4px 10px;border:1.5px solid #185FA5;border-radius:6px;background:#f0f6ff;color:#185FA5;cursor:pointer;font-weight:600;">변경</button>
         <button onclick="fbToggleBlockUser('${uid}','${(u.email||'').replace(/'/g,"\\'")}',${!!u.blocked})"
           style="font-size:11px;padding:4px 8px;border:1.5px solid ${u.blocked?'#888':'#B8690A'};border-radius:6px;background:${u.blocked?'#f5f5f5':'#fff8ee'};color:${u.blocked?'#666':'#B8690A'};cursor:pointer;font-weight:600;">${u.blocked?'차단 해제':'🚫 차단'}</button>
         <button onclick="fbDeleteUser('${uid}','${u.email||''}')" style="font-size:11px;padding:4px 8px;border:1.5px solid #c0392b;border-radius:6px;background:#fff5f5;color:#c0392b;cursor:pointer;">삭제</button>
+        <div id="perm-row-${uid}" style="width:100%;display:${u.role==='partial'?'flex':'none'};flex-wrap:wrap;gap:5px;padding:6px 0 2px;">
+          <span style="font-size:10.5px;color:#888;font-weight:600;align-self:center;">수정 가능 섹션:</span>
+          ${permChips}
+        </div>
       </div>`;
     }).join('');
   }catch(e){
@@ -426,12 +479,31 @@ async function fbLoadUserList(){
   }
 }
 
+/* 역할 select를 "부분편집자"로 바꾸면 그 사람 행 안에 섹션 체크박스 줄을
+   바로 보여주고, 다른 역할로 바꾸면 다시 숨긴다 (숨겨도 값은 유지되며,
+   실제 반영은 "변경" 버튼을 눌러야 됨) */
+function fbTogglePermRow(uid){
+  const sel=document.getElementById('role-sel-'+uid);
+  const row=document.getElementById('perm-row-'+uid);
+  if(sel && row) row.style.display = (sel.value==='partial') ? 'flex' : 'none';
+}
 async function fbUpdateRole(uid){
   const sel = document.getElementById('role-sel-'+uid);
   if(!sel) return;
   const newRole = sel.value;
   try{
-    await _fbDb.collection(FB_COL_USERS).doc(uid).update({role: newRole, approved: newRole!=='viewer'});
+    const update = {role: newRole, approved: newRole!=='viewer'};
+    if(newRole==='partial'){
+      const perms={};
+      Object.keys(WRITE_SEC_LABELS).forEach(secId=>{
+        const chk=document.getElementById(`perm-${uid}-${secId}`);
+        perms[secId] = !!(chk && chk.checked);
+      });
+      update.sectionPerms = perms;
+    } else {
+      update.sectionPerms = firebase.firestore.FieldValue.delete();
+    }
+    await _fbDb.collection(FB_COL_USERS).doc(uid).update(update);
     showToast('권한이 변경되었습니다.');
     fbLoadUserList();
   }catch(e){ showToast('변경 실패: '+e.message); }
@@ -742,6 +814,8 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
 
 /* ── 작성 섹션 이동 버튼 ── */
 .write-sec-wrap{position:relative;}
+.write-sec-wrap.sec-locked > *:not(.sec-lock-badge){opacity:.55;filter:grayscale(.25);pointer-events:none;user-select:none;}
+.sec-lock-badge{position:relative;z-index:5;background:#fff3cd;border:1.5px solid #e8c766;border-radius:8px;padding:7px 11px;margin-bottom:10px;font-size:11.5px;font-weight:700;color:#8a6d1a;display:flex;align-items:center;gap:6px;}
 .write-sec-btns{position:absolute;top:10px;right:10px;display:flex;flex-direction:column;gap:2px;z-index:10;}
 .write-sec-btn{border:none;background:#e8e8e8;border-radius:4px;width:20px;height:18px;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#666;transition:background .15s;padding:0;line-height:1;}
 .write-sec-btn:hover:not(:disabled){background:#185FA5;color:#fff;}
@@ -3151,7 +3225,19 @@ function deleteIrrZone(key){
    전자변수(밸브 번호 등 식별용, 선택)와 분당물량(ton/min, 필수)을 입력해두면,
    그 구역의 자동+수동 관수 시간 합(분) × 분당물량으로 관수 물량(톤)을
    계산해 카드에 항상 표시한다. */
+/* 개별 수정 모달(관수 수정, 휴무/출근 수정, 기온·볼스피드 수정 등)은 작성 탭의
+   섹션 잠금과 별개의 진입점이라, 부분편집자가 권한 없는 섹션을 이 모달들을
+   통해 우회해서 고칠 수 없도록 여기서도 한 번 더 확인한다. viewer는 기존
+   그대로(모달은 열리되 클라우드 저장만 막힘) 동작을 바꾸지 않는다. */
+function guardSectionEdit(secId){
+  if(_fbRole==='partial' && !canEditSection(secId)){
+    showToast(`⚠️ "${WRITE_SEC_LABELS[secId]||secId}" 섹션은 수정 권한이 없습니다`);
+    return false;
+  }
+  return true;
+}
 function openIrrZoneFlowModal(key){
+  if(!guardSectionEdit('irr'))return;
   const zones=getIrrZones();
   const z=zones.find(x=>x.key===key);
   if(!z)return;
@@ -3206,6 +3292,7 @@ function saveIrrZoneFlow(){
 
 /* ── 구역 추가 모달 ── */
 function openAddIrrZoneModal(){
+  if(!guardSectionEdit('irr'))return;
   const presets=[
     {label:'러프',    color:'#27ae60', key:'rough'},
     {label:'프린지',  color:'#1abc9c', key:'fringe'},
@@ -5077,13 +5164,14 @@ function loadForEditFromHistory(){
 
 function deleteReportFromHistory(){
   if(_histDetailIdx===null)return;
+  if(_fbUser && _fbRole==='partial'){ showToast('전체 기록 삭제는 관리자/팀원만 가능합니다.'); return; }
   const r=gd()[_histDetailIdx];
   const _delSY=window.scrollY;
   if(!confirm(`${r?.date} 기록을 삭제하겠습니까?`)){requestAnimationFrame(()=>window.scrollTo({top:_delSY}));return;}
   const deletedDate = r?.date;
   const all=gd();all.splice(_histDetailIdx,1);sd(all);
   /* ☁️ Firebase 삭제 */
-  if(_fbUser && _fbRole !== 'viewer' && deletedDate){
+  if(_fbUser && _fbRole !== 'viewer' && _fbRole !== 'partial' && deletedDate){
     fbDeleteReport(deletedDate);
   }
   closeHistDetail();
@@ -5152,6 +5240,7 @@ function showDetail(idx){
 function closeModal(e){if(e&&e.target!==document.getElementById('detail-modal'))return;document.getElementById('detail-modal').style.display='none';}
 function deleteReport(){
   if(_fbUser && _fbRole==='viewer'){ showToast('열람 권한으로는 삭제할 수 없습니다.'); return; }
+  if(_fbUser && _fbRole==='partial'){ showToast('전체 기록 삭제는 관리자/팀원만 가능합니다.'); return; }
   const _delSY=window.scrollY;
   if(!confirm('삭제하겠습니까?')){requestAnimationFrame(()=>window.scrollTo({top:_delSY}));return;}
   const all=gd();
@@ -6220,6 +6309,7 @@ function executeResetAll(){
 /* ── 일 통계 수치 수정 ── */
 let _wxStatTarget=null;
 function editWeatherStat(elId, label, type){
+  if(!guardSectionEdit('weather'))return;
   _wxStatTarget={elId,label,type};
   const cur=document.getElementById(elId)?.textContent||'';
   const modal=document.getElementById('wx-stat-modal');
@@ -6278,6 +6368,7 @@ document.addEventListener('keydown',e=>{
 /* ── 강우 차트 날짜 기록 수정 ── */
 let _rainEditDate=null;
 function openRainDayEdit(dateStr){
+  if(!guardSectionEdit('weather'))return;
   _rainEditDate=dateStr;
   const [yyyy,mm,dd]=dateStr.split('-');
   const dObj=new Date(dateStr+'T00:00:00');
@@ -6365,6 +6456,7 @@ function closeRainDayModal(e){
 /* ── 정규직 근무 현황: 날짜별 출근/휴무/연차 클릭 수정 ── */
 let _regDayEdit=null; /* {name, dateStr} */
 function openRegDayEdit(name, dateStr){
+  if(!guardSectionEdit('workers'))return;
   _regDayEdit={name, dateStr};
   const [,mm,dd]=dateStr.split('-');
   const dObj=new Date(dateStr+'T00:00:00');
@@ -6430,6 +6522,7 @@ function closeRegDayModal(e){
    '저장' 버튼으로 한 번에 반영하는 방식으로 만듦 */
 let _dailyDayEdit=null;
 function openDailyDayEdit(name, dateStr){
+  if(!guardSectionEdit('workers'))return;
   const [,mm,dd]=dateStr.split('-');
   const dObj=new Date(dateStr+'T00:00:00');
   const dayNames='일월화수목금토';
@@ -6521,6 +6614,7 @@ function closeDailyDayModal(e){
 /* ── 기온 추이 차트 날짜 기록 수정 ── */
 let _tempEditDate=null;
 function openTempDayEdit(dateStr){
+  if(!guardSectionEdit('weather'))return;
   _tempEditDate=dateStr;
   const [,mm,dd]=dateStr.split('-');
   const dObj=new Date(dateStr+'T00:00:00');
@@ -6592,6 +6686,7 @@ function closeTempDayModal(e){
 /* ── 볼스피드 차트 날짜 기록 수정 ── */
 let _bsEditDate=null;
 function openBsDayEdit(dateStr){
+  if(!guardSectionEdit('ballspeed'))return;
   _bsEditDate=dateStr;
   const [,mm,dd]=dateStr.split('-');
   const dObj=new Date(dateStr+'T00:00:00');
@@ -7229,6 +7324,7 @@ function moveWriteSec(secId,dir){
 let _irrModalIdx=null;
 
 function openIrrModal(sortedIdx){
+  if(!guardSectionEdit('irr'))return;
   const all=gd();
   /* sorted는 renderIrrBarChart 스코프라 직접 접근 불가 → 전체에서 irrigation 있는 것만 재정렬 */
   function toISO2(d){const m=d.match(/(\d+)년\s*(\d+)월\s*(\d+)일/);if(!m)return d;const yy=parseInt(m[1]);const yyyy=yy<50?2000+yy:1900+yy;return`${yyyy}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;}
@@ -7370,7 +7466,7 @@ function saveIrrModal(){
   }
 
   /* ── Firebase 저장 ── */
-  if(typeof fbSaveReport==='function' && _fbUser && (_fbRole==='admin'||_fbRole==='member')){
+  if(typeof fbSaveReport==='function' && _fbUser && (_fbRole==='admin'||_fbRole==='member'||(_fbRole==='partial'&&canEditSection('irr')))){
     fbSaveReport(r).then(ok=>{
       if(ok) console.log('[FB] 관수/TDR 수정 저장 완료:',r.date);
       else showToast('로컬 저장 완료 (클라우드 업로드 실패)');
