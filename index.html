@@ -9443,8 +9443,13 @@ function renderMatUsePanel(page){
 
   const allRecs = gd();
 
-  /* ── 연도 선택지 채우기 ── */
-  const years = [...new Set(allRecs.map(r=>r.date?.slice(0,4)).filter(Boolean))].sort((a,b)=>b-a);
+  /* ── 연도 선택지 채우기 ──
+     r.date는 "26년 08월 27일 (목)" 형식이라 연도는 앞 2글자("26")뿐임.
+     예전에 slice(0,4)로 뽑아서 "26년 "(년+공백까지 포함)이 그대로 selYear가 되는
+     바람에, 화면에 "26년 년"처럼 년이 중복 표시되고, 이 값을 다른 데서 숫자처럼
+     그대로 문자열 보간(따옴표 없이)하면 "26년 "이 JS 구문에 그대로 들어가
+     문법 오류가 나서 클릭 이벤트가 조용히 아무 반응도 하지 않는 원인이 됨. */
+  const years = [...new Set(allRecs.map(r=>r.date?.slice(0,2)).filter(Boolean))].sort((a,b)=>b-a);
   if(yearSel && yearSel.options.length<=1){
     years.forEach(y=>{ const o=document.createElement('option'); o.value=y; o.textContent=y+'년'; yearSel.appendChild(o); });
   }
