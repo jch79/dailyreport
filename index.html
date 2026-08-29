@@ -1414,7 +1414,7 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
 <!-- ══════════════ 검색 ══════════════ -->
 <div class="panel" id="panel-search">
   <div class="search-box">
-    <input type="text" id="search-kw" placeholder="약품명, 자재명, 작업내용, 장비, 작업자 검색..." oninput="runSearch()">
+    <input type="text" id="search-kw" autocomplete="off" placeholder="약품명, 자재명, 작업내용, 장비, 작업자 검색..." oninput="runSearch()">
     <button class="btn btn-primary btn-sm" onclick="runSearch()">검색</button>
   </div>
   <div style="margin-bottom:10px;font-size:11px;color:#888;">최근 검색어: <span id="recent-chips"></span></div>
@@ -1440,7 +1440,7 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
 <!-- ══════════════ 기록 ══════════════ -->
 <div class="panel active" id="panel-history">
   <div style="display:flex;gap:7px;margin-bottom:10px;flex-wrap:wrap;align-items:center;">
-    <input type="text" id="hist-search" placeholder="날짜·작업자·작업내용·장비·약품·자재명·성분 검색..." oninput="renderHistory()" style="flex:1;min-width:120px;">
+    <input type="text" id="hist-search" autocomplete="off" placeholder="날짜·작업자·작업내용·장비·약품·자재명·성분 검색..." oninput="renderHistory()" style="flex:1;min-width:120px;">
     <select id="hist-month" onchange="renderHistory()" style="min-width:90px;"><option value="">전체 월</option></select>
     <select id="hist-sort" onchange="renderHistory()" style="min-width:130px;font-size:12px;padding:7px 9px;border:1.5px solid #c8c8c8;border-radius:7px;background:#fafafa;">
       <option value="newest">최신순 (최근 먼저)</option>
