@@ -304,6 +304,17 @@ function fbUpdateUI(){
   });
   if(typeof syncStickyTop==='function') setTimeout(syncStickyTop,50);
   applySectionLocks();
+  /* 골프장 이름은 관리자만 변경 가능 — 입력칸 자체를 잠가서 아예 타이핑도 못하게 함 */
+  {
+    const courseInp=document.getElementById('inp-course');
+    if(courseInp){
+      const isAdmin=(_fbRole==='admin');
+      courseInp.readOnly=!isAdmin;
+      courseInp.title=isAdmin?'':'골프장 이름은 관리자만 변경할 수 있습니다';
+      courseInp.style.background=isAdmin?'':'#f2f2f2';
+      courseInp.style.cursor=isAdmin?'':'not-allowed';
+    }
+  }
 }
 
 /* ════════════════════════════════════════════
@@ -814,7 +825,7 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
 
 /* ── 작성 섹션 이동 버튼 ── */
 .write-sec-wrap{position:relative;}
-.write-sec-wrap.sec-locked > *:not(.sec-lock-badge){opacity:.55;filter:grayscale(.25);pointer-events:none;user-select:none;}
+.write-sec-wrap.sec-locked > *:not(.sec-lock-badge){opacity:.82;filter:none;pointer-events:none;user-select:none;}
 .sec-lock-badge{position:relative;z-index:5;background:#fff3cd;border:1.5px solid #e8c766;border-radius:8px;padding:7px 11px;margin-bottom:10px;font-size:11.5px;font-weight:700;color:#8a6d1a;display:flex;align-items:center;gap:6px;}
 .write-sec-btns{position:absolute;top:10px;right:10px;display:flex;flex-direction:column;gap:2px;z-index:10;}
 .write-sec-btn{border:none;background:#e8e8e8;border-radius:4px;width:20px;height:18px;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#666;transition:background .15s;padding:0;line-height:1;}
@@ -1941,7 +1952,7 @@ const gp=()=>{try{return JSON.parse(localStorage.getItem(PK)||'[]');}catch(e){re
 /* 단가 getter/setter: {이름: {day:숫자, ot:숫자}} */
 const getRates=()=>{try{return JSON.parse(localStorage.getItem(RATE_KEY)||'{}');}catch(e){return{};}};
 const setRates=d=>localStorage.setItem(RATE_KEY,JSON.stringify(d));
-function updateRate(name,field,val){const r=getRates();if(!r[name])r[name]={day:0,ot:0};r[name][field]=parseInt(val)||0;setRates(r);}
+function updateRate(name,field,val){if(!guardAdminOnly('직원 단가'))return;const r=getRates();if(!r[name])r[name]={day:0,ot:0};r[name][field]=parseInt(val)||0;setRates(r);}
 const sp=d=>localStorage.setItem(PK,JSON.stringify(d));
 const gr=()=>{try{return JSON.parse(localStorage.getItem(RK)||'[]');}catch(e){return[];}};
 const sr=d=>localStorage.setItem(RK,JSON.stringify(d));
@@ -3232,6 +3243,22 @@ function deleteIrrZone(key){
 function guardSectionEdit(secId){
   if(_fbRole==='partial' && !canEditSection(secId)){
     showToast(`⚠️ "${WRITE_SEC_LABELS[secId]||secId}" 섹션은 수정 권한이 없습니다`);
+    return false;
+  }
+  return true;
+}
+/* 통계 탭의 단가/휴무·연차 대장은 급여·근태 관련 민감 정보라 관리자만 수정 가능 */
+function guardAdminOnly(actionLabel){
+  if(_fbUser && _fbRole!=='admin'){
+    showToast(`⚠️ "${actionLabel}"은(는) 관리자만 수정할 수 있습니다`);
+    return false;
+  }
+  return true;
+}
+/* 자재정보(약품/비료 마스터 DB) 수정은 열람자·부분편집자는 불가, 관리자/팀원만 가능 */
+function guardMemberOrAdmin(actionLabel){
+  if(_fbUser && !(_fbRole==='admin'||_fbRole==='member')){
+    showToast(`⚠️ "${actionLabel}"은(는) 관리자/팀원만 수정할 수 있습니다`);
     return false;
   }
   return true;
@@ -5283,6 +5310,7 @@ function saveRegLeaveMeta(m){
   if(typeof fbSaveSharedSettings==='function') setTimeout(fbSaveSharedSettings,300);
 }
 function updateRegLeaveMeta(name,field,val){
+  if(!guardAdminOnly('이월/발생휴일/연차부여')){ renderStats(); return; }
   const m=getRegLeaveMeta();
   if(!m[name]) m[name]={};
   m[name][field]=parseFloat(val)||0;
@@ -5296,6 +5324,7 @@ function updateRegLeaveMeta(name,field,val){
    이 기능과 별개로 그대로 유지되며, 일괄 설정 후에도 각 칸을 클릭해
    특정 직원만 다시 고칠 수 있음. */
 function bulkSetRegLeaveField(field, label){
+  if(!guardAdminOnly('이월/발생휴일/연차부여 일괄설정'))return;
   const ym=document.getElementById('stats-month')?.value;
   const names=new Set();
   gd().forEach(r=>{
@@ -5362,6 +5391,7 @@ function _regLeaveCountPrevMonth(name, from, to){
 }
 /* 직원 1명만 불러오기 (행별 소형 버튼) */
 function loadPrevMonthCarryOne(name){
+  if(!guardAdminOnly('이월/발생휴일/연차부여'))return;
   const ym=document.getElementById('stats-month')?.value;
   if(!ym){ alert('상단에서 월을 먼저 선택해주세요. (전체 기간에서는 불러올 수 없습니다)'); return; }
   const {py,pmo,from,to}=_regLeavePrevMonthRange(ym);
@@ -5378,6 +5408,7 @@ function loadPrevMonthCarryOne(name){
 }
 /* 전체 직원 일괄 불러오기 (상단 버튼) */
 function loadPrevMonthCarryAll(){
+  if(!guardAdminOnly('이월/발생휴일/연차부여 일괄 불러오기'))return;
   const ym=document.getElementById('stats-month')?.value;
   if(!ym){ alert('상단에서 월을 먼저 선택해주세요. (전체 기간에서는 불러올 수 없습니다)'); return; }
   const {py,pmo,from,to}=_regLeavePrevMonthRange(ym);
@@ -7484,7 +7515,7 @@ function closeIrrModal(e){
   _irrModalIdx=null;
 }
 
-function syncCourseName(v){const n=v.trim()||'골프장';document.getElementById('nav-course-name').textContent=n;scn(n);if(typeof fbSaveSharedSettings==='function') setTimeout(fbSaveSharedSettings,1000);}
+function syncCourseName(v){if(!guardAdminOnly('골프장 이름')){ const cur=gcn(); const f=document.getElementById('inp-course'); if(f)f.value=cur; return; } const n=v.trim()||'골프장';document.getElementById('nav-course-name').textContent=n;scn(n);if(typeof fbSaveSharedSettings==='function') setTimeout(fbSaveSharedSettings,1000);}
 
 /* ── 백업(내보내기) 리마인더 ──
  * 데이터는 브라우저 로컬 저장소에만 있어 캐시 삭제/PC 교체 시 통째로 사라질 수 있음.
@@ -7644,7 +7675,7 @@ function importDataFile(event){
   };
   reader.readAsText(file,'utf-8');
 }
-function editCourseName(){const cur=gcn();const n=prompt('골프장 이름:',cur);if(n===null)return;const name=n.trim()||cur;document.getElementById('nav-course-name').textContent=name;document.getElementById('inp-course').value=name;scn(name);}
+function editCourseName(){if(!guardAdminOnly('골프장 이름'))return;const cur=gcn();const n=prompt('골프장 이름:',cur);if(n===null)return;const name=n.trim()||cur;document.getElementById('nav-course-name').textContent=name;document.getElementById('inp-course').value=name;scn(name);}
 
 function showPanel(id,tab){
   if(id==='write'){setTimeout(()=>{
@@ -8392,6 +8423,7 @@ function autoGrowTA(el){
    문제가 있었음. 이제는 matEditIdx 값(-1이면 추가, 아니면 수정)만으로 동작을
    분기하고 버튼 onclick은 항상 이 함수 하나만 가리키도록 통일함. */
 function toggleMaterialEdit(){
+  if(!guardMemberOrAdmin('자재정보 수정')){ renderMaterialsTable(); return; }
   const body = document.getElementById('mat-modal-body');
   const collected = {};
   body.querySelectorAll('[data-field]').forEach(inp=>{ collected[inp.dataset.field]=inp.value; });
@@ -8577,6 +8609,7 @@ function guideApplyItem(name, alreadyInDB){
 }
 
 function addCustomMatField(){
+  if(!guardMemberOrAdmin('자재정보 수정'))return;
   const labelInp = document.getElementById('mat-custom-label');
   const label = (labelInp?.value||'').trim();
   if(!label){ showToast('항목명을 입력하세요'); return; }
@@ -8622,6 +8655,7 @@ function addCustomMatField(){
 
 /* ── 커스텀 항목 삭제 ── */
 function removeCustomMatField(key){
+  if(!guardMemberOrAdmin('자재정보 수정'))return;
   const list = matEditType==='pest'?getPestList():getFertList();
   const item = list[matEditIdx]||{};
   item._customFields = (item._customFields||[]).filter(cf=>cf.key!==key);
@@ -8636,6 +8670,7 @@ function removeCustomMatField(key){
 
 /* ── 삭제 ── */
 function deleteMatItem(type, idx){
+  if(!guardMemberOrAdmin('자재정보 삭제'))return;
   if(!confirm('삭제하시겠습니까?')) return;
   if(type==='pest'){ const l=getPestList(); l.splice(idx,1); savePestList(l); }
   else { const l=getFertList(); l.splice(idx,1); saveFertList(l); }
@@ -8645,6 +8680,7 @@ function deleteMatItem(type, idx){
 
 /* ── 추가 모달 ── */
 function openAddMaterialModal(type){
+  if(!guardMemberOrAdmin('자재정보 추가'))return;
   const addType = type || curMatTab || 'pest';
   matEditMode=true; matEditIdx=-1; matEditType=addType;
   document.getElementById('mat-modal-title').textContent = addType==='pest'?'🌿 농약 추가':'🌱 비료 추가';
@@ -12082,6 +12118,7 @@ function showPdfGuide(ri){
       <div style="display:flex;gap:6px;align-items:center;">
         <select id="fb-new-role" style="flex:1;padding:7px 8px;border:1.5px solid #c8c8c8;border-radius:7px;font-size:12px;">
           <option value="member">팀원 (읽기+쓰기)</option>
+          <option value="partial">부분편집자 (섹션별 수정)</option>
           <option value="viewer">열람자 (읽기만)</option>
           <option value="admin">관리자</option>
         </select>
