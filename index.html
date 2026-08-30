@@ -2574,11 +2574,14 @@ function renderWorkers(){
         </div>`:''}`;
       dailyEl.appendChild(grpHdr);
 
-      /* 5명씩 가로 행 */
+      /* 5명씩 가로 행 — 칸이 5개라 모바일 좁은 화면에서는 한 칸씩 너무 눌려서
+         맨 오른쪽 사람의 체크박스/OT칸이 화면 밖으로 밀려 안 보이는 문제가
+         있었음. minmax()로 칸의 최소 너비를 보장하고, 넘치면 이 줄만 가로
+         스크롤되도록 함(다른 레이아웃에는 영향 없음). */
       const COLS=5;
       for(let r=0;r<workers.length;r+=COLS){
         const rowDiv=document.createElement('div');
-        rowDiv.style.cssText='display:grid;grid-template-columns:repeat(5,1fr);border-bottom:1px solid #f0e8d8;';
+        rowDiv.style.cssText='display:grid;grid-template-columns:repeat(5,minmax(132px,1fr));border-bottom:1px solid #f0e8d8;overflow-x:auto;-webkit-overflow-scrolling:touch;';
         const slice=workers.slice(r,r+COLS);
         slice.forEach(w=>{
           const globalIdx=curWorkers.indexOf(w);
