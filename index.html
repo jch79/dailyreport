@@ -11412,14 +11412,14 @@ function showMatUseDayDetail(dateStr){
         let idx = (item._listIdx!==undefined && fertList[item._listIdx] && String(fertList[item._listIdx].name||'').trim()===String(item.brandName||'').trim())
           ? item._listIdx : fertList.findIndex(f=>f.name.trim()===String(item.brandName||'').trim());
         const p = idx>=0 ? fertList[idx] : null;
-        rows.push({area, kind:'fert', brand:item.brandName||p?.name||'?', product:p?.product||'', amount:amtG, unit:'g', idx});
+        rows.push({area, kind:'fert', brand:item.brandName||p?.name||'?', product:p?.product||'', amount:amtG, unit:'g', idx, content:''});
       }
       if(_matuCalShowPest && item.type==='pest' && areaMatchFor('pest', block.areaName)){
         const amt=parseGram(item.amount); if(!amt) return;
         let idx = (item._listIdx!==undefined && pestList[item._listIdx] && String(pestList[item._listIdx].name||'').trim()===String(item.brandName||'').trim())
           ? item._listIdx : pestList.findIndex(f=>f.name.trim()===String(item.brandName||'').trim());
         const pp = idx>=0 ? pestList[idx] : null;
-        rows.push({area, kind:'pest', brand:item.brandName||'기타', product:pp?.product||'', amount:amt, unit:'ml', idx, category:pp?.type||''});
+        rows.push({area, kind:'pest', brand:item.brandName||'기타', product:pp?.product||'', amount:amt, unit:'ml', idx, category:pp?.type||'', content:pp?.content||''});
       }
     });
   });
@@ -11449,11 +11449,12 @@ function showMatUseDayDetail(dateStr){
           : `<span style="color:${r.kind==='pest'?pestCatColorCal(r.category):'#1a1a1a'};">${r.brand}</span>`}
         ${r.product?`<div style="font-size:10px;font-weight:500;color:#888;margin-top:1px;white-space:normal;word-break:break-all;">${r.product}</div>`:''}
       </td>
+      <td style="padding:5px 8px;font-size:11.5px;font-weight:600;color:${r.content?'#555':'#ccc'};text-align:center;border:1px solid #eee;white-space:nowrap;">${r.content||'-'}</td>
       <td style="padding:5px 8px;font-size:12px;font-weight:700;color:#2d6a1e;text-align:right;border:1px solid #eee;white-space:nowrap;">${fmtAmt(r.amount)} ${r.unit}</td>
-    </tr>`).join('') : `<tr><td colspan="4" style="text-align:center;padding:24px;color:#bbb;font-size:13px;">해당 조건의 사용 기록이 없습니다</td></tr>`;
+    </tr>`).join('') : `<tr><td colspan="5" style="text-align:center;padding:24px;color:#bbb;font-size:13px;">해당 조건의 사용 기록이 없습니다</td></tr>`;
 
   wrap.innerHTML = `
-    <div style="background:#fff;border-radius:14px;width:100%;max-width:600px;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.3);overflow:hidden;">
+    <div style="background:#fff;border-radius:14px;width:100%;max-width:700px;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.3);overflow:hidden;">
       <div style="background:linear-gradient(135deg,#2d6a1e,#4a9a2e);padding:14px 18px;display:flex;align-items:center;gap:10px;flex-shrink:0;">
         <span style="font-size:18px;">📅</span>
         <div style="flex:1;min-width:0;">
@@ -11482,6 +11483,7 @@ function showMatUseDayDetail(dateStr){
             <th style="padding:6px 8px;font-size:11px;font-weight:700;color:#444;border:1px solid #dde;">구분</th>
             <th style="padding:6px 8px;font-size:11px;font-weight:700;color:#444;border:1px solid #dde;">위치</th>
             <th style="padding:6px 8px;font-size:11px;font-weight:700;color:#444;border:1px solid #dde;">사용자재</th>
+            <th style="padding:6px 8px;font-size:11px;font-weight:700;color:#444;border:1px solid #dde;">주성분함량</th>
             <th style="padding:6px 8px;font-size:11px;font-weight:700;color:#444;border:1px solid #dde;">사용량</th>
           </tr></thead>
           <tbody>${tbody}</tbody>
