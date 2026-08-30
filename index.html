@@ -725,7 +725,8 @@ textarea{resize:vertical;min-height:55px;}
 .worker-col-hdr.reg{background:#daeaf9;color:#0C447C;border-bottom:2px solid #85B7EB;}
 .worker-col-hdr.daily{background:#faeeda;color:#633806;border-bottom:2px solid #EF9F27;}
 .worker-col-hdr.cons{background:#eaf3de;color:#27500A;border-bottom:2px solid #97C459;}
-.worker-entry{display:flex;align-items:center;gap:5px;padding:5px 8px;border-top:1px solid #e0e0e0;font-size:12px;}
+.worker-entry{display:flex;align-items:center;gap:5px;padding:5px 8px;border-top:1px solid #e0e0e0;font-size:12px;overflow-x:auto;-webkit-overflow-scrolling:touch;}
+.worker-entry>*{flex-shrink:0;}
 .worker-entry input{flex:1;font-size:11px;padding:4px 6px;}
 .worker-add-row{padding:6px 8px;border-top:2px solid #e0e0e0;background:#f5f5f5;display:flex;gap:5px;}
 .worker-add-row input{flex:1;font-size:12px;padding:4px 6px;}
@@ -753,8 +754,8 @@ textarea{resize:vertical;min-height:55px;}
 .task-block.work   .task-block-hdr{background:#3B6D11;color:#fff;border-radius:7px 7px 0 0;}
 .task-block.etc    .task-block-hdr{background:#5F5E5A;color:#fff;border-radius:7px 7px 0 0;}
 
-.task-col-hdr{display:grid;grid-template-columns:120px 34px 34px 34px 1fr 120px 1fr 40px;gap:0;font-size:10px;font-weight:700;text-align:center;border-bottom:2px solid #c0c0c0;}
-.task-block.work .task-col-hdr{grid-template-columns:192px 34px 34px 34px 1.25fr 120px 0.8fr 40px;}
+.task-col-hdr{display:grid;grid-template-columns:120px 34px 34px 34px 1fr 120px 1fr 40px;gap:0;font-size:10px;font-weight:700;text-align:center;border-bottom:2px solid #c0c0c0;min-width:680px;}
+.task-block.work .task-col-hdr{grid-template-columns:192px 34px 34px 34px 1.25fr 120px 0.8fr 40px;min-width:760px;}
 .task-block.mowing .task-col-hdr{background:#daeaf9;color:#0C447C;}
 .task-block.work   .task-col-hdr{background:#d4eac0;color:#27500A;}
 .task-block.etc    .task-col-hdr{background:#e8e7e3;color:#444;}
@@ -762,10 +763,14 @@ textarea{resize:vertical;min-height:55px;}
 .task-col-hdr div:last-child{border-right:none;}
 .task-col-hdr .tl{text-align:left;padding-left:8px;}
 
-.task-row{display:grid;grid-template-columns:120px 34px 34px 34px 1fr 120px 1fr 40px;gap:0;align-items:stretch;border-top:1.5px solid #d8d8d8;}
-.task-block.work .task-row{grid-template-columns:192px 34px 34px 34px 1.25fr 120px 0.8fr 40px;}
+.task-row{display:grid;grid-template-columns:120px 34px 34px 34px 1fr 120px 1fr 40px;gap:0;align-items:stretch;border-top:1.5px solid #d8d8d8;min-width:680px;}
+.task-block.work .task-row{grid-template-columns:192px 34px 34px 34px 1.25fr 120px 0.8fr 40px;min-width:760px;}
 .task-block.mowing .task-row:nth-child(even){background:#f2f8fd;}
 .task-block.work   .task-row:nth-child(even){background:#f2f9ec;}
+/* Work/Mowing/기타 표(헤더+행)를 한 덩어리로 가로 스크롤 — 열이 고정 폭이라
+   좁은 화면에서는 오른쪽(작업자/삭제)이 잘려 보였던 문제 해결.
+   헤더와 각 행이 같은 스크롤 안에 있어서 스크롤해도 열이 계속 맞음. */
+.task-scroll-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
 .task-block.etc    .task-row:nth-child(even){background:#f5f5f2;}
 
 .task-cell{padding:4px;border-right:1.5px solid #d8d8d8;display:flex;align-items:center;}
@@ -2137,17 +2142,19 @@ function renderTasks(){
           </label>
         </div>
       </div>`:''}
-      <div class="task-col-hdr">
-        <div class="tl">항목</div>
-        <div style="font-size:9px;color:#E67E22;font-weight:800;">조출</div>
-        <div style="font-size:9px;color:inherit;font-weight:800;">주간</div>
-        <div style="font-size:9px;color:#7F77DD;font-weight:800;">야간</div>
-        <div class="tl">작업내용</div>
-        <div class="tl">장비/자재</div>
-        <div class="tl">작업자 (+ 추가)</div>
-        <div>삭제</div>
+      <div class="task-scroll-wrap">
+        <div class="task-col-hdr">
+          <div class="tl">항목</div>
+          <div style="font-size:9px;color:#E67E22;font-weight:800;">조출</div>
+          <div style="font-size:9px;color:inherit;font-weight:800;">주간</div>
+          <div style="font-size:9px;color:#7F77DD;font-weight:800;">야간</div>
+          <div class="tl">작업내용</div>
+          <div class="tl">장비/자재</div>
+          <div class="tl">작업자 (+ 추가)</div>
+          <div>삭제</div>
+        </div>
+        <div id="sec-${si}"></div>
       </div>
-      <div id="sec-${si}"></div>
       <div class="task-add-row">
         <span style="font-size:10px;color:#888;">작업자 + 버튼: 같은 작업에 여러 명 가로 추가</span>
       </div>`;
