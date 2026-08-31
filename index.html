@@ -3964,13 +3964,13 @@ async function fetchWeather(){
       /* targetDate 기준 며칠 전인지 계산 */
       const diffMs=new Date(todayISO+'T00:00:00')-new Date(targetDate+'T00:00:00');
       const diffDays=Math.round(diffMs/86400000);
-      let mx=null,mn=null,dayRain=0;
+      let mx=null,mn=null,dayRain=0,pf=null;
 
       /* 날씨 수치: forecast past_days로 해당일 데이터 추출 */
       try{
         const ctrl=new AbortController();
         const tid=setTimeout(()=>ctrl.abort(),8000);
-        const pf=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weather_code&timezone=Asia%2FSeoul&past_days=${Math.min(diffDays,92)}&forecast_days=1`,{signal:ctrl.signal}).then(r=>r.json());
+        pf=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weather_code&timezone=Asia%2FSeoul&past_days=${Math.min(diffDays,92)}&forecast_days=1`,{signal:ctrl.signal}).then(r=>r.json());
         clearTimeout(tid);
         /* 해당 날짜 인덱스 찾기 */
         const dayIdx=pf.daily?.time?.indexOf(targetDate)??-1;
@@ -3993,11 +3993,41 @@ async function fetchWeather(){
         wind=hrBase>=0&&windHrs[hrBase]!=null?(windHrs[hrBase]/3.6).toFixed(1):'--';
         feel='--';
         if(dayRain>0)document.getElementById('inp-rain').value=dayRain.toFixed(1);
+      }catch(ePastFc){console.warn('[날씨-과거] forecast past_days 실패',ePastFc);}
 
-        /* 강우 차트: 해당 날짜 기준 90일 — past_days 데이터에서 구성 */
+      /* ── 과거 날짜: 기상청 AWS 실측값으로 보정 (Cloudflare Worker 경유) ──
+         정오(12시) 조회로 대표 기온/습도/풍속을, 23:50 조회로 그날 자정부터
+         누적된 일강수량(거의 하루 전체)을 가져와 격자 예측값 위에 덮어씀.
+         실패해도 위에서 이미 구한 격자 예측값이 그대로 남아있어 안전함. */
+      let kmaEodRain=null;
+      try{
+        const dISO=targetDate.replace(/-/g,'');
+        const parseKmaLine=(txt)=>{
+          const l=txt.split('\n').map(s=>s.trim()).find(s=>s && !s.startsWith('#'));
+          return l?l.split(/\s+/):null;
+        };
+        const [kmaNoonText,kmaEodText]=await Promise.all([
+          fetch(`https://empty-morning-c054.loveinch2000.workers.dev/?stn=460&tm=${dISO}1200`).then(r=>r.text()),
+          fetch(`https://empty-morning-c054.loveinch2000.workers.dev/?stn=460&tm=${dISO}2350`).then(r=>r.text())
+        ]);
+        const noonCols=parseKmaLine(kmaNoonText);
+        if(noonCols){
+          const kTA=parseFloat(noonCols[2]), kWS=parseFloat(noonCols[4]), kHM=parseFloat(noonCols[7]);
+          if(!isNaN(kTA)&&kTA>-50){ temp=String(Math.round(kTA)); avg=kTA.toFixed(1); }
+          if(!isNaN(kWS)&&kWS>=0&&kWS<100) wind=kWS.toFixed(1);
+          if(!isNaN(kHM)&&kHM>=0&&kHM<=100) humid=String(Math.round(kHM));
+        }
+        const eodCols=parseKmaLine(kmaEodText);
+        if(eodCols){
+          const kRnDay=parseFloat(eodCols[5]);
+          if(!isNaN(kRnDay)&&kRnDay>=0) kmaEodRain=kRnDay;
+        }
+      }catch(eKmaPast){console.warn('[날씨-과거] 기상청 AWS 실측 조회 실패(격자 예측값 유지)',eKmaPast);}
+
+      try{
         const _prevRainDataPast=rainData30.length?[...rainData30]:null; /* API 실패 시 복원용 백업 */
         rainData30=[];
-        if(pf.daily?.time){
+        if(pf?.daily?.time){
           pf.daily.time.forEach((d,i)=>{
             if(d<=targetDate)rainData30.push({date:d,rain:pf.daily.precipitation_sum?.[i]||0,tmax:pf.daily.temperature_2m_max?.[i]??null,tmin:pf.daily.temperature_2m_min?.[i]??null,isToday:d===targetDate});
           });
@@ -4008,6 +4038,13 @@ async function fetchWeather(){
           rainData30=_prevRainDataPast;
         }
         rainData30.sort((a,b)=>a.date.localeCompare(b.date));
+        /* 기상청 AWS 실측 강수량이 조회됐으면, 격자 예측값 대신 이 값을 그날 항목에 반영
+           (수동으로 이미 고쳐둔 날짜는 잠시 뒤 _targetEntry.manual 체크에서 다시 보호됨) */
+        if(kmaEodRain!=null){
+          const _kEntry=rainData30.find(d=>d.date===targetDate);
+          if(_kEntry) _kEntry.rain=kmaEodRain;
+          document.getElementById('inp-rain').value=kmaEodRain.toFixed(1);
+        }
         _rainManualNav=false;
         renderRainChart();
         _tempManualNav=false;
