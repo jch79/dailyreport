@@ -3877,6 +3877,32 @@ async function fetchWeather(){
         }
       }catch(eCur){console.warn('[날씨] forecast current 실패',eCur);}
 
+      /* ── Step1.5: 기상청 AWS 실측 데이터로 보정 (Cloudflare Worker 프록시 경유) ──
+         station 460 = 실촌(경기 광주시 곤지암읍) — 더시에나 서울CC 주소와 정확히 일치하는
+         방재기상관측소. 격자 예측값(Open-Meteo)보다 실제 관측값이 더 정확하므로,
+         조회에 성공하면 기온·습도·풍속·금일 강수량을 이 실측값으로 덮어씀.
+         실패해도(네트워크 문제 등) 위에서 이미 구한 격자 예측값이 그대로 남아있어 안전함. */
+      try{
+        const kmaText=await fetch(`https://empty-morning-c054.loveinch2000.workers.dev/?stn=460`).then(r=>r.text());
+        const dataLine=kmaText.split('\n').map(l=>l.trim()).find(l=>l && !l.startsWith('#'));
+        if(dataLine){
+          const cols=dataLine.split(/\s+/);
+          /* 순서: YYMMDDHHMI STN TA WD WS RN_DAY RN_HR1 HM PA PS */
+          const kTA=parseFloat(cols[2]), kWS=parseFloat(cols[4]),
+                kRnDay=parseFloat(cols[5]), kHM=parseFloat(cols[7]);
+          if(!isNaN(kTA)&&kTA>-50) temp=String(Math.round(kTA));
+          if(!isNaN(kWS)&&kWS>=0&&kWS<100) wind=kWS.toFixed(1);
+          if(!isNaN(kHM)&&kHM>=0&&kHM<=100) humid=String(Math.round(kHM));
+          if(!isNaN(kRnDay)&&kRnDay>=0){
+            const _cachedToday2=loadWeatherCache()?.rainData30?.find(d=>d.date===todayISO);
+            if(!(_cachedToday2&&_cachedToday2.manual)){
+              todayRain=kRnDay;
+              document.getElementById('inp-rain').value=kRnDay.toFixed(1);
+            }
+          }
+        }
+      }catch(eKma){console.warn('[날씨] 기상청 AWS 실측 조회 실패(격자 예측값 유지)',eKma);}
+
       /* ── Step2: 강우 차트 — forecast past_days=89 (archive 완전 제거) ── */
       /* archive-api.open-meteo.com 은 네트워크 환경에 따라 차단/타임아웃될 수 있어 사용 안 함 */
       const _prevRainData=rainData30.length?[...rainData30]:null; /* API 실패 시 복원용 백업 */
