@@ -3895,6 +3895,9 @@ async function fetchWeather(){
   const [tyyyy,tmo,tdd]=targetDate.split('-');
   const isToday=targetDate===todayISO;
   const isPast=targetDate<todayISO;
+  /* 기상청 AWS 실측 강수량 — isToday/isPast 두 분기에서 각각 채워지고,
+     아래 병합(mergeRainData) 이후 공통 구간에서 rainData30·입력창에 함께 반영됨 */
+  let kmaOverrideRain=null;
 
   showToast(`${loc.name} ${tmo}월 ${tdd}일 날씨 불러오는 중...`);
 
@@ -3951,7 +3954,7 @@ async function fetchWeather(){
             const _cachedToday2=loadWeatherCache()?.rainData30?.find(d=>d.date===todayISO);
             if(!(_cachedToday2&&_cachedToday2.manual)){
               todayRain=kRnDay;
-              document.getElementById('inp-rain').value=kRnDay.toFixed(1);
+              kmaOverrideRain=kRnDay;
             }
           }
         }
@@ -4050,10 +4053,11 @@ async function fetchWeather(){
       }catch(ePastFc){console.warn('[날씨-과거] forecast past_days 실패',ePastFc);}
 
       /* ── 과거 날짜: 기상청 AWS 실측값으로 보정 (Cloudflare Worker 경유) ──
-         정오(12시) 조회로 대표 기온/습도/풍속을, 23:50 조회로 그날 자정부터
-         누적된 일강수량(거의 하루 전체)을 가져와 격자 예측값 위에 덮어씀.
+         정오(12시) 조회로 대표 기온/습도/풍속을, 밤 23시 조회로 그날 자정부터
+         누적된 일강수량(거의 하루 전체, 마지막 1시간만 제외)을 가져와 격자
+         예측값 위에 덮어씀. ※ "AWS 시간통계"는 정시(00~23시) 자료만 있어서
+         분 단위(예: 23:50)로 조회하면 데이터가 없어 항상 실패했던 점을 고쳤음.
          실패해도 위에서 이미 구한 격자 예측값이 그대로 남아있어 안전함. */
-      let kmaEodRain=null;
       try{
         const dISO=targetDate.replace(/-/g,'');
         const parseKmaLine=(txt)=>{
@@ -4062,7 +4066,7 @@ async function fetchWeather(){
         };
         const [kmaNoonText,kmaEodText]=await Promise.all([
           fetch(`https://empty-morning-c054.loveinch2000.workers.dev/?stn=460&tm=${dISO}1200`).then(r=>r.text()),
-          fetch(`https://empty-morning-c054.loveinch2000.workers.dev/?stn=460&tm=${dISO}2350`).then(r=>r.text())
+          fetch(`https://empty-morning-c054.loveinch2000.workers.dev/?stn=460&tm=${dISO}2300`).then(r=>r.text())
         ]);
         const noonCols=parseKmaLine(kmaNoonText);
         if(noonCols){
@@ -4074,7 +4078,7 @@ async function fetchWeather(){
         const eodCols=parseKmaLine(kmaEodText);
         if(eodCols){
           const kRnDay=parseFloat(eodCols[5]);
-          if(!isNaN(kRnDay)&&kRnDay>=0) kmaEodRain=kRnDay;
+          if(!isNaN(kRnDay)&&kRnDay>=0) kmaOverrideRain=kRnDay;
         }
       }catch(eKmaPast){console.warn('[날씨-과거] 기상청 AWS 실측 조회 실패(격자 예측값 유지)',eKmaPast);}
 
@@ -4092,13 +4096,6 @@ async function fetchWeather(){
           rainData30=_prevRainDataPast;
         }
         rainData30.sort((a,b)=>a.date.localeCompare(b.date));
-        /* 기상청 AWS 실측 강수량이 조회됐으면, 격자 예측값 대신 이 값을 그날 항목에 반영
-           (수동으로 이미 고쳐둔 날짜는 잠시 뒤 _targetEntry.manual 체크에서 다시 보호됨) */
-        if(kmaEodRain!=null){
-          const _kEntry=rainData30.find(d=>d.date===targetDate);
-          if(_kEntry) _kEntry.rain=kmaEodRain;
-          document.getElementById('inp-rain').value=kmaEodRain.toFixed(1);
-        }
         _rainManualNav=false;
         renderRainChart();
         _tempManualNav=false;
@@ -4139,15 +4136,23 @@ async function fetchWeather(){
     /* 날씨 캐시 저장 — 기존 캐시와 병합해서 누적 보존 */
     const monthRain=document.getElementById('w-month-rain').textContent;
     const prevCache=loadWeatherCache();
+    /* 기상청 AWS 실측 강수량이 조회됐으면(오늘/과거 공통), 병합 전에 먼저
+       해당 날짜 항목에 반영 — mergeRainData가 캐시 쪽의 manual 플래그를
+       기준으로 보호 여부를 판단하므로, 순서상 이렇게 먼저 넣어줘야
+       "수동 입력 > 기상청 실측값 > 격자 예측값" 우선순위가 그대로 유지됨 */
+    if(kmaOverrideRain!=null){
+      const _kEntry3=rainData30.find(d=>d.date===targetDate);
+      if(_kEntry3) _kEntry3.rain=kmaOverrideRain;
+      else rainData30.push({date:targetDate,rain:kmaOverrideRain,isToday:(targetDate===todayISO)});
+    }
     const mergedRain=mergeRainData(prevCache?.rainData30||[], rainData30);
     rainData30=mergedRain; /* 병합된 전체 데이터로 교체 */
     saveWeatherCache({temp,feel,humid,wind,sky,avg,monthRain,minmax,rainData30});
-    /* 조회한 날짜가 수동 입력으로 고정된 날이면, 입력창도 API 값이 아닌 수동 값으로 되돌림 */
+    /* 입력창은 항상 최종 병합 결과(수동 > 기상청 실측 > 격자 예측 순)와 동일하게 맞춤 —
+       그래야 강우현황 차트와 "금일 강우량" 입력창이 서로 다른 값을 보여주는 일이 없음 */
     {
       const _targetEntry=rainData30.find(d=>d.date===targetDate);
-      if(_targetEntry&&_targetEntry.manual){
-        document.getElementById('inp-rain').value=_targetEntry.rain||0;
-      }
+      if(_targetEntry) document.getElementById('inp-rain').value=_targetEntry.rain||0;
     }
     /* 병합 후 차트 재렌더 (누적 데이터 반영) */
     _rainManualNav=false;
