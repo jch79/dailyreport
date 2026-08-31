@@ -8097,15 +8097,24 @@ function _showJustSavedRecord(){
   },150);
 }
 
-function init(){
-  /* 검색창에 브라우저가 이전 값(예: 로그인 이메일)을 자동으로 되살려 채워넣는
-     경우가 있음 — autocomplete="off" 속성만으로는 막히지 않는 크롬의 "새로고침 시
-     입력값 복원" 동작 때문. 저장 후 이 앱이 자주 새로고침되는 구조라 매번 새로
-     열릴 때마다 검색창을 확실히 비워서, 브라우저가 뭘 채워넣든 항상 빈 채로 시작함. */
+/* 검색창에 브라우저가 이전 값(예: 로그인 이메일)을 자동으로 되살려 채워넣는 경우가
+   있음 — autocomplete="off" 속성으로는 막히지 않는 크롬의 "새로고침/뒤로가기 시
+   입력값 복원" 동작 때문. 이 동작은 페이지 스크립트 실행 이후에 뒤늦게(비동기로)
+   적용되는 경우가 있어, 한 번만 비우면 타이밍에 따라 다시 채워질 수 있음 —
+   그래서 여러 시점에 반복해서 비워 확실히 이기도록 함. */
+function _clearSearchFields(){
   ['hist-search','search-kw'].forEach(id=>{
     const el=document.getElementById(id);
     if(el) el.value='';
   });
+}
+window.addEventListener('pageshow', _clearSearchFields); /* 뒤로가기/캐시복원 시에도 적용 */
+
+function init(){
+  _clearSearchFields();
+  setTimeout(_clearSearchFields, 50);
+  setTimeout(_clearSearchFields, 400);
+  setTimeout(_clearSearchFields, 1200);
   /* 로그인 후 처음 보이는 탭: 기록 탭 (예전엔 작성 탭이 기본이었음) */
   document.querySelectorAll('.panel').forEach(p=>p.style.display='none');
   document.getElementById('panel-history').style.display='block';
