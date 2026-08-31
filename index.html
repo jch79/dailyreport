@@ -8098,6 +8098,14 @@ function _showJustSavedRecord(){
 }
 
 function init(){
+  /* 검색창에 브라우저가 이전 값(예: 로그인 이메일)을 자동으로 되살려 채워넣는
+     경우가 있음 — autocomplete="off" 속성만으로는 막히지 않는 크롬의 "새로고침 시
+     입력값 복원" 동작 때문. 저장 후 이 앱이 자주 새로고침되는 구조라 매번 새로
+     열릴 때마다 검색창을 확실히 비워서, 브라우저가 뭘 채워넣든 항상 빈 채로 시작함. */
+  ['hist-search','search-kw'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.value='';
+  });
   /* 로그인 후 처음 보이는 탭: 기록 탭 (예전엔 작성 탭이 기본이었음) */
   document.querySelectorAll('.panel').forEach(p=>p.style.display='none');
   document.getElementById('panel-history').style.display='block';
