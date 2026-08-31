@@ -1051,22 +1051,22 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
           <div style="margin:0;">
             <div style="display:flex;align-items:center;justify-content:space-between;">
               <label style="font-size:10px;color:#555;font-weight:700;">금일 강우량 (mm)</label>
-              <span id="w-rain-today-badge" style="display:none;font-size:9px;font-weight:800;color:#fff;background:#B8690A;border-radius:100px;padding:1px 6px;">✏ 수동</span>
+              <span id="w-rain-today-badge" onclick="event.stopPropagation();revertStatToAuto('rain','금일 강우량')" title="눌러서 자동값으로 되돌리기" style="display:none;cursor:pointer;font-size:9px;font-weight:800;color:#fff;background:#B8690A;border-radius:100px;padding:1px 6px;">✏ 수동 ↺</span>
             </div>
             <input type="number" id="inp-rain" placeholder="0" step="0.1"
               style="width:100%;box-sizing:border-box;margin-top:2px;padding:4px 6px;border:1px solid #ccc;border-radius:5px;font-size:13px;font-weight:700;color:#185FA5;background:#fff;">
           </div>
           <div class="wx-ei" style="margin:0;cursor:pointer;" onclick="editWeatherStat('w-avg','일 평균기온 (°C)','number')" title="클릭하여 수정">
             <div class="wx-ev" id="w-avg" style="text-decoration:underline dotted;text-underline-offset:2px;">--</div>
-            <div class="wx-el">일 평균기온 (°C) ✎ <span id="w-avg-badge" style="display:none;font-size:9px;font-weight:800;color:#fff;background:#B8690A;border-radius:100px;padding:1px 6px;margin-left:3px;">✏ 수동</span></div>
+            <div class="wx-el">일 평균기온 (°C) ✎ <span id="w-avg-badge" onclick="event.stopPropagation();revertStatToAuto('avg','일 평균기온')" title="눌러서 자동값으로 되돌리기" style="display:none;cursor:pointer;font-size:9px;font-weight:800;color:#fff;background:#B8690A;border-radius:100px;padding:1px 6px;margin-left:3px;">✏ 수동 ↺</span></div>
           </div>
           <div class="wx-ei" style="margin:0;cursor:pointer;" onclick="editWeatherStat('w-minmax','최저 / 최고 (°C)','text')" title="클릭하여 수정">
             <div class="wx-ev" id="w-minmax" style="text-decoration:underline dotted;text-underline-offset:2px;">--</div>
-            <div class="wx-el">최저 / 최고 (°C) ✎ <span id="w-minmax-badge" style="display:none;font-size:9px;font-weight:800;color:#fff;background:#B8690A;border-radius:100px;padding:1px 6px;margin-left:3px;">✏ 수동</span></div>
+            <div class="wx-el">최저 / 최고 (°C) ✎ <span id="w-minmax-badge" onclick="event.stopPropagation();revertStatToAuto('minmax','최저 / 최고 기온')" title="눌러서 자동값으로 되돌리기" style="display:none;cursor:pointer;font-size:9px;font-weight:800;color:#fff;background:#B8690A;border-radius:100px;padding:1px 6px;margin-left:3px;">✏ 수동 ↺</span></div>
           </div>
           <div class="wx-ei" style="margin:0;cursor:pointer;" onclick="editWeatherStat('w-month-rain','월 누적강우량 (mm)','number')" title="클릭하여 수정">
             <div class="wx-ev" id="w-month-rain" style="text-decoration:underline dotted;text-underline-offset:2px;">--</div>
-            <div class="wx-el">월 누적강우량 (mm) ✎ <span id="w-month-rain-badge" style="display:none;font-size:9px;font-weight:800;color:#fff;background:#B8690A;border-radius:100px;padding:1px 6px;margin-left:3px;">✏ 수동</span></div>
+            <div class="wx-el">월 누적강우량 (mm) ✎ <span id="w-month-rain-badge" onclick="event.stopPropagation();revertStatToAuto('monthRain','월 누적강우량')" title="눌러서 자동값으로 되돌리기" style="display:none;cursor:pointer;font-size:9px;font-weight:800;color:#fff;background:#B8690A;border-radius:100px;padding:1px 6px;margin-left:3px;">✏ 수동 ↺</span></div>
           </div>
         </div>
       </div>
@@ -2850,6 +2850,14 @@ function setStatManual(dateISO,field,value){
   all[dateISO][field]=value;
   saveStatManualAll(all);
 }
+function clearStatManual(dateISO,field){
+  const all=loadStatManual();
+  if(all[dateISO]){
+    delete all[dateISO][field];
+    if(Object.keys(all[dateISO]).length===0) delete all[dateISO];
+  }
+  saveStatManualAll(all);
+}
 function getStatManual(dateISO,field){
   const all=loadStatManual();
   return all[dateISO]&&Object.prototype.hasOwnProperty.call(all[dateISO],field)?all[dateISO][field]:undefined;
@@ -2874,6 +2882,26 @@ function updateStatManualBadges(){
     const _rEntry=rainData30.find(d=>d.date===dateForCheck);
     rainBadge.style.display=(_rEntry&&_rEntry.manual)?'inline':'none';
   }
+}
+/* ── 실수로 수동 전환된 값을 다시 자동조회 값으로 되돌리기 ──
+   "✏ 수동" 배지를 누르면 그 항목의 수동 플래그를 지우고 즉시 재조회함.
+   field: 'rain' | 'avg' | 'minmax' | 'monthRain' */
+function revertStatToAuto(field, labelKo){
+  if(!confirm(`"${labelKo}"을(를) 자동 조회 값으로 되돌리고 다시 불러오시겠습니까?\n(지금까지 입력해둔 수동 값은 사라집니다)`)) return;
+  const pickerISO=document.getElementById('inp-date-picker')?.value||'';
+  const now=new Date();
+  const todayISO2=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+  const dateForCheck=pickerISO||todayISO2;
+  if(field==='rain'){
+    const _rEntry=rainData30.find(d=>d.date===dateForCheck);
+    if(_rEntry) _rEntry.manual=false;
+    const _prevWC=loadWeatherCache()||{};
+    saveWeatherCache({..._prevWC, rainData30});
+  } else {
+    clearStatManual(dateForCheck, field);
+  }
+  updateStatManualBadges();
+  fetchWeather();
 }
 
 /* ── 강우/기온 데이터 누적 병합 ──
