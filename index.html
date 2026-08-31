@@ -8549,7 +8549,7 @@ function renderMatModalView(type, item){
       <table style="width:100%;border-collapse:collapse;font-size:12px;">
         ${matRow('상표명', item.name)}
         ${matRow('제형', item.form)}
-        ${matRow('분류', item.category)}
+        ${matRow('종류', item.category)}
         ${matRow('규격', item.size)}
         ${matRow('권장사용량', item.usage)}
         ${matRow('단가', item.price?Number(item.price).toLocaleString()+'원':'')}
@@ -8639,7 +8639,7 @@ function renderMatModalEdit(type, item){
     frac:'예) FRAC M05', series:'예) 0', summary:'예) 다작용점 작용: 곰팡이 세포 내 여러 대사 경로 동시 억제'
   };
   const fertBase = [
-    ['name','상표명'],['form','제형'],['category','분류'],['size','규격'],
+    ['name','상표명'],['form','제형'],['category','종류'],['size','규격'],
     ['usage','권장사용량'],['price','단가'],['supplier','납품업체'],['supplierTel','납품업체 연락처'],
     ['kgUnit','변환규격(kg)'],['N','N%'],['P','P%'],['K','K%'],
     ['Ca','Ca%'],['Mg','Mg%'],['Mn','Mn%'],['Fe','Fe%'],['Si','Si%'],['S','S%']
@@ -9443,7 +9443,7 @@ function calcFertNutr(item){
    이동 가능: 1~(n-3) */
 const MAT_COLS = [
   { key:'brand',   label:'상표명',    width:'minmax(172px,1fr)' },
-  { key:'kind',    label:'종류',      width:'64px'  },
+  { key:'kind',    label:'종류',      width:'110px' },
   { key:'size',    label:'규격',      width:'72px'  },
   { key:'form',    label:'제형',      width:'64px'  },
   { key:'product', label:'품목명',    width:'208px' },
@@ -11758,14 +11758,26 @@ function buildItemRow(blockId, item, order){
   const cellMap = {
     kind: (()=>{
       const PKCOLOR = {'살균제':'#E6399B','살충제':'#16A34A','제초제':'#CA8A04','생조제':'#2563EB','기타':'#6B7280'};
-      if(!isPest || !item.brandName) return '<span style="color:#ccc;font-size:10px;padding:2px 4px;display:block;text-align:center;">—</span>';
-      const list = getPestList();
-      const p = list.find(x=>x.name===item.brandName);
-      const kind = (p && p.type) || '기타';
-      const bc = PKCOLOR[kind] || '#888';
-      return `<div style="text-align:center;padding:2px 3px;">
-        <span style="display:inline-block;font-size:10px;font-weight:700;color:#fff;background:${bc};border-radius:4px;padding:2px 5px;white-space:nowrap;">${kind}</span>
-      </div>`;
+      if(!item.brandName) return '<span style="color:#ccc;font-size:10px;padding:2px 4px;display:block;text-align:center;">—</span>';
+      if(isPest){
+        const list = getPestList();
+        const p = list.find(x=>x.name===item.brandName);
+        const kind = (p && p.type) || '기타';
+        const bc = PKCOLOR[kind] || '#888';
+        return `<div style="text-align:center;padding:2px 3px;">
+          <span style="display:inline-block;font-size:10px;font-weight:700;color:#fff;background:${bc};border-radius:4px;padding:2px 5px;white-space:nowrap;">${kind}</span>
+        </div>`;
+      }
+      if(isFert){
+        const list = getFertList();
+        const p = (item._listIdx!==undefined && list[item._listIdx]?.name===item.brandName) ? list[item._listIdx] : list.find(x=>x.name===item.brandName);
+        const kind = (p && p.category) || item.category || '';
+        if(!kind) return '<span style="color:#ccc;font-size:10px;padding:2px 4px;display:block;text-align:center;">—</span>';
+        return `<div style="text-align:center;padding:2px 3px;">
+          <span style="display:inline-block;font-size:10px;font-weight:700;color:#fff;background:#3B6D11;border-radius:4px;padding:2px 5px;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis;" title="${String(kind).replace(/"/g,'&quot;')}">${kind}</span>
+        </div>`;
+      }
+      return '<span style="color:#ccc;font-size:10px;padding:2px 4px;display:block;text-align:center;">—</span>';
     })(),
     brand: isManual
       ? `<div style="padding:2px 3px;">${inp('brandName',item.brandName,'상표명')}</div>`
@@ -12047,7 +12059,7 @@ function buildPestInfoHTML(p){
 }
 function buildFertInfoHTML(p){
   const nutr = [['N',p.N],['P',p.P],['K',p.K],['Ca',p.Ca],['Mg',p.Mg],['Mn',p.Mn],['Fe',p.Fe],['Si',p.Si],['S',p.S]].filter(x=>x[1]).map(x=>`${x[0]}: ${x[1]}%`).join(' / ');
-  const rows = [['상표명',p.name],['제형',p.form],['분류',p.category],['규격',p.size],['권장사용량',p.usage],['단가',p.price?Number(p.price).toLocaleString()+'원':''],['성분비율',nutr]].filter(r=>r[1]);
+  const rows = [['상표명',p.name],['제형',p.form],['종류',p.category],['규격',p.size],['권장사용량',p.usage],['단가',p.price?Number(p.price).toLocaleString()+'원':''],['성분비율',nutr]].filter(r=>r[1]);
   return '<table style="width:100%;border-collapse:collapse;font-size:12px;">' +
     rows.map(([l,v])=>`<tr><td style="padding:5px 8px;font-weight:700;color:#555;white-space:nowrap;border-bottom:1px solid #f0f0f0;width:90px;">${l}</td><td style="padding:5px 8px;border-bottom:1px solid #f0f0f0;color:#222;">${v}</td></tr>`).join('') +
     '</table>';
