@@ -1048,17 +1048,25 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
           <span style="margin-left:auto;font-size:9px;font-weight:400;opacity:.7;">✏️ 클릭하여 수정</span>
         </div>
         <div style="padding:8px 7px;display:flex;flex-direction:column;gap:5px;">
+          <div style="margin:0;">
+            <div style="display:flex;align-items:center;justify-content:space-between;">
+              <label style="font-size:10px;color:#555;font-weight:700;">금일 강우량 (mm)</label>
+              <span id="w-rain-today-badge" style="display:none;font-size:9px;font-weight:800;color:#fff;background:#B8690A;border-radius:100px;padding:1px 6px;">✏ 수동</span>
+            </div>
+            <input type="number" id="inp-rain" placeholder="0" step="0.1"
+              style="width:100%;box-sizing:border-box;margin-top:2px;padding:4px 6px;border:1px solid #ccc;border-radius:5px;font-size:13px;font-weight:700;color:#185FA5;background:#fff;">
+          </div>
           <div class="wx-ei" style="margin:0;cursor:pointer;" onclick="editWeatherStat('w-avg','일 평균기온 (°C)','number')" title="클릭하여 수정">
             <div class="wx-ev" id="w-avg" style="text-decoration:underline dotted;text-underline-offset:2px;">--</div>
-            <div class="wx-el">일 평균기온 (°C) ✎</div>
+            <div class="wx-el">일 평균기온 (°C) ✎ <span id="w-avg-badge" style="display:none;font-size:9px;font-weight:800;color:#fff;background:#B8690A;border-radius:100px;padding:1px 6px;margin-left:3px;">✏ 수동</span></div>
           </div>
           <div class="wx-ei" style="margin:0;cursor:pointer;" onclick="editWeatherStat('w-minmax','최저 / 최고 (°C)','text')" title="클릭하여 수정">
             <div class="wx-ev" id="w-minmax" style="text-decoration:underline dotted;text-underline-offset:2px;">--</div>
-            <div class="wx-el">최저 / 최고 (°C) ✎</div>
+            <div class="wx-el">최저 / 최고 (°C) ✎ <span id="w-minmax-badge" style="display:none;font-size:9px;font-weight:800;color:#fff;background:#B8690A;border-radius:100px;padding:1px 6px;margin-left:3px;">✏ 수동</span></div>
           </div>
           <div class="wx-ei" style="margin:0;cursor:pointer;" onclick="editWeatherStat('w-month-rain','월 누적강우량 (mm)','number')" title="클릭하여 수정">
             <div class="wx-ev" id="w-month-rain" style="text-decoration:underline dotted;text-underline-offset:2px;">--</div>
-            <div class="wx-el">월 누적강우량 (mm) ✎</div>
+            <div class="wx-el">월 누적강우량 (mm) ✎ <span id="w-month-rain-badge" style="display:none;font-size:9px;font-weight:800;color:#fff;background:#B8690A;border-radius:100px;padding:1px 6px;margin-left:3px;">✏ 수동</span></div>
           </div>
         </div>
       </div>
@@ -1069,10 +1077,6 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
           <span>&#9999;&#65039;</span> 수동 입력
         </div>
         <div style="padding:8px 7px;display:flex;flex-direction:column;gap:6px;">
-          <div class="field" style="margin:0;">
-            <label>금일 강우량 (mm)</label>
-            <input type="number" id="inp-rain" placeholder="0" step="0.1">
-          </div>
           <div class="field" style="margin:0;">
             <label>적설량 (cm)</label>
             <input type="number" id="inp-snow" placeholder="0" step="0.1">
@@ -2850,6 +2854,27 @@ function getStatManual(dateISO,field){
   const all=loadStatManual();
   return all[dateISO]&&Object.prototype.hasOwnProperty.call(all[dateISO],field)?all[dateISO][field]:undefined;
 }
+/* ── "일 통계"(평균기온/최저최고/월누적강우량) 자동/수동 구분 배지 갱신 ──
+   각 값이 자동조회 그대로인지, 사용자가 "클릭하여 수정"으로 직접 고쳐둔
+   값인지 한눈에 구별할 수 있도록 "✏ 수동" 배지를 보여줌/숨김.
+   기준 날짜는 현재 보고 있는 날짜(피커에 값 있으면 그 날짜, 없으면 오늘). */
+function updateStatManualBadges(){
+  const pickerISO=document.getElementById('inp-date-picker')?.value||'';
+  const now=new Date();
+  const todayISO2=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+  const dateForCheck=pickerISO||todayISO2;
+  [['avg','w-avg-badge'],['minmax','w-minmax-badge'],['monthRain','w-month-rain-badge']].forEach(([field,badgeId])=>{
+    const badge=document.getElementById(badgeId);
+    if(!badge)return;
+    badge.style.display=(getStatManual(dateForCheck,field)!==undefined)?'inline':'none';
+  });
+  /* 금일 강우량은 별도의 날짜별 관리(rainData30의 manual 플래그)를 그대로 재사용 */
+  const rainBadge=document.getElementById('w-rain-today-badge');
+  if(rainBadge){
+    const _rEntry=rainData30.find(d=>d.date===dateForCheck);
+    rainBadge.style.display=(_rEntry&&_rEntry.manual)?'inline':'none';
+  }
+}
 
 /* ── 강우/기온 데이터 누적 병합 ──
  * 기존 캐시(구 데이터) + 새 API 데이터를 날짜 기준으로 병합.
@@ -2907,6 +2932,7 @@ function applyWeatherToUI(w){
       document.getElementById('w-minmax').textContent=(_mMinmax!==undefined)?_mMinmax:((w.minmax&&w.minmax!='--')?w.minmax:document.getElementById('w-minmax').textContent);
     }
   }
+  updateStatManualBadges();
   if(w.cachedAt){
     const d=new Date(w.cachedAt);
     const timeStr=`${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
@@ -4080,6 +4106,7 @@ async function fetchWeather(){
         else if(minmax&&minmax!='--') document.getElementById('w-minmax').textContent=minmax;
       }
     }
+    updateStatManualBadges();
 
     /* 날씨 캐시 저장 — 기존 캐시와 병합해서 누적 보존 */
     const monthRain=document.getElementById('w-month-rain').textContent;
@@ -5157,6 +5184,7 @@ function loadForEdit(idx){
   const writeTabs=document.querySelectorAll('.nav-tab');
   showPanel('write', writeTabs[0]);
   window.scrollTo(0,0);
+  updateStatManualBadges();
   showToast(`"${r.date}" 기록을 불러왔습니다. 수정 후 저장하세요.`);
 }
 
@@ -6458,6 +6486,7 @@ function saveWxStatModal(){
     const _field=_fieldMap[targetElId];
     if(_field) setStatManual(_curDate,_field,val);
   }
+  updateStatManualBadges();
 
   /* ── 차트 즉시 반영 ── */
   if(targetElId==='w-minmax'||targetElId==='w-avg'){
@@ -8049,6 +8078,7 @@ function applyDatePicker(val){
   const dateLabel=formatDateStr(yyyy,mm,dd);
   const idx=gd().findIndex(r=>r.date===dateLabel);
   if(idx>=0) loadForEdit(idx);
+  updateStatManualBadges();
 }
 function setToday(){
   const t=new Date();
@@ -8187,6 +8217,7 @@ function init(){
         renderRainChart();
         const _prevWC=loadWeatherCache()||{};
         saveWeatherCache({..._prevWC, rainData30});
+        updateStatManualBadges();
       }
     });
   });
