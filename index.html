@@ -3898,6 +3898,9 @@ async function fetchWeather(){
   /* 기상청 AWS 실측 강수량 — isToday/isPast 두 분기에서 각각 채워지고,
      아래 병합(mergeRainData) 이후 공통 구간에서 rainData30·입력창에 함께 반영됨 */
   let kmaOverrideRain=null;
+  /* 과거 날짜의 기상청 실측 평균/최저·최고 기온 — 공통 구간에서 화면에 반영됨.
+     (isToday는 기존처럼 avg/minmax 지역변수를 그대로 쓰므로 이 값은 null로 둠) */
+  let kmaOverrideAvg=null, kmaOverrideMinmax=null;
 
   showToast(`${loc.name} ${tmo}월 ${tdd}일 날씨 불러오는 중...`);
 
@@ -4081,6 +4084,10 @@ async function fetchWeather(){
           const kAvg=(kTaMax+kTaMin)/2;
           avg=kAvg.toFixed(1);
           temp=String(Math.round(kAvg));
+          /* 공통 구간(과거 날짜는 기존에 "오늘만 적용" 조건 때문에 걸러졌음)에서도
+             이 값이 화면에 반영되도록 별도 변수에도 저장해둠 */
+          kmaOverrideAvg=avg;
+          kmaOverrideMinmax=minmax;
         }
       }catch(eKmaPast){console.warn('[날씨-과거] 기상청 AWS 실측 조회 실패(격자 예측값 유지)',eKmaPast);}
 
@@ -4118,20 +4125,20 @@ async function fetchWeather(){
     document.getElementById('w-humid').textContent=humid||'--';
     document.getElementById('w-wind').textContent=wind||'--';
     document.getElementById('w-sky').textContent=sky||'--';
-    /* 일통계는 오늘 날짜인 경우에만 API 값 적용 (과거 기록은 저장된 값 유지) */
+    /* 일통계는 오늘 날짜면 방금 조회한 API 값을, 과거 날짜는 기상청 실측(kmaOverride*)이
+       있으면 그 값을 적용 — 예전에는 "오늘 날짜인 경우에만" 적용하도록 되어 있어서,
+       과거 날짜를 다시 불러와도 평균/최저·최고 기온이 화면에 전혀 반영되지 않던 버그가
+       있었음(값 계산은 됐는데 표시가 안 됐던 것). 수동으로 고쳐둔 값은 그대로 보호됨. */
     {
-      const _todayISO=(()=>{const _n=new Date();return`${_n.getFullYear()}-${String(_n.getMonth()+1).padStart(2,'0')}-${String(_n.getDate()).padStart(2,'0')}`;})();
-      const _pickerISO=document.getElementById('inp-date-picker')?.value||'';
-      if(!_pickerISO||_pickerISO===_todayISO){
-        /* 사용자가 "클릭하여 수정"으로 직접 고쳐둔 값이 있으면(오늘 재조회 시에도)
-           그 값을 그대로 유지하고 API 값으로 덮어쓰지 않음 */
-        const _manualAvg=getStatManual(_todayISO,'avg');
-        const _manualMinmax=getStatManual(_todayISO,'minmax');
-        if(_manualAvg!==undefined) document.getElementById('w-avg').textContent=_manualAvg;
-        else if(avg&&avg!='--') document.getElementById('w-avg').textContent=avg;
-        if(_manualMinmax!==undefined) document.getElementById('w-minmax').textContent=_manualMinmax;
-        else if(minmax&&minmax!='--') document.getElementById('w-minmax').textContent=minmax;
-      }
+      const _isDisplayToday=(!pickerVal||targetDate===todayISO);
+      const _manualAvg=getStatManual(targetDate,'avg');
+      const _manualMinmax=getStatManual(targetDate,'minmax');
+      if(_manualAvg!==undefined) document.getElementById('w-avg').textContent=_manualAvg;
+      else if(_isDisplayToday && avg&&avg!='--') document.getElementById('w-avg').textContent=avg;
+      else if(!_isDisplayToday && kmaOverrideAvg!=null) document.getElementById('w-avg').textContent=kmaOverrideAvg;
+      if(_manualMinmax!==undefined) document.getElementById('w-minmax').textContent=_manualMinmax;
+      else if(_isDisplayToday && minmax&&minmax!='--') document.getElementById('w-minmax').textContent=minmax;
+      else if(!_isDisplayToday && kmaOverrideMinmax!=null) document.getElementById('w-minmax').textContent=kmaOverrideMinmax;
     }
     updateStatManualBadges();
 
