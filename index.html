@@ -4159,28 +4159,6 @@ async function fetchWeather(){
       else if(_isDisplayToday && minmax&&minmax!='--') document.getElementById('w-minmax').textContent=minmax;
       else if(!_isDisplayToday && kmaOverrideMinmax!=null) document.getElementById('w-minmax').textContent=kmaOverrideMinmax;
     }
-    updateStatManualBadges();
-    /* ── 실측(기상청)/예측(격자모델) 출처 표시 ──
-       수동으로 고쳐둔 값은 "실측/예측" 구분이 의미 없으므로(사용자가 직접 정한 값),
-       수동 배지가 떠 있으면 출처 배지는 숨김. */
-    {
-      const _setSrc=(badgeId, manualBadgeId, isReal)=>{
-        const badge=document.getElementById(badgeId);
-        if(!badge)return;
-        const manualBadge=manualBadgeId?document.getElementById(manualBadgeId):null;
-        const isManualShown=manualBadge && manualBadge.style.display!=='none';
-        if(isManualShown){ badge.style.display='none'; return; }
-        badge.style.display='inline';
-        badge.textContent=isReal?'📡 실측':'📊 예측';
-        badge.style.background=isReal?'#1a7a3c':'#888';
-        badge.style.color='#fff';
-      };
-      /* 현재 날씨(기온/체감/습도/풍속)는 과거 날짜에는 실측 소스가 없어 항상 예측 취급 */
-      _setSrc('w-temp-source', null, isToday && kmaTodaySuccess);
-      _setSrc('w-rain-source', 'w-rain-today-badge', kmaOverrideRain!=null);
-      _setSrc('w-avg-source', 'w-avg-badge', isPast && kmaOverrideAvg!=null);
-      _setSrc('w-minmax-source', 'w-minmax-badge', isPast && kmaOverrideMinmax!=null);
-    }
 
     /* 날씨 캐시 저장 — 기존 캐시와 병합해서 누적 보존 */
     const monthRain=document.getElementById('w-month-rain').textContent;
@@ -4202,6 +4180,40 @@ async function fetchWeather(){
     {
       const _targetEntry=rainData30.find(d=>d.date===targetDate);
       if(_targetEntry) document.getElementById('inp-rain').value=_targetEntry.rain||0;
+    }
+    /* ── 수동/실측/예측 배지는 반드시 병합(mergeRainData) 이후에 계산해야 함 ──
+       병합 전에 계산하면, 강수량의 manual 보호가 실제로 적용되는지 알기 전에
+       배지를 먼저 그려버려서 "값은 그대로인데 배지만 실측이라고 뜨는" 모순이
+       생겼었음(수동 보호로 값이 안 바뀌었는데도 조회 자체는 성공했으니 실측
+       배지가 떠버렸던 버그). */
+    updateStatManualBadges();
+    /* ── 실측(기상청)/예측(격자모델) 출처 표시 ──
+       수동으로 고쳐둔 값은 "실측/예측" 구분이 의미 없으므로(사용자가 직접 정한 값),
+       수동 배지가 떠 있으면 출처 배지는 숨김. */
+    {
+      const _setSrc=(badgeId, manualBadgeId, isReal)=>{
+        const badge=document.getElementById(badgeId);
+        if(!badge)return;
+        const manualBadge=manualBadgeId?document.getElementById(manualBadgeId):null;
+        const isManualShown=manualBadge && manualBadge.style.display!=='none';
+        if(isManualShown){ badge.style.display='none'; return; }
+        badge.style.display='inline';
+        badge.textContent=isReal?'📡 실측':'📊 예측';
+        badge.style.background=isReal?'#1a7a3c':'#888';
+        badge.style.color='#fff';
+      };
+      /* 현재 날씨(기온/체감/습도/풍속)는 과거 날짜에는 실측 소스가 없어 항상 예측 취급 */
+      _setSrc('w-temp-source', null, isToday && kmaTodaySuccess);
+      /* 강수량은 실제로 최종 반영된 값이 기상청 값과 같을 때만 "실측"이라고 표시 —
+         수동 보호 등으로 실제 반영이 안 됐으면 예측으로 표시함 */
+      {
+        const _finalRainEntry=rainData30.find(d=>d.date===targetDate);
+        const _rainActuallyApplied = kmaOverrideRain!=null && _finalRainEntry
+          && Math.abs((_finalRainEntry.rain||0)-kmaOverrideRain) < 0.05;
+        _setSrc('w-rain-source', 'w-rain-today-badge', _rainActuallyApplied);
+      }
+      _setSrc('w-avg-source', 'w-avg-badge', isPast && kmaOverrideAvg!=null);
+      _setSrc('w-minmax-source', 'w-minmax-badge', isPast && kmaOverrideMinmax!=null);
     }
     /* 병합 후 차트 재렌더 (누적 데이터 반영) */
     _rainManualNav=false;
