@@ -4039,7 +4039,13 @@ async function fetchWeather(){
       try{
         const ctrl=new AbortController();
         const tid=setTimeout(()=>ctrl.abort(),8000);
-        pf=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weather_code&timezone=Asia%2FSeoul&past_days=${Math.min(diffDays,92)}&forecast_days=1`,{signal:ctrl.signal}).then(r=>r.json());
+        /* ⚠ past_days는 "오늘" 기준으로 며칠 전부터인지를 나타내는 값이라, 예전처럼
+           diffDays만 넘기면 실제로 받아오는 구간이 [targetDate ~ 오늘]이 되어버려서
+           targetDate "이전" 기록이 전혀 없었음(월 누적강수량/강우·기온 차트가 캐시가
+           없을 때 하루치 값만으로 계산되던 버그의 원인). targetDate를 기준으로도
+           과거 이력을 확보하도록 diffDays에 90일치를 더 얹어서 요청(최대 92일 한도는
+          그대로 유지). */
+        pf=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weather_code&timezone=Asia%2FSeoul&past_days=${Math.min(diffDays+89,92)}&forecast_days=1`,{signal:ctrl.signal}).then(r=>r.json());
         clearTimeout(tid);
         /* 해당 날짜 인덱스 찾기 */
         const dayIdx=pf.daily?.time?.indexOf(targetDate)??-1;
@@ -4346,7 +4352,7 @@ function renderRainChart(page){
       <span>누적강우 <b style="color:#185FA5;">${totalRain.toFixed(1)}mm</b></span>
     </div>`;
 }
-function wmo(c){if(c===0)return'맑음';if(c<=3)return'구름';if(c<=49)return'안개';if(c<=67)return'비';if(c<=77)return'눈';if(c<=82)return'소나기';return'뇌우';}
+function wmo(c){if(c===0)return'맑음';if(c<=3)return'구름';if(c<=49)return'안개';if(c<=67)return'비';if(c<=77)return'눈';if(c<=82)return'소나기';if(c<=86)return'눈 소나기';return'뇌우';}
 
 /* ── 되돌리기 스냅샷 ── */
 /*
@@ -6903,9 +6909,28 @@ function saveTempDayEdit(){
   const avgRaw=document.getElementById('tde-avg').value;
   const avgVal=parseFloat(avgRaw);
   if(!all[idx].weather)all[idx].weather={};
-  all[idx].weather.minmax=`${tmin} / ${tmax}`;
-  all[idx].weather.avg=isNaN(avgVal)?((tmin+tmax)/2).toFixed(1):String(avgVal);
+  const _newMinmax=`${tmin} / ${tmax}`;
+  const _newAvg=isNaN(avgVal)?((tmin+tmax)/2).toFixed(1):String(avgVal);
+  all[idx].weather.minmax=_newMinmax;
+  all[idx].weather.avg=_newAvg;
   sd(all);
+  /* ── 카드 클릭 수정(editWeatherStat)과 동일하게 "수동 수정됨"으로 표시하여
+     이후 자동 불러오기(fetchWeather)가 이 값을 덮어쓰지 못하도록 보호 ── */
+  setStatManual(_tempEditDate,'avg',_newAvg);
+  setStatManual(_tempEditDate,'minmax',_newMinmax);
+  /* ── 지금 작성 탭에 열려있는 날짜와 같으면 "일 통계" 카드(DOM)도 함께 갱신 —
+     이게 빠져 있으면 카드에는 예전 값이 그대로 남아있다가, 그 상태에서 "저장"
+     버튼을 누르는 순간 방금 한 차트 수정이 예전 값으로 되돌아가는 버그가 있었음. */
+  {
+    const _now=new Date();
+    const _todayISO4=`${_now.getFullYear()}-${String(_now.getMonth()+1).padStart(2,'0')}-${String(_now.getDate()).padStart(2,'0')}`;
+    const _curDate4=document.getElementById('inp-date-picker')?.value||_todayISO4;
+    if(_tempEditDate===_curDate4){
+      const _avgEl=document.getElementById('w-avg'); if(_avgEl)_avgEl.textContent=_newAvg;
+      const _mmEl=document.getElementById('w-minmax'); if(_mmEl)_mmEl.textContent=_newMinmax;
+    }
+  }
+  updateStatManualBadges();
   renderTempChart();
   closeTempDayModal(null);
   /* ☁️ Firebase 동기화 (로그인 & 쓰기 권한 있을 때) — 이게 빠져 있어서 재접속 시 클라우드 구데이터에 덮어써지던 버그 수정 */
@@ -8298,14 +8323,18 @@ function init(){
         const _pickerISO3=document.getElementById('inp-date-picker')?.value||'';
         const _todayISO3=(()=>{const _n=new Date();return`${_n.getFullYear()}-${String(_n.getMonth()+1).padStart(2,'0')}-${String(_n.getDate()).padStart(2,'0')}`;})();
         const _targetISO3=_pickerISO3||_todayISO3;
-        let todayEntry=rainData30.find(d=>d.isToday)||rainData30.find(d=>d.date===_targetISO3);
+        /* ⚠ 반드시 "실제 편집 중인 날짜"(_targetISO3)로 항목을 찾아야 함.
+           예전에는 isToday 플래그를 먼저 찾았는데, 과거 기록을 불러와 수정할 때도
+           rainData30에는 이미 "오늘" 항목이 남아있는 경우가 대부분이라, 과거 날짜의
+           강우량을 고치려던 입력이 엉뚱하게 오늘 항목을 덮어써버리는 버그가 있었음. */
+        let todayEntry=rainData30.find(d=>d.date===_targetISO3);
         if(todayEntry){
           todayEntry.rain=rainVal;
           todayEntry.manual=true;
-          todayEntry.isToday=true;
+          todayEntry.isToday=(_targetISO3===_todayISO3);
         } else {
           /* 자동 불러오기가 아직 안 되어 차트에 항목이 없는 경우 — 새로 생성해서 즉시 반영 */
-          rainData30.push({date:_targetISO3,rain:rainVal,manual:true,isToday:true});
+          rainData30.push({date:_targetISO3,rain:rainVal,manual:true,isToday:(_targetISO3===_todayISO3)});
           rainData30.sort((a,b)=>a.date.localeCompare(b.date));
         }
         renderRainChart();
