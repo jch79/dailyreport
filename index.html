@@ -3943,7 +3943,9 @@ async function fetchWeather(){
          조회에 성공하면 기온·습도·풍속·금일 강수량을 이 실측값으로 덮어씀.
          실패해도(네트워크 문제 등) 위에서 이미 구한 격자 예측값이 그대로 남아있어 안전함. */
       try{
-        const kmaText=await fetch(`https://empty-morning-c054.loveinch2000.workers.dev/?stn=460`).then(r=>r.text());
+        const _ctrlT=new AbortController();
+        const _tidT=setTimeout(()=>_ctrlT.abort(),8000);
+        const kmaText=await fetch(`https://empty-morning-c054.loveinch2000.workers.dev/?stn=460`,{signal:_ctrlT.signal}).then(r=>r.text()).finally(()=>clearTimeout(_tidT));
         const dataLine=kmaText.split('\n').map(l=>l.trim()).find(l=>l && !l.startsWith('#'));
         if(dataLine){
           const cols=dataLine.split(/\s+/);
@@ -4070,14 +4072,24 @@ async function fetchWeather(){
           const v=parseFloat(cols[5]); /* YYMMDD,STN,LON,LAT,HT,VAL 순서 */
           return isNaN(v)?null:v;
         };
-        const [rnDayText,taMaxText,taMinText]=await Promise.all([
-          fetch(`https://empty-morning-c054.loveinch2000.workers.dev/?path=sfc_aws_day.php&tm2=${dISO}&obs=rn_day&stn=460`).then(r=>r.text()),
-          fetch(`https://empty-morning-c054.loveinch2000.workers.dev/?path=sfc_aws_day.php&tm2=${dISO}&obs=ta_max&stn=460`).then(r=>r.text()),
-          fetch(`https://empty-morning-c054.loveinch2000.workers.dev/?path=sfc_aws_day.php&tm2=${dISO}&obs=ta_min&stn=460`).then(r=>r.text())
+        /* 8초 타임아웃 + 하나가 실패/지연되어도 나머지는 그대로 살리기 위해
+           Promise.all 대신 allSettled 사용 (예: rn_day만 타임아웃 나도
+           ta_max/ta_min은 정상 반영되도록) */
+        const fetchKma=(obs)=>{
+          const ctrl=new AbortController();
+          const tid=setTimeout(()=>ctrl.abort(),8000);
+          return fetch(`https://empty-morning-c054.loveinch2000.workers.dev/?path=sfc_aws_day.php&tm2=${dISO}&obs=${obs}&stn=460`,{signal:ctrl.signal})
+            .then(r=>r.text()).finally(()=>clearTimeout(tid));
+        };
+        const [rnDayRes,taMaxRes,taMinRes]=await Promise.allSettled([
+          fetchKma('rn_day'), fetchKma('ta_max'), fetchKma('ta_min')
         ]);
-        const kRnDay=parseDayVal(rnDayText);
-        const kTaMax=parseDayVal(taMaxText);
-        const kTaMin=parseDayVal(taMinText);
+        const kRnDay=rnDayRes.status==='fulfilled'?parseDayVal(rnDayRes.value):null;
+        const kTaMax=taMaxRes.status==='fulfilled'?parseDayVal(taMaxRes.value):null;
+        const kTaMin=taMinRes.status==='fulfilled'?parseDayVal(taMinRes.value):null;
+        if(rnDayRes.status==='rejected') console.warn('[날씨-과거] rn_day 조회 실패:',rnDayRes.reason);
+        if(taMaxRes.status==='rejected') console.warn('[날씨-과거] ta_max 조회 실패:',taMaxRes.reason);
+        if(taMinRes.status==='rejected') console.warn('[날씨-과거] ta_min 조회 실패:',taMinRes.reason);
         if(kRnDay!=null && kRnDay>=0) kmaOverrideRain=kRnDay;
         if(kTaMax!=null && kTaMin!=null){
           minmax=`${Math.round(kTaMin)} / ${Math.round(kTaMax)}`;
