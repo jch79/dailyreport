@@ -4553,7 +4553,8 @@ function saveReport(){
           if(!p) return;
           it.size=p.size??it.size; it.form=p.form??it.form;
           it.product=p.product??it.product; it.series=p.series??it.series;
-          it.category=p.category??it.category; it.frac=p.frac??it.frac;
+          if(it.type==='pest') it.category=p.category??it.category; /* 분류는 농약에만 있는 필드 — 비료·모래의 category는 '종류' 의미라 분류칸에 넣지 않음 */
+          it.frac=p.frac??it.frac;
         });
       });
       return blocks;
@@ -12188,7 +12189,10 @@ function buildItemRow(blockId, item, order){
       return `<div style="padding:2px 3px;">${inp('series',item.series,'계열')}</div>`;
     })(),
     category: (()=>{
-      if(!isManual && item.brandName){
+      /* '분류'는 농약(pest)에만 있는 고유 필드다. 비료·모래의 category는
+         '종류'를 뜻하므로(이미 '종류' 칼럼에 표시됨) 여기서는 목록 값을
+         끌어오지 않고, 사람이 직접 입력한 값만 그대로 보여준다. */
+      if(isPest && !isManual && item.brandName){
         const _list=getListByType(item.type);
         const _p=(_list[item._listIdx]?.name===item.brandName)?_list[item._listIdx]:_list.find(x=>x.name===item.brandName);
         const _v=_p?.category??item.category;
@@ -12380,7 +12384,9 @@ function selectMatSearchItem(listIdx){
   if(searchType==='pest'){
     item.product=p.product||''; item.series=p.series||''; item.category=p.category||''; item.frac=p.frac||'';
   } else {
-    item.product=''; item.series=''; item.category=p.category||''; item.frac='';
+    /* 비료·모래의 category 필드는 '종류'를 뜻하는 값이라(농약의 '분류'와 다른 개념),
+       분류 칸에는 채우지 않고 비워둔다 — 종류는 별도의 '종류' 칼럼에서 이미 보여줌 */
+    item.product=''; item.series=''; item.category=''; item.frac='';
   }
   closeMatSearchModal();
   renderAreaBlocks();
