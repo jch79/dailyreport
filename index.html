@@ -1616,6 +1616,8 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
           <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
             <button onclick="loadPrevMonthCarryAll()" title="선택된 월의 전월 말일 기준 잔여휴무·잔여연차를 계산해서 이번달 이월/연차부여 값으로 채웁니다 (불러온 뒤에도 직접 수정 가능)"
               style="font-size:10.5px;font-weight:700;padding:3px 10px;border-radius:100px;cursor:pointer;border:1.3px solid #8e44ad;background:#faf5fc;color:#8e44ad;white-space:nowrap;">↺ 전월 잔여 불러오기</button>
+            <button onclick="openRegNameOrderEditor()" title="표에 표시되는 정규직 이름 순서를 직접 정할 수 있습니다"
+              style="font-size:10.5px;font-weight:700;padding:3px 10px;border-radius:100px;cursor:pointer;border:1.3px solid #185FA5;background:#f3f9ff;color:#185FA5;white-space:nowrap;">⇅ 이름순서편집</button>
             <span id="reg-total-days" style="font-size:11px;color:#0C447C;font-weight:700;background:#daeaf9;padding:2px 8px;border-radius:100px;"></span>
             <span id="reg-ot-month-total" style="font-size:11px;color:#B8690A;font-weight:700;background:#fff3e0;border:1px solid #f0c080;padding:2px 8px;border-radius:100px;display:none;">⏱ 월 OT <b id="reg-ot-month-val">0</b>h</span>
             <span id="reg-ot-year-total" style="font-size:11px;color:#B8690A;font-weight:700;background:#fff3e0;border:1px solid #f0c080;padding:2px 8px;border-radius:100px;display:none;">📅 연 OT <b id="reg-ot-year-val">0</b>h</span>
@@ -1930,6 +1932,7 @@ const MAT_FERT_KEY = 'custom_fert_data';
 const MAT_SAND_KEY = 'custom_sand_data';
 const MAT_USE_KEY  = 'material_use_rows';
 const MAT_AREA_PRESET_KEY = 'mat_area_custom_presets';
+const REG_NAME_ORDER_KEY = 'reg_name_order_v1';
 const ELAPSED_KEY = 'golf_elapsed_items_v1';
 const TPRESET_DEFAULT={
   mowing:['그린모아','그린컬러','티모아','페어웨이모아','러프모아','에어레이션','버티컷','스파이킹','롤링'],
@@ -5579,6 +5582,15 @@ function updateRegLeaveMeta(name,field,val){
   const m=getRegLeaveMeta();
   if(!m[name]) m[name]={};
   m[name][field]=parseFloat(val)||0;
+  /* 이월/연차부여를 사람이 직접 고치면, '전월 잔여 불러오기'가 남겨둔
+     '불러오기 전 기준값'은 더 이상 맞지 않으므로 초기화한다.
+     (안 지우면 나중에 같은 전월을 다시 불러올 때 방금 고친 값이 무시되고
+     불러오기 이전 값으로 되돌아가 버림) */
+  if(field==='carry' || field==='annualGrant'){
+    delete m[name].lastLoadedYm;
+    delete m[name].preLoadCarry;
+    delete m[name].preLoadAnnual;
+  }
   saveRegLeaveMeta(m);
   renderStats();
 }
@@ -5613,6 +5625,11 @@ function bulkSetRegLeaveField(field, label){
   nameList.forEach(name=>{
     if(!meta[name]) meta[name]={};
     meta[name][field]=val;
+    if(field==='carry' || field==='annualGrant'){
+      delete meta[name].lastLoadedYm;
+      delete meta[name].preLoadCarry;
+      delete meta[name].preLoadAnnual;
+    }
   });
   saveRegLeaveMeta(meta);
   renderStats();
@@ -5654,19 +5671,34 @@ function _regLeaveCountPrevMonth(name, from, to){
   });
   return {offCnt, leaveCnt};
 }
+/* ── 전월 잔여 불러오기를 몇 번 눌러도 항상 같은 결과가 나오도록(멱등) 처리 ──
+   같은 전월(pym)을 이미 한 번 불러온 적이 있으면, 그때 "적용하기 전" 이월/연차부여
+   값을 기준으로 다시 계산한다. 그렇지 않으면(처음 불러오거나, 그 사이에 사람이
+   이월/연차부여를 직접 수정해 기준값이 초기화됐다면) 지금 저장된 값을 그대로 기준으로 삼는다.
+   → 같은 전월 데이터로 여러 번 눌러도 이월이 계속 늘어나지 않고 항상 같은 값이 된다. */
+function _regLeaveApplyPrevMonthCarry(meta, name, pym, offCnt, leaveCnt){
+  if(!meta[name]) meta[name]={};
+  const m=meta[name];
+  const alreadyLoadedThisMonth = m.lastLoadedYm===pym;
+  const baseCarry  = (alreadyLoadedThisMonth && m.preLoadCarry!==undefined)  ? m.preLoadCarry  : (m.carry||0);
+  const baseAnnual = (alreadyLoadedThisMonth && m.preLoadAnnual!==undefined) ? m.preLoadAnnual : (m.annualGrant||0);
+  const monthlyGrant = m.monthlyGrant||0;
+  m.preLoadCarry  = baseCarry;
+  m.preLoadAnnual = baseAnnual;
+  m.lastLoadedYm  = pym;
+  m.carry       = baseCarry + monthlyGrant - offCnt;
+  m.annualGrant = baseAnnual - leaveCnt;
+}
 /* 직원 1명만 불러오기 (행별 소형 버튼) */
 function loadPrevMonthCarryOne(name){
   if(!guardAdminOnly('이월/발생휴일/연차부여'))return;
   const ym=document.getElementById('stats-month')?.value;
   if(!ym){ alert('상단에서 월을 먼저 선택해주세요. (전체 기간에서는 불러올 수 없습니다)'); return; }
   const {py,pmo,from,to}=_regLeavePrevMonthRange(ym);
+  const pym=`${py}-${String(pmo).padStart(2,'0')}`;
   const {offCnt,leaveCnt}=_regLeaveCountPrevMonth(name, from, to);
   const meta=getRegLeaveMeta();
-  const m=meta[name]||{};
-  const carry=m.carry||0, monthlyGrant=m.monthlyGrant||0, annualGrant=m.annualGrant||0;
-  if(!meta[name]) meta[name]={};
-  meta[name].carry = carry+monthlyGrant-offCnt;
-  meta[name].annualGrant = annualGrant-leaveCnt;
+  _regLeaveApplyPrevMonthCarry(meta, name, pym, offCnt, leaveCnt);
   saveRegLeaveMeta(meta);
   renderStats();
   showToast?.(`${py}년 ${pmo}월 말 기준 잔여를 불러왔습니다`);
@@ -5677,6 +5709,7 @@ function loadPrevMonthCarryAll(){
   const ym=document.getElementById('stats-month')?.value;
   if(!ym){ alert('상단에서 월을 먼저 선택해주세요. (전체 기간에서는 불러올 수 없습니다)'); return; }
   const {py,pmo,from,to}=_regLeavePrevMonthRange(ym);
+  const pym=`${py}-${String(pmo).padStart(2,'0')}`;
   const nameSet=new Set();
   gd().forEach(r=>{
     const iso=_regLeaveToISO(r.date);
@@ -5693,11 +5726,7 @@ function loadPrevMonthCarryAll(){
   const meta=getRegLeaveMeta();
   names.forEach(name=>{
     const {offCnt,leaveCnt}=_regLeaveCountPrevMonth(name, from, to);
-    const m=meta[name]||{};
-    const carry=m.carry||0, monthlyGrant=m.monthlyGrant||0, annualGrant=m.annualGrant||0;
-    if(!meta[name]) meta[name]={};
-    meta[name].carry = carry+monthlyGrant-offCnt;
-    meta[name].annualGrant = annualGrant-leaveCnt;
+    _regLeaveApplyPrevMonthCarry(meta, name, pym, offCnt, leaveCnt);
   });
   saveRegLeaveMeta(meta);
   renderStats();
@@ -5799,7 +5828,7 @@ function renderStats(){
     const nameSet=new Set();
     /* 선택 기간 내 출근·휴무 기록이 1건 이상 있는 정규직만 표시 */
     filtered.forEach(r=>(r.workers||[]).filter(w=>w.type==='정규직').forEach(w=>nameSet.add(w.name)));
-    const names=[...nameSet];
+    const names=getOrderedRegNames([...nameSet]);
     if(!names.length){matEl.innerHTML='<div style="font-size:11px;color:#aaa;padding:8px 0;">정규직 데이터 없음</div>';return;}
     const days=_days;
     if(!days.length){matEl.innerHTML='<div style="font-size:11px;color:#aaa;padding:8px 0;">기간을 선택하세요</div>';return;}
@@ -9126,6 +9155,72 @@ function moveAreaOrderItem(idx, dir){
   [arr[idx],arr[newIdx]] = [arr[newIdx],arr[idx]];
   localStorage.setItem(MAT_AREA_PRESET_KEY, JSON.stringify(arr));
   renderAreaOrderList();
+}
+
+/* ── 정규직 근무 현황 표: 이름 표시 순서 (통계 탭) ──
+   사용자가 정한 순서를 우선 적용하고, 순서에 없는 이름(신규 입사자 등)은
+   가나다순으로 뒤에 붙인다. 자재사용량의 처리지역 순서 편집과 동일한 방식. */
+function getRegNameOrder(){
+  return JSON.parse(localStorage.getItem(REG_NAME_ORDER_KEY)||'[]');
+}
+function saveRegNameOrder(arr){
+  localStorage.setItem(REG_NAME_ORDER_KEY, JSON.stringify(arr));
+  if(typeof fbSaveSharedSettings==='function') setTimeout(fbSaveSharedSettings,300);
+}
+function getOrderedRegNames(nameList){
+  const order = getRegNameOrder();
+  const set = new Set(nameList);
+  const ordered = order.filter(n=>set.has(n));
+  const remaining = [...set].filter(n=>!order.includes(n)).sort((a,b)=>a.localeCompare(b,'ko'));
+  return [...ordered, ...remaining];
+}
+function openRegNameOrderEditor(){
+  /* 기록에 등장한 적 있는 모든 정규직 이름 수집 */
+  const allNamesSet = new Set();
+  gd().forEach(r=>(r.workers||[]).filter(w=>w.type==='정규직').forEach(w=>{ if(w.name) allNamesSet.add(w.name); }));
+  const ordered = getOrderedRegNames([...allNamesSet]);
+  /* 순서 목록에 없던 이름은 이 시점에 추가해서 순서 관리 대상이 되게 함 */
+  const order = getRegNameOrder();
+  ordered.forEach(n=>{ if(!order.includes(n)) order.push(n); });
+  saveRegNameOrder(order);
+
+  document.getElementById('reg-name-order-modal-wrap')?.remove();
+  const wrap = document.createElement('div');
+  wrap.id = 'reg-name-order-modal-wrap';
+  wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:12px;';
+  wrap.onclick = e=>{ if(e.target===wrap) wrap.remove(); };
+  wrap.innerHTML = `
+    <div style="background:#fff;border-radius:14px;width:100%;max-width:380px;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.3);overflow:hidden;">
+      <div style="background:linear-gradient(135deg,#0C447C,#185FA5);padding:14px 18px;display:flex;align-items:center;gap:10px;flex-shrink:0;">
+        <span style="font-size:18px;">⇅</span>
+        <div style="flex:1;font-size:14px;font-weight:800;color:#fff;">정규직 이름 표시 순서 편집</div>
+        <button id="reg-name-order-close-btn" style="border:none;background:rgba(255,255,255,.2);color:#fff;border-radius:8px;width:32px;height:32px;font-size:18px;cursor:pointer;flex-shrink:0;font-weight:700;line-height:1;">✕</button>
+      </div>
+      <div style="font-size:11px;color:#888;padding:10px 16px 0;">여기서 정한 순서가 통계 탭의 정규직 근무 현황 표에 적용됩니다.</div>
+      <div id="reg-name-order-list" style="flex:1;overflow:auto;padding:10px 16px 16px;"></div>
+    </div>`;
+  document.body.appendChild(wrap);
+  wrap.querySelector('#reg-name-order-close-btn')?.addEventListener('click', ()=>{ wrap.remove(); renderStats(); });
+  renderRegNameOrderList();
+}
+function renderRegNameOrderList(){
+  const listEl = document.getElementById('reg-name-order-list');
+  if(!listEl) return;
+  const order = getRegNameOrder();
+  listEl.innerHTML = order.map((name,i)=>`
+    <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;margin-bottom:5px;background:#f3f9ff;border:1px solid #cfe4f8;border-radius:8px;">
+      <span style="flex:1;font-size:12.5px;font-weight:700;color:#0C447C;">${name}</span>
+      <button onclick="moveRegNameOrderItem(${i},-1)" ${i===0?'disabled':''} style="border:1.3px solid #85B7EB;background:#fff;color:#185FA5;border-radius:6px;width:26px;height:26px;font-size:12px;cursor:pointer;${i===0?'opacity:.3;cursor:default;':''}">▲</button>
+      <button onclick="moveRegNameOrderItem(${i},1)" ${i===order.length-1?'disabled':''} style="border:1.3px solid #85B7EB;background:#fff;color:#185FA5;border-radius:6px;width:26px;height:26px;font-size:12px;cursor:pointer;${i===order.length-1?'opacity:.3;cursor:default;':''}">▼</button>
+    </div>`).join('') || `<div style="text-align:center;padding:20px;color:#bbb;font-size:12px;">등록된 정규직 이름이 없습니다</div>`;
+}
+function moveRegNameOrderItem(idx, dir){
+  const arr = getRegNameOrder();
+  const newIdx = idx+dir;
+  if(newIdx<0||newIdx>=arr.length) return;
+  [arr[idx],arr[newIdx]] = [arr[newIdx],arr[idx]];
+  saveRegNameOrder(arr);
+  renderRegNameOrderList();
 }
 
 let matAreaBlocks = [];
