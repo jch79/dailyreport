@@ -5570,80 +5570,94 @@ function clearStatsDate(){
   renderStats();
 }
 
-/* ── 정규직 휴무/연차 대장 (이월·발생·부여 값 저장) ── */
+/* ── 정규직 휴무/연차 대장 (이월·발생·부여 값을 "월별로 독립"하여 저장) ──
+   과거에는 직원 1명당 이월/발생휴일/연차부여가 각각 단일 값 하나뿐이라,
+   어느 달을 보고 있든 같은 값을 공유했다. 그래서 9월에서 발생휴일을
+   일괄수정하면 8월도 같이 바뀌는 문제가 있었다.
+   지금은 meta[이름].months[연-월] = {carry, monthlyGrant, annualGrant} 형태로
+   달마다 완전히 독립된 값을 저장한다. 다만:
+   - 발생휴일(monthlyGrant)은 보통 정책이 바뀌기 전까지 계속 같은 값이 이어지므로,
+     해당 달에 따로 지정한 값이 없으면 "그 이전 달 중 가장 최근에 지정된 값"을 이어받는다.
+   - 이월(carry)·연차부여(annualGrant)는 달마다 실제로 값이 바뀌어야 하므로,
+     해당 달에 따로 지정된 값이 없으면 이어받지 않고, 예전 방식(마이그레이션 이전
+     단일 값)을 한 번만 기본값으로 사용한다. */
 const REG_LEAVE_META_KEY='golf_reg_leave_meta_v1';
 function getRegLeaveMeta(){try{return JSON.parse(localStorage.getItem(REG_LEAVE_META_KEY)||'{}');}catch(e){return{};}}
 function saveRegLeaveMeta(m){
   localStorage.setItem(REG_LEAVE_META_KEY,JSON.stringify(m));
   if(typeof fbSaveSharedSettings==='function') setTimeout(fbSaveSharedSettings,300);
 }
-function updateRegLeaveMeta(name,field,val){
-  if(!guardAdminOnly('이월/발생휴일/연차부여')){ renderStats(); return; }
-  const m=getRegLeaveMeta();
-  if(!m[name]) m[name]={};
-  m[name][field]=parseFloat(val)||0;
-  /* 이월/연차부여를 사람이 직접 고치면, '전월 잔여 불러오기'가 남겨둔
-     '불러오기 전 기준값'은 더 이상 맞지 않으므로 초기화한다.
-     (안 지우면 나중에 같은 전월을 다시 불러올 때 방금 고친 값이 무시되고
-     불러오기 이전 값으로 되돌아가 버림) */
-  if(field==='carry' || field==='annualGrant'){
-    delete m[name].lastLoadedYm;
-    delete m[name].preLoadCarry;
-    delete m[name].preLoadAnnual;
+function _regLeaveCurYM(){ const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`; }
+/* meta 객체(이미 불러온 것)를 대상으로 읽고/쓰는 저수준 헬퍼 — 여러 명을 한 번에
+   처리할 때(일괄설정/전체 불러오기) localStorage를 반복해서 읽고 쓰지 않도록 함 */
+function _rlGetMonthField(meta, name, ym, field){
+  const nm=meta[name]||{};
+  const months=nm.months||{};
+  if(months[ym] && months[ym][field]!==undefined) return months[ym][field];
+  if(field==='monthlyGrant'){
+    const priorYms=Object.keys(months).filter(k=>k<=ym && months[k].monthlyGrant!==undefined).sort();
+    if(priorYms.length) return months[priorYms[priorYms.length-1]].monthlyGrant;
   }
-  saveRegLeaveMeta(m);
+  return nm[field]||0; /* 마이그레이션 이전 레거시 단일값(해당 달에 개별 값이 없을 때만 기본값으로) */
+}
+function _rlSetMonthField(meta, name, ym, field, val){
+  if(!meta[name]) meta[name]={};
+  if(!meta[name].months) meta[name].months={};
+  if(!meta[name].months[ym]) meta[name].months[ym]={};
+  meta[name].months[ym][field]=val;
+}
+/* localStorage에서 매번 새로 읽어와 단발성으로 조회할 때 쓰는 공개 헬퍼 */
+function getRegLeaveMonthField(name, ym, field){
+  return _rlGetMonthField(getRegLeaveMeta(), name, ym, field);
+}
+function updateRegLeaveMeta(name,ym,field,val){
+  if(!guardAdminOnly('이월/발생휴일/연차부여')){ renderStats(); return; }
+  const meta=getRegLeaveMeta();
+  _rlSetMonthField(meta, name, ym, field, parseFloat(val)||0);
+  saveRegLeaveMeta(meta);
   renderStats();
 }
 
 /* ── 이월/발생휴일/연차부여 등 항목 일괄(전체) 설정 ──
-   현재 통계 탭에 표시된 정규직 전체 이름을 대상으로, 프롬프트로 값을
-   한 번 입력받아 전원에게 동일하게 반영함. 개별 수정(각 칸 직접 입력)은
-   이 기능과 별개로 그대로 유지되며, 일괄 설정 후에도 각 칸을 클릭해
-   특정 직원만 다시 고칠 수 있음. */
+   상단에서 선택된 "그 달"에 대해서만 반영되며, 다른 달에는 영향이 없다.
+   개별 수정(각 칸 직접 입력)은 이 기능과 별개로 그대로 유지되며,
+   일괄 설정 후에도 각 칸을 클릭해 특정 직원만 다시 고칠 수 있음. */
 function bulkSetRegLeaveField(field, label){
   if(!guardAdminOnly('이월/발생휴일/연차부여 일괄설정'))return;
   const ym=document.getElementById('stats-month')?.value;
+  if(!ym){ alert('상단에서 월을 먼저 선택해주세요. (전체 기간에서는 일괄설정할 수 없습니다 — 달마다 값이 다를 수 있기 때문입니다)'); return; }
   const names=new Set();
   gd().forEach(r=>{
-    if(ym){
-      const [y2,mo2]=ym.split('-').map(Number);
-      const curFrom=`${y2}-${String(mo2).padStart(2,'0')}-01`;
-      const curLastDay=new Date(y2,mo2,0).getDate();
-      const curTo=`${y2}-${String(mo2).padStart(2,'0')}-${String(curLastDay).padStart(2,'0')}`;
-      const iso=_regLeaveToISO(r.date);
-      if(!iso || iso<curFrom || iso>curTo) return;
-    }
+    const [y2,mo2]=ym.split('-').map(Number);
+    const curFrom=`${y2}-${String(mo2).padStart(2,'0')}-01`;
+    const curLastDay=new Date(y2,mo2,0).getDate();
+    const curTo=`${y2}-${String(mo2).padStart(2,'0')}-${String(curLastDay).padStart(2,'0')}`;
+    const iso=_regLeaveToISO(r.date);
+    if(!iso || iso<curFrom || iso>curTo) return;
     (r.workers||[]).filter(w=>w.type==='정규직').forEach(w=>names.add(w.name));
   });
   const nameList=[...names];
   if(!nameList.length){ alert('대상 정규직 직원이 없습니다.'); return; }
-  const input=prompt(`전체 ${nameList.length}명의 "${label}" 값을 얼마로 일괄 설정할까요? (일수 입력, 설정 후에도 개별로 다시 수정할 수 있습니다)`,'7');
+  const input=prompt(`${ym.slice(0,4)}년 ${ym.slice(5,7)}월, 전체 ${nameList.length}명의 "${label}" 값을 얼마로 일괄 설정할까요? (일수 입력, 설정 후에도 개별로 다시 수정할 수 있고 다른 달에는 영향이 없습니다)`,'7');
   if(input===null) return;
   const val=parseFloat(input);
   if(isNaN(val)){ alert('숫자를 입력해주세요.'); return; }
   const meta=getRegLeaveMeta();
   nameList.forEach(name=>{
-    if(!meta[name]) meta[name]={};
-    meta[name][field]=val;
-    if(field==='carry' || field==='annualGrant'){
-      delete meta[name].lastLoadedYm;
-      delete meta[name].preLoadCarry;
-      delete meta[name].preLoadAnnual;
-    }
+    _rlSetMonthField(meta, name, ym, field, val);
   });
   saveRegLeaveMeta(meta);
   renderStats();
-  showToast?.(`전체 ${nameList.length}명 "${label}" 값을 ${val}(으)로 일괄 반영했습니다`);
+  showToast?.(`${ym.slice(0,4)}년 ${ym.slice(5,7)}월 전체 ${nameList.length}명 "${label}" 값을 ${val}(으)로 일괄 반영했습니다`);
 }
 
 /* ── 이월 휴무 / 연차부여 "전월 말 잔여" 불러오기 ──
    기준: 현재 통계 탭에서 선택된 월(stats-month)의 "전월"을 계산해,
-   그 전월의 실제 출근기록에서 휴무일수·연차일수를 세어
-   (현재 저장된 이월+발생휴일-전월 휴무일수) = 전월 말 잔여휴무 → 이번달 이월(carry)
-   (현재 저장된 연차부여-전월 연차일수) = 전월 말 잔여연차 → 이번달 연차부여(annualGrant)
-   로 자동 반영함. 계산 후에도 입력칸(이월/발생휴일/연차부여)은 그대로 두어
-   언제든 수동으로 고쳐 쓸 수 있음 — 이 기능은 "자동으로 채워주는 것"일 뿐
-   입력칸 자체를 잠그지 않음. */
+   전월에 저장돼 있는 이월/발생휴일/연차부여 값과 전월의 실제 출근기록을 가지고
+   전월 말 잔여휴무·잔여연차를 계산한 뒤, 그 값을 "이번 달"에만 저장한다.
+   전월 자체의 값은 건드리지 않으므로 여러 번 눌러도(같은 전월 데이터를 기준으로
+   하는 한) 항상 같은 결과가 나온다(멱등). 계산 후에도 입력칸은 그대로 두어
+   언제든 수동으로 고쳐 쓸 수 있음. */
 function _regLeaveToISO(d){
   const m=d.match(/(\d+)년\s*(\d+)월\s*(\d+)일/);
   if(!m) return '';
@@ -5671,23 +5685,13 @@ function _regLeaveCountPrevMonth(name, from, to){
   });
   return {offCnt, leaveCnt};
 }
-/* ── 전월 잔여 불러오기를 몇 번 눌러도 항상 같은 결과가 나오도록(멱등) 처리 ──
-   같은 전월(pym)을 이미 한 번 불러온 적이 있으면, 그때 "적용하기 전" 이월/연차부여
-   값을 기준으로 다시 계산한다. 그렇지 않으면(처음 불러오거나, 그 사이에 사람이
-   이월/연차부여를 직접 수정해 기준값이 초기화됐다면) 지금 저장된 값을 그대로 기준으로 삼는다.
-   → 같은 전월 데이터로 여러 번 눌러도 이월이 계속 늘어나지 않고 항상 같은 값이 된다. */
-function _regLeaveApplyPrevMonthCarry(meta, name, pym, offCnt, leaveCnt){
-  if(!meta[name]) meta[name]={};
-  const m=meta[name];
-  const alreadyLoadedThisMonth = m.lastLoadedYm===pym;
-  const baseCarry  = (alreadyLoadedThisMonth && m.preLoadCarry!==undefined)  ? m.preLoadCarry  : (m.carry||0);
-  const baseAnnual = (alreadyLoadedThisMonth && m.preLoadAnnual!==undefined) ? m.preLoadAnnual : (m.annualGrant||0);
-  const monthlyGrant = m.monthlyGrant||0;
-  m.preLoadCarry  = baseCarry;
-  m.preLoadAnnual = baseAnnual;
-  m.lastLoadedYm  = pym;
-  m.carry       = baseCarry + monthlyGrant - offCnt;
-  m.annualGrant = baseAnnual - leaveCnt;
+/* 전월(pym)에 저장된 값 + 전월 실사용을 가지고 이번달(ym)의 이월/연차부여를 계산해 저장 */
+function _regLeaveApplyPrevMonthCarry(meta, name, ym, pym, offCnt, leaveCnt){
+  const prevCarry  = _rlGetMonthField(meta, name, pym, 'carry');
+  const prevGrant  = _rlGetMonthField(meta, name, pym, 'monthlyGrant');
+  const prevAnnual = _rlGetMonthField(meta, name, pym, 'annualGrant');
+  _rlSetMonthField(meta, name, ym, 'carry', prevCarry + prevGrant - offCnt);
+  _rlSetMonthField(meta, name, ym, 'annualGrant', prevAnnual - leaveCnt);
 }
 /* 직원 1명만 불러오기 (행별 소형 버튼) */
 function loadPrevMonthCarryOne(name){
@@ -5698,7 +5702,7 @@ function loadPrevMonthCarryOne(name){
   const pym=`${py}-${String(pmo).padStart(2,'0')}`;
   const {offCnt,leaveCnt}=_regLeaveCountPrevMonth(name, from, to);
   const meta=getRegLeaveMeta();
-  _regLeaveApplyPrevMonthCarry(meta, name, pym, offCnt, leaveCnt);
+  _regLeaveApplyPrevMonthCarry(meta, name, ym, pym, offCnt, leaveCnt);
   saveRegLeaveMeta(meta);
   renderStats();
   showToast?.(`${py}년 ${pmo}월 말 기준 잔여를 불러왔습니다`);
@@ -5726,7 +5730,7 @@ function loadPrevMonthCarryAll(){
   const meta=getRegLeaveMeta();
   names.forEach(name=>{
     const {offCnt,leaveCnt}=_regLeaveCountPrevMonth(name, from, to);
-    _regLeaveApplyPrevMonthCarry(meta, name, pym, offCnt, leaveCnt);
+    _regLeaveApplyPrevMonthCarry(meta, name, ym, pym, offCnt, leaveCnt);
   });
   saveRegLeaveMeta(meta);
   renderStats();
@@ -5867,6 +5871,10 @@ function renderStats(){
     /* 각 직원 행 */
     const nameColStyle='position:sticky;left:0;z-index:2;background:#fff;min-width:56px;max-width:72px;font-size:11px;font-weight:700;color:#0C447C;padding:3px 6px;border:1px solid #b5d4f4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
     const leaveMeta=getRegLeaveMeta();
+    /* 이월/발생휴일/연차부여는 달마다 독립된 값이므로, 지금 이 표가 어느 달을 보여주고
+       있는지를 확정해야 한다 — 월 드롭다운이 선택돼 있으면 그 달, "전체"나 사용자
+       지정 기간이면 이번 달 기준으로 본다(다른 OT 집계 로직과 동일한 관례) */
+    const ledgerYm = selMonth || nowYM;
     const ledgerInpStyle='width:34px;font-size:10px;padding:1px 2px;border:1px solid #d8bce8;border-radius:4px;text-align:center;color:#8e44ad;font-weight:700;background:#faf5fc;';
     const ledgerTdStyle='min-width:52px;padding:3px 4px;border:1px solid #b5d4f4;font-size:10px;text-align:center;white-space:nowrap;';
     const bodyRows=names.map(name=>{
@@ -5921,31 +5929,30 @@ function renderStats(){
         }
       }).join('');
       const nameEsc=name.replace(/'/g,"\\'");
-      const meta=leaveMeta[name]||{};
-      const carry=meta.carry||0, monthlyGrant=meta.monthlyGrant||0, annualGrant=meta.annualGrant||0;
+      const carry=_rlGetMonthField(leaveMeta,name,ledgerYm,'carry'), monthlyGrant=_rlGetMonthField(leaveMeta,name,ledgerYm,'monthlyGrant'), annualGrant=_rlGetMonthField(leaveMeta,name,ledgerYm,'annualGrant');
       const unusedOff=monthlyGrant-offCnt;
       const remainOff=carry+monthlyGrant-offCnt;
       const remainLeave=annualGrant-leaveCnt;
       const ledgerCells=`
         <td style="${ledgerTdStyle}background:#fafcff;">
           <div style="display:flex;align-items:center;justify-content:center;gap:2px;">
-            <input type="number" value="${carry}" title="이월 (수정 가능)"
-              onchange="updateRegLeaveMeta('${nameEsc}','carry',this.value)" style="${ledgerInpStyle}">
+            <input type="number" value="${carry}" title="이월 (수정 가능, ${ledgerYm} 기준)"
+              onchange="updateRegLeaveMeta('${nameEsc}','${ledgerYm}','carry',this.value)" style="${ledgerInpStyle}">
             <button onclick="loadPrevMonthCarryOne('${nameEsc}')" title="전월 말 잔여휴무·잔여연차를 이 직원에게만 불러옵니다"
               style="border:none;background:none;color:#8e44ad;cursor:pointer;font-size:11px;padding:0 1px;">↺</button>
           </div>
         </td>
         <td style="${ledgerTdStyle}background:#fafcff;">
-          <input type="number" value="${monthlyGrant}" title="발생휴일 (수정 가능)"
-            onchange="updateRegLeaveMeta('${nameEsc}','monthlyGrant',this.value)" style="${ledgerInpStyle}">
+          <input type="number" value="${monthlyGrant}" title="발생휴일 (수정 가능, ${ledgerYm} 기준)"
+            onchange="updateRegLeaveMeta('${nameEsc}','${ledgerYm}','monthlyGrant',this.value)" style="${ledgerInpStyle}">
         </td>
         <td style="${ledgerTdStyle}color:#0C447C;font-weight:700;background:#f5f9ff;">${offCnt}일</td>
         <td style="${ledgerTdStyle}color:#555;background:#fafcff;">${unusedOff}일</td>
         <td style="${ledgerTdStyle}color:#0C447C;font-weight:800;background:#e8f1fb;">${remainOff}일</td>
         <td style="${ledgerTdStyle}color:#8e44ad;font-weight:700;background:#f8f2fb;">${leaveCnt}일</td>
         <td style="${ledgerTdStyle}background:#faf5fc;">
-          <input type="number" value="${annualGrant}" title="연차 총 부여일수 (수정 가능) · 상단 '↺' 버튼으로 전월 말 잔여를 이 칸에 불러올 수 있습니다"
-            onchange="updateRegLeaveMeta('${nameEsc}','annualGrant',this.value)" style="${ledgerInpStyle}">
+          <input type="number" value="${annualGrant}" title="연차 총 부여일수 (수정 가능, ${ledgerYm} 기준) · 상단 '↺' 버튼으로 전월 말 잔여를 이 칸에 불러올 수 있습니다"
+            onchange="updateRegLeaveMeta('${nameEsc}','${ledgerYm}','annualGrant',this.value)" style="${ledgerInpStyle}">
           <div style="font-size:8px;color:#8e44ad;font-weight:700;margin-top:1px;">잔여 ${remainLeave}일</div>
         </td>`;
       return`<tr>
