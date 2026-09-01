@@ -1012,6 +1012,7 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
       <div style="background:#f5f8ff;border:2px solid #b5d4f4;border-radius:10px;overflow:hidden;">
         <div style="background:#185FA5;color:#fff;font-size:10px;font-weight:700;padding:5px 10px;display:flex;align-items:center;gap:5px;">
           <span>&#127760;</span> 현재 날씨
+          <span id="w-temp-source" style="display:none;margin-left:auto;font-size:9px;font-weight:800;color:#185FA5;background:#fff;border-radius:100px;padding:1px 7px;"></span>
         </div>
         <div style="padding:8px 7px;display:flex;flex-direction:column;gap:5px;">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;">
@@ -1051,18 +1052,21 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
           <div style="margin:0;">
             <div style="display:flex;align-items:center;justify-content:space-between;">
               <label style="font-size:10px;color:#555;font-weight:700;">금일 강우량 (mm)</label>
-              <span id="w-rain-today-badge" onclick="event.stopPropagation();revertStatToAuto('rain','금일 강우량')" title="눌러서 자동값으로 되돌리기" style="display:none;cursor:pointer;font-size:9px;font-weight:800;color:#fff;background:#B8690A;border-radius:100px;padding:1px 6px;">✏ 수동 ↺</span>
+              <span style="display:flex;gap:3px;align-items:center;">
+                <span id="w-rain-source" style="display:none;font-size:9px;font-weight:800;color:#fff;border-radius:100px;padding:1px 6px;"></span>
+                <span id="w-rain-today-badge" onclick="event.stopPropagation();revertStatToAuto('rain','금일 강우량')" title="눌러서 자동값으로 되돌리기" style="display:none;cursor:pointer;font-size:9px;font-weight:800;color:#fff;background:#B8690A;border-radius:100px;padding:1px 6px;">✏ 수동 ↺</span>
+              </span>
             </div>
             <input type="number" id="inp-rain" placeholder="0" step="0.1"
               style="width:100%;box-sizing:border-box;margin-top:2px;padding:4px 6px;border:1px solid #ccc;border-radius:5px;font-size:13px;font-weight:700;color:#185FA5;background:#fff;">
           </div>
           <div class="wx-ei" style="margin:0;cursor:pointer;" onclick="editWeatherStat('w-avg','일 평균기온 (°C)','number')" title="클릭하여 수정">
             <div class="wx-ev" id="w-avg" style="text-decoration:underline dotted;text-underline-offset:2px;">--</div>
-            <div class="wx-el">일 평균기온 (°C) ✎ <span id="w-avg-badge" onclick="event.stopPropagation();revertStatToAuto('avg','일 평균기온')" title="눌러서 자동값으로 되돌리기" style="display:none;cursor:pointer;font-size:9px;font-weight:800;color:#fff;background:#B8690A;border-radius:100px;padding:1px 6px;margin-left:3px;">✏ 수동 ↺</span></div>
+            <div class="wx-el">일 평균기온 (°C) ✎ <span id="w-avg-source" style="display:none;font-size:9px;font-weight:800;color:#fff;border-radius:100px;padding:1px 6px;margin-left:3px;"></span> <span id="w-avg-badge" onclick="event.stopPropagation();revertStatToAuto('avg','일 평균기온')" title="눌러서 자동값으로 되돌리기" style="display:none;cursor:pointer;font-size:9px;font-weight:800;color:#fff;background:#B8690A;border-radius:100px;padding:1px 6px;margin-left:3px;">✏ 수동 ↺</span></div>
           </div>
           <div class="wx-ei" style="margin:0;cursor:pointer;" onclick="editWeatherStat('w-minmax','최저 / 최고 (°C)','text')" title="클릭하여 수정">
             <div class="wx-ev" id="w-minmax" style="text-decoration:underline dotted;text-underline-offset:2px;">--</div>
-            <div class="wx-el">최저 / 최고 (°C) ✎ <span id="w-minmax-badge" onclick="event.stopPropagation();revertStatToAuto('minmax','최저 / 최고 기온')" title="눌러서 자동값으로 되돌리기" style="display:none;cursor:pointer;font-size:9px;font-weight:800;color:#fff;background:#B8690A;border-radius:100px;padding:1px 6px;margin-left:3px;">✏ 수동 ↺</span></div>
+            <div class="wx-el">최저 / 최고 (°C) ✎ <span id="w-minmax-source" style="display:none;font-size:9px;font-weight:800;color:#fff;border-radius:100px;padding:1px 6px;margin-left:3px;"></span> <span id="w-minmax-badge" onclick="event.stopPropagation();revertStatToAuto('minmax','최저 / 최고 기온')" title="눌러서 자동값으로 되돌리기" style="display:none;cursor:pointer;font-size:9px;font-weight:800;color:#fff;background:#B8690A;border-radius:100px;padding:1px 6px;margin-left:3px;">✏ 수동 ↺</span></div>
           </div>
           <div class="wx-ei" style="margin:0;cursor:pointer;" onclick="editWeatherStat('w-month-rain','월 누적강우량 (mm)','number')" title="클릭하여 수정">
             <div class="wx-ev" id="w-month-rain" style="text-decoration:underline dotted;text-underline-offset:2px;">--</div>
@@ -3901,6 +3905,8 @@ async function fetchWeather(){
   /* 과거 날짜의 기상청 실측 평균/최저·최고 기온 — 공통 구간에서 화면에 반영됨.
      (isToday는 기존처럼 avg/minmax 지역변수를 그대로 쓰므로 이 값은 null로 둠) */
   let kmaOverrideAvg=null, kmaOverrideMinmax=null;
+  /* isToday일 때 기상청 실측 조회 자체가 성공했는지(현재 날씨 카드 출처 표시용) */
+  let kmaTodaySuccess=false;
 
   showToast(`${loc.name} ${tmo}월 ${tdd}일 날씨 불러오는 중...`);
 
@@ -3948,6 +3954,7 @@ async function fetchWeather(){
         const kmaText=await fetch(`https://empty-morning-c054.loveinch2000.workers.dev/?stn=460`,{signal:_ctrlT.signal}).then(r=>r.text()).finally(()=>clearTimeout(_tidT));
         const dataLine=kmaText.split('\n').map(l=>l.trim()).find(l=>l && !l.startsWith('#'));
         if(dataLine){
+          kmaTodaySuccess=true;
           const cols=dataLine.split(/\s+/);
           /* 순서: YYMMDDHHMI STN TA WD WS RN_DAY RN_HR1 HM PA PS */
           const kTA=parseFloat(cols[2]), kWS=parseFloat(cols[4]),
@@ -4153,6 +4160,27 @@ async function fetchWeather(){
       else if(!_isDisplayToday && kmaOverrideMinmax!=null) document.getElementById('w-minmax').textContent=kmaOverrideMinmax;
     }
     updateStatManualBadges();
+    /* ── 실측(기상청)/예측(격자모델) 출처 표시 ──
+       수동으로 고쳐둔 값은 "실측/예측" 구분이 의미 없으므로(사용자가 직접 정한 값),
+       수동 배지가 떠 있으면 출처 배지는 숨김. */
+    {
+      const _setSrc=(badgeId, manualBadgeId, isReal)=>{
+        const badge=document.getElementById(badgeId);
+        if(!badge)return;
+        const manualBadge=manualBadgeId?document.getElementById(manualBadgeId):null;
+        const isManualShown=manualBadge && manualBadge.style.display!=='none';
+        if(isManualShown){ badge.style.display='none'; return; }
+        badge.style.display='inline';
+        badge.textContent=isReal?'📡 실측':'📊 예측';
+        badge.style.background=isReal?'#1a7a3c':'#888';
+        badge.style.color='#fff';
+      };
+      /* 현재 날씨(기온/체감/습도/풍속)는 과거 날짜에는 실측 소스가 없어 항상 예측 취급 */
+      _setSrc('w-temp-source', null, isToday && kmaTodaySuccess);
+      _setSrc('w-rain-source', 'w-rain-today-badge', kmaOverrideRain!=null);
+      _setSrc('w-avg-source', 'w-avg-badge', isPast && kmaOverrideAvg!=null);
+      _setSrc('w-minmax-source', 'w-minmax-badge', isPast && kmaOverrideMinmax!=null);
+    }
 
     /* 날씨 캐시 저장 — 기존 캐시와 병합해서 누적 보존 */
     const monthRain=document.getElementById('w-month-rain').textContent;
