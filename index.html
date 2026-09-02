@@ -8359,24 +8359,23 @@ function init(){
   /* 날씨 지역 복원 */
   const loc=getWeatherLoc();
   document.getElementById('weather-loc-name').textContent=loc.name;
-  /* 날씨 캐시 복원 — 날짜 확인 후 만료 시 자동 갱신 */
+  /* 날씨 캐시 복원 — 예전에는 캐시 날짜가 오늘과 다르면(즉 하루가 지났으면)
+     자동으로 다시 불러왔는데, 과거 날짜의 기록을 열어볼 때도 이 자동 갱신이
+     같이 일어나면서 "그날 날씨"가 방금 불러온 "오늘/격자 날씨"로 덮어써져
+     혼선을 주는 문제가 있었다. 이제는 자동 갱신을 하지 않고 캐시를 그대로
+     보여주기만 하며, 최신 날씨가 필요하면 "자동 불러오기" 버튼을 직접
+     눌러야만 fetchWeather()가 실행된다. */
   const cached=loadWeatherCache();
   if(cached){
-    /* 캐시의 오늘 날짜와 실제 오늘 비교 */
+    applyWeatherToUI(cached);
     const todayISO=(()=>{const n=new Date();return`${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`;})();
     const cachedToday=cached.rainData30?.find(d=>d.isToday)?.date||'';
     if(cachedToday&&cachedToday!==todayISO){
-      /* 날짜가 달라진 경우 → 캐시 데이터 먼저 표시 후 자동 갱신 */
-      applyWeatherToUI(cached);
-      console.log('[날씨] 캐시 날짜 만료 ('+cachedToday+' → '+todayISO+'), 자동 갱신 중...');
-      setTimeout(()=>fetchWeather(),800); /* 약간 딜레이 후 갱신 */
-    } else {
-      applyWeatherToUI(cached);
+      console.log('[날씨] 캐시 날짜가 오늘과 다릅니다 ('+cachedToday+' → '+todayISO+') — 자동 갱신하지 않습니다. 최신 날씨는 "자동 불러오기" 버튼으로 직접 불러와주세요.');
     }
   } else {
-    {const _rgEl=document.getElementById('rain-chart-container');if(_rgEl)_rgEl.innerHTML='<div style="font-size:11px;color:#aaa;padding:10px;">자동 불러오기 후 표시됩니다</div>';}
-    /* 캐시 없으면 자동 불러오기 시도 */
-    setTimeout(()=>fetchWeather(),1200);
+    const _rgEl=document.getElementById('rain-chart-container');
+    if(_rgEl)_rgEl.innerHTML='<div style="font-size:11px;color:#aaa;padding:10px;">자동 불러오기 후 표시됩니다</div>';
   }
   dailySubs=getDailySubs();
   yegoData={};initTasks();renderYego();renderWorkers();renderDailySubTabs();renderPresets();renderHistory();renderStats();renderRecentChips();
