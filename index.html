@@ -149,6 +149,7 @@ async function fbFullSyncFromCloud(){
       if(sh.npkCards)    localStorage.setItem('golf_matu_npk_cards_v1', JSON.stringify(sh.npkCards));
       if(sh.regLeaveMeta) localStorage.setItem('golf_reg_leave_meta_v1', JSON.stringify(sh.regLeaveMeta));
       if(sh.elapsedItems) {localStorage.setItem('golf_elapsed_items_v1', JSON.stringify(sh.elapsedItems));if(typeof renderElapsedItems==='function') renderElapsedItems();}
+      if(sh.tdrZoneLabels) {localStorage.setItem('tdr_zone_labels_v1', JSON.stringify(sh.tdrZoneLabels));if(typeof applyTdrLabelsToUI==='function'){applyTdrLabelsToUI();if(typeof renderTdrHistory==='function')renderTdrHistory();}}
       console.log('[FB] 공유 설정 동기화 완료');
     }
 
@@ -190,6 +191,7 @@ async function fbSaveSharedSettings(){
     const nc=localStorage.getItem('golf_matu_npk_cards_v1'); if(nc) settings.npkCards=JSON.parse(nc);
     const rl=localStorage.getItem('golf_reg_leave_meta_v1'); if(rl) settings.regLeaveMeta=JSON.parse(rl);
     const el=localStorage.getItem('golf_elapsed_items_v1'); if(el) settings.elapsedItems=JSON.parse(el);
+    const tl=localStorage.getItem('tdr_zone_labels_v1'); if(tl) settings.tdrZoneLabels=JSON.parse(tl);
     settings._updatedAt = firebase.firestore.FieldValue.serverTimestamp();
     await _fbDb.collection(FB_COL_SHARED).doc('settings').set(settings, {merge:true});
     console.log('[FB] 공유 설정 저장 완료');
@@ -1178,6 +1180,8 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
             <span style="display:inline-block;width:3px;height:12px;border-radius:2px;background:#16A085;"></span>
             TDR350 토양수분계
           </span>
+          <button onclick="openTdrLabelEditor()" title="측정 항목 이름 수정 (예: 좌그린→동코스)"
+            style="font-size:9px;padding:2px 7px;border:1.3px solid #a3d9cf;border-radius:5px;background:#fff;color:#16A085;cursor:pointer;font-weight:700;margin-right:4px;">✎ 이름수정</button>
           <button onclick="resetTdrRecord()" title="TDR350 측정값 및 측정 메모 초기화"
             style="font-size:9px;padding:2px 7px;border:1.3px solid #a3d9cf;border-radius:5px;background:#fff;color:#16A085;cursor:pointer;font-weight:700;">↺ 초기화</button>
         </div>
@@ -1188,15 +1192,15 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
             <div style="padding:6px 4px;font-size:9px;font-weight:700;color:#fff;text-align:center;border-right:1px solid #16A085;">측정<br>항목</div>
             <!-- 좌그린 -->
             <div style="padding:6px 4px;text-align:center;border-right:1px solid #16A085;">
-              <div style="font-size:10px;font-weight:700;color:#fff;">&#127807; 좌그린</div>
+              <div style="font-size:10px;font-weight:700;color:#fff;" id="tdr-label-green-left">&#127807; 좌그린</div>
             </div>
             <!-- 우그린 -->
             <div style="padding:6px 4px;text-align:center;border-right:1px solid #16A085;">
-              <div style="font-size:10px;font-weight:700;color:#fff;">&#127807; 우그린</div>
+              <div style="font-size:10px;font-weight:700;color:#fff;" id="tdr-label-green-right">&#127807; 우그린</div>
             </div>
             <!-- 티 -->
             <div style="padding:6px 4px;text-align:center;">
-              <div style="font-size:10px;font-weight:700;color:#fff;">&#127795; 티</div>
+              <div style="font-size:10px;font-weight:700;color:#fff;" id="tdr-label-tee">&#127795; 티</div>
             </div>
           </div>
 
@@ -3466,6 +3470,79 @@ const TDR_ZONES=[
   {key:'green-right',label:'우그린'},
   {key:'tee',        label:'티'},
 ];
+/* ── TDR350 측정 항목 이름(좌그린/우그린/티) 사용자 지정 ──
+   내부적으로 쓰는 키(green-left/green-right/tee)와 저장 데이터 구조는 그대로 두고,
+   화면에 보여주는 이름표만 바꿀 수 있게 한다. 예) "좌그린"→"동코스", "우그린"→"서코스".
+   이렇게 하면 과거 저장 기록과의 호환은 그대로 유지되면서, 이름을 바꾸면
+   측정표·최근10일 기록·기록 상세보기 등 관련된 화면에 다 함께 반영된다. */
+const TDR_ZONE_LABEL_KEY='tdr_zone_labels_v1';
+const TDR_ZONE_LABEL_DEFAULT={'green-left':'좌그린','green-right':'우그린','tee':'티'};
+function getTdrZoneLabels(){
+  try{
+    const s=localStorage.getItem(TDR_ZONE_LABEL_KEY);
+    if(s) return {...TDR_ZONE_LABEL_DEFAULT, ...JSON.parse(s)};
+  }catch(e){}
+  return {...TDR_ZONE_LABEL_DEFAULT};
+}
+function saveTdrZoneLabels(labels){
+  try{ localStorage.setItem(TDR_ZONE_LABEL_KEY, JSON.stringify(labels)); }catch(e){}
+  if(typeof fbSaveSharedSettings==='function') setTimeout(fbSaveSharedSettings,300);
+}
+function getTdrZoneLabel(key){
+  const labels=getTdrZoneLabels();
+  return labels[key]||TDR_ZONE_LABEL_DEFAULT[key]||key;
+}
+/* 저장된 이름표를 실제 화면(측정표 헤더)에 반영 */
+function applyTdrLabelsToUI(){
+  const labels=getTdrZoneLabels();
+  const glEl=document.getElementById('tdr-label-green-left'); if(glEl) glEl.textContent='🍃 '+labels['green-left'];
+  const grEl=document.getElementById('tdr-label-green-right'); if(grEl) grEl.textContent='🍃 '+labels['green-right'];
+  const teeEl=document.getElementById('tdr-label-tee'); if(teeEl) teeEl.textContent='🌳 '+labels['tee'];
+}
+/* 이름 수정 모달 열기 */
+function openTdrLabelEditor(){
+  if(!guardSectionEdit('irr'))return;
+  const labels=getTdrZoneLabels();
+  document.getElementById('tdr-label-modal-wrap')?.remove();
+  const esc=v=>String(v||'').replace(/"/g,'&quot;');
+  const wrap=document.createElement('div');
+  wrap.id='tdr-label-modal-wrap';
+  wrap.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:12px;';
+  wrap.onclick=e=>{ if(e.target===wrap) wrap.remove(); };
+  wrap.innerHTML=`
+    <div style="background:#fff;border-radius:14px;width:100%;max-width:340px;box-shadow:0 10px 40px rgba(0,0,0,.3);overflow:hidden;">
+      <div style="background:linear-gradient(135deg,#1a7a6a,#16A085);padding:14px 18px;">
+        <div style="font-size:14px;font-weight:800;color:#fff;">✎ TDR350 측정 항목 이름 수정</div>
+      </div>
+      <div style="padding:16px;">
+        <div style="font-size:11px;color:#888;margin-bottom:12px;line-height:1.5;">여기서 바꾼 이름은 위 측정표뿐 아니라 "최근 10일 TDR350 측정값"과 기록 상세보기에도 함께 적용됩니다. (예: 좌그린→동코스, 우그린→서코스)</div>
+        <label style="font-size:11px;font-weight:700;color:#555;">🍃 첫 번째 항목</label>
+        <input id="tdr-label-input-green-left" value="${esc(labels['green-left'])}" maxlength="10"
+          style="width:100%;box-sizing:border-box;margin:4px 0 12px;padding:8px 10px;border:1.5px solid #ccc;border-radius:7px;font-size:13px;">
+        <label style="font-size:11px;font-weight:700;color:#555;">🍃 두 번째 항목</label>
+        <input id="tdr-label-input-green-right" value="${esc(labels['green-right'])}" maxlength="10"
+          style="width:100%;box-sizing:border-box;margin:4px 0 12px;padding:8px 10px;border:1.5px solid #ccc;border-radius:7px;font-size:13px;">
+        <label style="font-size:11px;font-weight:700;color:#555;">🌳 세 번째 항목</label>
+        <input id="tdr-label-input-tee" value="${esc(labels['tee'])}" maxlength="10"
+          style="width:100%;box-sizing:border-box;margin:4px 0 16px;padding:8px 10px;border:1.5px solid #ccc;border-radius:7px;font-size:13px;">
+        <div style="display:flex;gap:8px;">
+          <button onclick="document.getElementById('tdr-label-modal-wrap').remove()" style="flex:1;padding:9px;border:1.5px solid #ccc;border-radius:8px;background:#fff;font-size:13px;font-weight:700;cursor:pointer;">취소</button>
+          <button onclick="saveTdrLabelEditor()" style="flex:1;padding:9px;border:none;border-radius:8px;background:#16A085;color:#fff;font-size:13px;font-weight:700;cursor:pointer;">저장</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+}
+function saveTdrLabelEditor(){
+  const gl=(document.getElementById('tdr-label-input-green-left')?.value||'').trim()||'좌그린';
+  const gr=(document.getElementById('tdr-label-input-green-right')?.value||'').trim()||'우그린';
+  const tee=(document.getElementById('tdr-label-input-tee')?.value||'').trim()||'티';
+  saveTdrZoneLabels({'green-left':gl,'green-right':gr,'tee':tee});
+  document.getElementById('tdr-label-modal-wrap')?.remove();
+  applyTdrLabelsToUI();
+  if(typeof renderTdrHistory==='function') renderTdrHistory();
+  showToast('TDR350 항목 이름을 저장했습니다');
+}
 function getTdrVals(){
   const obj={};
   TDR_ZONES.forEach(z=>{
@@ -3508,8 +3585,8 @@ function renderTdrHistory(page){
   function toISO2(d){const m=d.match(/(\d+)년\s*(\d+)월\s*(\d+)일/);if(!m)return d;const yy=parseInt(m[1]);const yyyy=yy<50?2000+yy:1900+yy;return`${yyyy}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;}
   const all=gd();
   const GREENS=[
-    {key:'green-left', label:'좌그린', color:'#185FA5'},
-    {key:'green-right',label:'우그린', color:'#2980b9'},
+    {key:'green-left', label:getTdrZoneLabel('green-left'), color:'#185FA5'},
+    {key:'green-right',label:getTdrZoneLabel('green-right'), color:'#2980b9'},
   ];
   function hasGreenData(r){
     if(!r.tdr)return false;
@@ -7833,9 +7910,9 @@ function openIrrModal(sortedIdx){
     <div style="font-size:12px;font-weight:700;color:#1a7a6a;padding:10px 2px 5px;display:flex;align-items:center;gap:5px;">
       <span style="display:inline-block;width:3px;height:13px;border-radius:2px;background:#1a7a6a;"></span>TDR350 측정값
     </div>
-    ${tdrRow('좌그린','#185FA5','gl',tGL)}
-    ${tdrRow('우그린','#2980b9','gr',tGR)}
-    ${tdrRow('티','#3B6D11','tee',tTee)}
+    ${tdrRow(getTdrZoneLabel('green-left'),'#185FA5','gl',tGL)}
+    ${tdrRow(getTdrZoneLabel('green-right'),'#2980b9','gr',tGR)}
+    ${tdrRow(getTdrZoneLabel('tee'),'#3B6D11','tee',tTee)}
     <div style="padding:5px 0;">
       <span style="font-size:10px;color:#888;">TDR 메모</span>
       <input type="text" id="mp-tdr-note" value="${tdr.note||''}" placeholder="메모"
@@ -7954,7 +8031,7 @@ function exportDataFile(){
   if(_isContentUriOrigin()){ _warnRestrictedOrigin('내보내기'); return; }
   /* 모든 localStorage 키 수집 */
   const allKeys=[SK,PK,RK,CNK,RATE_KEY,DSK,WCK,LOC_KEY,IRR_ZONES_KEY,MAT_PEST_KEY,MAT_FERT_KEY,MAT_AREA_PRESET_KEY,
-    TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY];
+    TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY,TDR_ZONE_LABEL_KEY];
   const exportObj={};
   allKeys.forEach(k=>{
     const v=localStorage.getItem(k);
@@ -8049,7 +8126,7 @@ function importDataFile(event){
 
       /* 기존 관련 키 지우기 */
       [SK,PK,RK,CNK,RATE_KEY,DSK,WCK,LOC_KEY,IRR_ZONES_KEY,MAT_PEST_KEY,MAT_FERT_KEY,MAT_AREA_PRESET_KEY,
-        TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY].forEach(k=>localStorage.removeItem(k));
+        TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY,TDR_ZONE_LABEL_KEY].forEach(k=>localStorage.removeItem(k));
 
       /* 새 데이터 적재 */
       importedKeys.forEach(k=>{
@@ -8423,6 +8500,7 @@ function init(){
   document.querySelectorAll('.panel').forEach(p=>p.style.display='none');
   document.getElementById('panel-history').style.display='block';
   setToday();
+  applyTdrLabelsToUI(); /* TDR350 측정표 헤더에 사용자 지정 이름(있다면) 반영 */
   const cn=gcn();document.getElementById('nav-course-name').textContent=cn;document.getElementById('inp-course').value=cn;
   /* 날씨 지역 복원 */
   const loc=getWeatherLoc();
