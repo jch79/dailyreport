@@ -6707,7 +6707,7 @@ function renderTempChart(){
   const maxV=Math.ceil(Math.max(...allVals))+2;
   const range=maxV-minV||1;
 
-  const W=500,H=46,PL=24,PR=8,PT=5,PB=10; /* H: 기존 38 → 46 (20% 확대) */
+  const W=500,H=55,PL=24,PR=8,PT=5,PB=10; /* H: 46 → 55 (다시 +20% 확대, 위아래 폭 넓힘) */
   const cW=W-PL-PR,cH=H-PT-PB;
   const xPos=i=>PL+(n<=1?cW/2:i/(n-1)*cW);
   const yPos=v=>PT+cH-(v-minV)/range*cH;
@@ -6719,7 +6719,7 @@ function renderTempChart(){
     const gv=minV+(maxV-minV)/gCnt*g;
     const gy=yPos(gv);
     grid+=`<line x1="${PL}" y1="${gy.toFixed(1)}" x2="${W-PR}" y2="${gy.toFixed(1)}" stroke="${g===0?'#ddd':'#f2f2f2'}" stroke-width="${g===0?0.4:0.2}"/>`;
-    grid+=`<text x="${PL-3}" y="${(gy+3.5).toFixed(1)}" font-size="3" fill="#ccc" text-anchor="end">${Math.round(gv)}°</text>`;
+    grid+=`<text x="${PL-3}" y="${(gy+3.5).toFixed(1)}" font-size="4" fill="#ccc" text-anchor="end">${Math.round(gv)}°</text>`;
   }
 
   /* 라인 빌더 */
@@ -6730,13 +6730,13 @@ function renderTempChart(){
       if(v==null){prev=null;return;}
       const px=xPos(i),py=yPos(v);
       path+=(prev?`L${px.toFixed(1)},${py.toFixed(1)}`:`M${px.toFixed(1)},${py.toFixed(1)}`);
-      dots+=`<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="0.6" fill="${color}" stroke="#fff" stroke-width="0.3"><title>${p.date} ${key==='tmax'?'최고':key==='tmin'?'최저':'평균'}: ${v.toFixed(1)}°C</title></circle>`;
+      dots+=`<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="0.84" fill="${color}" stroke="#fff" stroke-width="0.42"><title>${p.date} ${key==='tmax'?'최고':key==='tmin'?'최저':'평균'}: ${v.toFixed(1)}°C</title></circle>`;
       /* 값 라벨: 5개 간격 */
       if(i%Math.max(1,Math.ceil(n/8))===0||i===n-1)
-        dots+=`<text x="${px.toFixed(1)}" y="${(py-2).toFixed(1)}" font-size="3" fill="${color}" text-anchor="middle">${v.toFixed(1)}</text>`;
+        dots+=`<text x="${px.toFixed(1)}" y="${(py-2.4).toFixed(1)}" font-size="4" fill="${color}" text-anchor="middle">${v.toFixed(1)}</text>`;
       prev={x:px,y:py};
     });
-    return `<path d="${path}" fill="none" stroke="${color}" stroke-width="0.4" stroke-linejoin="round" stroke-linecap="round"${dash?` stroke-dasharray="${dash}"`:''}/>${dots}`;
+    return `<path d="${path}" fill="none" stroke="${color}" stroke-width="0.56" stroke-linejoin="round" stroke-linecap="round"${dash?` stroke-dasharray="${dash}"`:''}/>${dots}`;
   }
 
   const tmaxLine=buildLine('tmax','#E74C3C','');
@@ -6749,7 +6749,7 @@ function renderTempChart(){
   pts.forEach((p,i)=>{
     if(i%step!==0&&i!==n-1)return;
     const [,mm,dd]=p.date.split('-');
-    xLabels+=`<text x="${xPos(i).toFixed(1)}" y="${H-3}" font-size="3" fill="#aaa" text-anchor="middle">${parseInt(mm)}/${parseInt(dd)}</text>`;
+    xLabels+=`<text x="${xPos(i).toFixed(1)}" y="${H-3}" font-size="4" fill="#aaa" text-anchor="middle">${parseInt(mm)}/${parseInt(dd)}</text>`;
   });
 
   /* 날짜 클릭 영역(직접 수정) — 각 날짜 열 전체 높이를 덮는 투명 사각형 */
@@ -6767,15 +6767,15 @@ function renderTempChart(){
 
   el.innerHTML=`
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px;gap:4px;">
-      <div style="display:flex;gap:10px;font-size:5px;color:#555;">
-        <span style="display:flex;align-items:center;gap:2px;"><span style="width:10px;height:2px;background:#E74C3C;border-radius:1px;display:inline-block;"></span>최고</span>
-        <span style="display:flex;align-items:center;gap:2px;"><span style="width:10px;height:2px;background:#2980B9;border-radius:1px;display:inline-block;"></span>최저</span>
-        <span style="display:flex;align-items:center;gap:2px;"><span style="width:10px;height:2px;background:#27AE60;border-radius:1px;display:inline-block;border-bottom:1.5px dashed #27AE60;background:none;"></span>평균</span>
+      <div style="display:flex;gap:10px;font-size:6.5px;color:#555;">
+        <span style="display:flex;align-items:center;gap:2px;"><span style="width:12px;height:2.5px;background:#E74C3C;border-radius:1px;display:inline-block;"></span>최고</span>
+        <span style="display:flex;align-items:center;gap:2px;"><span style="width:12px;height:2.5px;background:#2980B9;border-radius:1px;display:inline-block;"></span>최저</span>
+        <span style="display:flex;align-items:center;gap:2px;"><span style="width:12px;height:2.5px;background:#27AE60;border-radius:1px;display:inline-block;border-bottom:2px dashed #27AE60;background:none;"></span>평균</span>
       </div>
       <div style="display:flex;align-items:center;gap:4px;">
-        <button onclick="tempNav(-1)" ${!canLeft?'disabled':''} style="width:13px;height:13px;border-radius:50%;border:1px solid #c8c8c8;background:${canLeft?'#fff':'#f5f5f5'};color:${canLeft?'#444':'#ccc'};font-size:6px;cursor:${canLeft?'pointer':'not-allowed'};display:flex;align-items:center;justify-content:center;padding:0;">◀</button>
-        <span style="font-size:5px;color:#888;min-width:46px;text-align:center;">${p0} ~ ${pN}</span>
-        <button onclick="tempNav(1)" ${!canRight?'disabled':''} style="width:13px;height:13px;border-radius:50%;border:1px solid #c8c8c8;background:${canRight?'#fff':'#f5f5f5'};color:${canRight?'#444':'#ccc'};font-size:6px;cursor:${canRight?'pointer':'not-allowed'};display:flex;align-items:center;justify-content:center;padding:0;">▶</button>
+        <button onclick="tempNav(-1)" ${!canLeft?'disabled':''} style="width:16px;height:16px;border-radius:50%;border:1px solid #c8c8c8;background:${canLeft?'#fff':'#f5f5f5'};color:${canLeft?'#444':'#ccc'};font-size:8px;cursor:${canLeft?'pointer':'not-allowed'};display:flex;align-items:center;justify-content:center;padding:0;">◀</button>
+        <span style="font-size:6.5px;color:#888;min-width:52px;text-align:center;">${p0} ~ ${pN}</span>
+        <button onclick="tempNav(1)" ${!canRight?'disabled':''} style="width:16px;height:16px;border-radius:50%;border:1px solid #c8c8c8;background:${canRight?'#fff':'#f5f5f5'};color:${canRight?'#444':'#ccc'};font-size:8px;cursor:${canRight?'pointer':'not-allowed'};display:flex;align-items:center;justify-content:center;padding:0;">▶</button>
       </div>
     </div>
     <div style="overflow-x:auto;">
