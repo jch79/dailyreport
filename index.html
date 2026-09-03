@@ -1187,10 +1187,12 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
           <button onclick="resetTdrRecord()" title="TDR350 측정값 및 측정 메모 초기화"
             style="font-size:9px;padding:2px 7px;border:1.3px solid #a3d9cf;border-radius:5px;background:#fff;color:#16A085;cursor:pointer;font-weight:700;">↺ 초기화</button>
         </div>
-        <div style="background:#f0faf7;border:2px solid #a3d9cf;border-radius:8px;overflow:hidden;">
+        <div style="font-size:9px;color:#999;text-align:right;margin-bottom:2px;">◀ 좌우로 스크롤 가능 ▶</div>
+        <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:8px;">
+        <div style="background:#f0faf7;border:2px solid #a3d9cf;border-radius:8px;overflow:hidden;min-width:340px;">
 
           <!-- ── 가로 헤더: 구역명 열 ── -->
-          <div style="display:grid;grid-template-columns:52px 1fr 1fr 1fr;background:#1a7a6a;">
+          <div style="display:grid;grid-template-columns:52px 90px 90px 90px;background:#1a7a6a;">
             <div style="padding:6px 4px;font-size:9px;font-weight:700;color:#fff;text-align:center;border-right:1px solid #16A085;">측정<br>항목</div>
             <!-- 좌그린 -->
             <div style="padding:6px 4px;text-align:center;border-right:1px solid #16A085;">
@@ -1207,7 +1209,7 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
           </div>
 
           <!-- ── VWC 행 ── -->
-          <div style="display:grid;grid-template-columns:52px 1fr 1fr 1fr;border-top:1px solid #c5ede5;">
+          <div style="display:grid;grid-template-columns:52px 90px 90px 90px;border-top:1px solid #c5ede5;">
             <div style="background:#e8f8f5;padding:5px 4px;font-size:9px;font-weight:700;color:#1a7a6a;text-align:center;border-right:1px solid #c5ede5;display:flex;align-items:center;justify-content:center;">VWC<br><span style="font-weight:400;color:#888;">(%)</span></div>
             <div style="padding:5px 4px;border-right:1px solid #c5ede5;background:#f5fbff;">
               <input type="number" id="tdr-green-left-vwc" min="0" max="100" step="0.1" placeholder="--"
@@ -1224,7 +1226,7 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
           </div>
 
           <!-- ── EC 행 ── -->
-          <div style="display:grid;grid-template-columns:52px 1fr 1fr 1fr;border-top:1px solid #c5ede5;">
+          <div style="display:grid;grid-template-columns:52px 90px 90px 90px;border-top:1px solid #c5ede5;">
             <div style="background:#e8f8f5;padding:5px 4px;font-size:9px;font-weight:700;color:#1a7a6a;text-align:center;border-right:1px solid #c5ede5;display:flex;align-items:center;justify-content:center;">EC<br><span style="font-weight:400;color:#888;">(dS/m)</span></div>
             <div style="padding:5px 4px;border-right:1px solid #c5ede5;background:#f5fbff;">
               <input type="number" id="tdr-green-left-ec" min="0" step="0.01" placeholder="--"
@@ -1241,7 +1243,7 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
           </div>
 
           <!-- ── 온도 행 ── -->
-          <div style="display:grid;grid-template-columns:52px 1fr 1fr 1fr;border-top:1px solid #c5ede5;">
+          <div style="display:grid;grid-template-columns:52px 90px 90px 90px;border-top:1px solid #c5ede5;">
             <div style="background:#e8f8f5;padding:5px 4px;font-size:9px;font-weight:700;color:#1a7a6a;text-align:center;border-right:1px solid #c5ede5;display:flex;align-items:center;justify-content:center;">온도<br><span style="font-weight:400;color:#888;">(°C)</span></div>
             <div style="padding:5px 4px;border-right:1px solid #c5ede5;background:#f5fbff;">
               <input type="number" id="tdr-green-left-temp" min="-10" max="60" step="0.1" placeholder="--"
@@ -1258,7 +1260,7 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
           </div>
 
           <!-- ── 항목별 메모 행 ── -->
-          <div style="display:grid;grid-template-columns:52px 1fr 1fr 1fr;border-top:1px solid #c5ede5;">
+          <div style="display:grid;grid-template-columns:52px 90px 90px 90px;border-top:1px solid #c5ede5;">
             <div style="background:#e8f8f5;padding:5px 4px;font-size:9px;font-weight:700;color:#1a7a6a;text-align:center;border-right:1px solid #c5ede5;display:flex;align-items:center;justify-content:center;">📝<br>메모</div>
             <div style="padding:5px 4px;border-right:1px solid #c5ede5;background:#f5fbff;">
               <input type="text" id="tdr-green-left-note" placeholder="메모"
@@ -1291,6 +1293,7 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
               <span style="background:#fecaca;color:#7f1d1d;border-radius:4px;padding:1px 5px;font-weight:600;">&gt;4.0 염류피해위험</span>
             </div>
           </div>
+        </div>
         </div>
       </div><!-- /우 TDR -->
 
