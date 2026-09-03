@@ -1164,6 +1164,7 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
             <span style="display:inline-block;width:3px;height:12px;border-radius:2px;background:#378ADD;"></span>
             구역별 관수 시간
           </span>
+          <span id="irr-today-tons-badge" style="font-size:10px;font-weight:800;color:#185FA5;background:#eaf3ff;border:1px solid #b5d4f4;border-radius:100px;padding:2px 9px;white-space:nowrap;">💧 금일 사용량: 0.00톤</span>
           <button onclick="resetIrrRecord()" title="구역별 관수 시간 및 관수 메모 초기화"
             style="font-size:9px;padding:2px 7px;border:1.3px solid #85B7EB;border-radius:5px;background:#fff;color:#185FA5;cursor:pointer;font-weight:700;">↺ 초기화</button>
         </div>
@@ -3221,6 +3222,7 @@ function calcIrrTotal(){
     }
   });
   document.getElementById('irr-total').textContent=grand;
+  updateIrrTodayTonsBadge();
   refreshIrrUsageSummary();
 }
 
@@ -3796,6 +3798,18 @@ function sumIrrTons(records){
 function _fmtTons(n){
   return(n||0).toLocaleString('ko-KR',{minimumFractionDigits:2,maximumFractionDigits:2});
 }
+/* 지금 화면에 입력 중인 값(자동+수동 관수 시간 × 분당물량)으로 "금일" 물량을
+   실시간 계산 — 저장 여부와 무관하게 항상 현재 입력값 기준 */
+function getLiveTodayIrrTons(){
+  const zones=getIrrZones();
+  return zones.reduce((s,z)=>s+(z.flowRate?getIrrVal(z.key).total*z.flowRate:0),0);
+}
+/* 구역별 관수 시간 카드 헤더의 "💧 금일 사용량" 배지 갱신 */
+function updateIrrTodayTonsBadge(){
+  const badge=document.getElementById('irr-today-tons-badge');
+  if(!badge)return;
+  badge.textContent=`💧 금일 사용량: ${_fmtTons(getLiveTodayIrrTons())}톤`;
+}
 /* ── 사용물량 집계 HTML — 연간/해당월/해당일 사용량을 구역별 분당물량(ton/min) 기준으로 합산.
    기준 날짜는 "실제 오늘"이 아니라 지금 작성/조회 중인 날짜(날짜 피커)로 함.
    피커 날짜 몫은 저장된 기록이 아니라 화면에 "지금 입력 중인 값"을 실시간으로 반영해서,
@@ -3812,7 +3826,7 @@ function buildIrrUsageSummaryHTML(all){
     curYYYY=_todayReal.getFullYear(); curMM=_todayReal.getMonth()+1; curDD=_todayReal.getDate();
   }
   const zones=getIrrZones();
-  const liveTodayTons=zones.reduce((s,z)=>s+(z.flowRate?getIrrVal(z.key).total*z.flowRate:0),0);
+  const liveTodayTons=getLiveTodayIrrTons();
   let yearTons=0, monthTons=0;
   all.filter(r=>r.irrigation).forEach(r=>{
     const p=_irrParseDate(r.date);
