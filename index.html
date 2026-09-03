@@ -4383,22 +4383,31 @@ async function fetchWeather(){
         const tISO=targetDate.replace(/-/g,'');
         const monthStartISO=`${tyyyy}${tmo}01`;
         const yearStartISO=`${tyyyy}0101`;
+        /* 요청한 날짜범위 자체의 예상 일수 — 월초(9/1~9/3처럼) 며칠 안 됐으면
+           애초에 3줄만 와도 정상. 고정된 "5줄" 기준을 쓰면 매달 1~4일에는
+           실측 데이터가 정상적으로 와도 항상 "범위조회 미지원"으로 오판해
+           예측값으로 되돌아가버리는 버그가 있었음 — 요청 범위 일수와
+           비교해서 최소 기준을 그때그때 낮춰 잡도록 수정 */
+        const expectedMonthDays=parseInt(tdd,10)||1;
+        const expectedYearDays=Math.round((new Date(targetDate)-new Date(`${tyyyy}-01-01`))/86400000)+1;
+        const requiredMonthCount=Math.min(5,expectedMonthDays);
+        const requiredYearCount=Math.min(5,expectedYearDays);
         const [mRes,yRes]=await Promise.allSettled([
           fetchKmaRange(monthStartISO,tISO),
           fetchKmaRange(yearStartISO,tISO)
         ]);
         if(mRes.status==='fulfilled'){
           const {sum,count}=parseDaySum(mRes.value);
-          /* 하루치(1줄)만 돌아오면 이 API가 범위 조회를 지원하지 않는다는 뜻이므로
-             신뢰하지 않고 기존 격자모델 합산값을 그대로 둔다 */
-          if(count>=5){
+          /* 요청 범위 일수 대비 너무 적은 줄(전형적으로 범위 무시하고 하루치 1줄만
+             돌아오는 경우)만 "범위조회 미지원"으로 보고 격자모델값을 유지한다 */
+          if(count>=requiredMonthCount){
             kmaOverrideMonthRain=sum;
             if(_manualMR2===undefined) document.getElementById('w-month-rain').textContent=sum.toFixed(1);
           }
         } else console.warn('[날씨] 월 누적강수량 기상청 조회 실패(격자 합산값 유지)',mRes.reason);
         if(yRes.status==='fulfilled'){
           const {sum,count}=parseDaySum(yRes.value);
-          if(count>=5){
+          if(count>=requiredYearCount){
             kmaOverrideYearRain=sum;
             const _yrEl2=document.getElementById('w-year-rain');
             if(_yrEl2 && _manualYR===undefined) _yrEl2.textContent=sum.toFixed(1);
