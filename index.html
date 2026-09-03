@@ -1015,7 +1015,7 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
       <div style="background:#f5f8ff;border:2px solid #b5d4f4;border-radius:10px;overflow:hidden;">
         <div style="background:#185FA5;color:#fff;font-size:10px;font-weight:700;padding:5px 10px;display:flex;align-items:center;gap:5px;">
           <span>&#127760;</span> 현재 날씨
-          <span id="w-temp-source" style="display:none;margin-left:auto;font-size:9px;font-weight:800;color:#185FA5;background:#fff;border-radius:100px;padding:1px 7px;"></span>
+          <span id="w-temp-source" style="display:none;margin-left:auto;font-size:9px;font-weight:800;color:#185FA5;background:#fff;white-space:nowrap;border-radius:100px;padding:1px 7px;"></span>
         </div>
         <div style="padding:8px 7px;display:flex;flex-direction:column;gap:5px;">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;">
@@ -1056,8 +1056,8 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
             <div style="display:flex;align-items:center;justify-content:space-between;">
               <label style="font-size:10px;color:#555;font-weight:700;">금일 강우량 (mm)</label>
               <span style="display:flex;gap:3px;align-items:center;">
-                <span id="w-rain-source" style="display:none;font-size:9px;font-weight:800;color:#fff;border-radius:100px;padding:1px 6px;"></span>
-                <span id="w-rain-today-badge" onclick="event.stopPropagation();revertStatToAuto('rain','금일 강우량')" title="눌러서 자동값으로 되돌리기" style="display:none;cursor:pointer;font-size:9px;font-weight:800;color:#fff;background:#B8690A;border-radius:100px;padding:1px 6px;">✏ 수동 ↺</span>
+                <span id="w-rain-source" style="display:none;font-size:9px;font-weight:800;color:#fff;white-space:nowrap;border-radius:100px;padding:1px 6px;"></span>
+                <span id="w-rain-today-badge" onclick="event.stopPropagation();revertStatToAuto('rain','금일 강우량')" title="눌러서 자동값으로 되돌리기" style="display:none;cursor:pointer;font-size:9px;font-weight:800;color:#fff;background:#B8690A;white-space:nowrap;border-radius:100px;padding:1px 6px;">✏ 수동 ↺</span>
               </span>
             </div>
             <input type="number" id="inp-rain" placeholder="0" step="0.1"
@@ -1065,19 +1065,19 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
           </div>
           <div class="wx-ei" style="margin:0;cursor:pointer;" onclick="editWeatherStat('w-avg','일 평균기온 (°C)','number')" title="클릭하여 수정">
             <div class="wx-ev" id="w-avg" style="text-decoration:underline dotted;text-underline-offset:2px;">--</div>
-            <div class="wx-el">일 평균기온 (°C) ✎ <span id="w-avg-source" style="display:none;font-size:9px;font-weight:800;color:#fff;border-radius:100px;padding:1px 6px;margin-left:3px;"></span> <span id="w-avg-badge" onclick="event.stopPropagation();revertStatToAuto('avg','일 평균기온')" title="눌러서 자동값으로 되돌리기" style="display:none;cursor:pointer;font-size:9px;font-weight:800;color:#fff;background:#B8690A;border-radius:100px;padding:1px 6px;margin-left:3px;">✏ 수동 ↺</span></div>
+            <div class="wx-el">일 평균기온 (°C) ✎ <span id="w-avg-source" style="display:none;font-size:9px;font-weight:800;color:#fff;white-space:nowrap;border-radius:100px;padding:1px 6px;margin-left:3px;"></span> <span id="w-avg-badge" onclick="event.stopPropagation();revertStatToAuto('avg','일 평균기온')" title="눌러서 자동값으로 되돌리기" style="display:none;cursor:pointer;font-size:9px;font-weight:800;color:#fff;background:#B8690A;white-space:nowrap;border-radius:100px;padding:1px 6px;margin-left:3px;">✏ 수동 ↺</span></div>
           </div>
           <div class="wx-ei" style="margin:0;cursor:pointer;" onclick="editWeatherStat('w-minmax','최저 / 최고 (°C)','text')" title="클릭하여 수정">
             <div class="wx-ev" id="w-minmax" style="text-decoration:underline dotted;text-underline-offset:2px;">--</div>
-            <div class="wx-el">최저 / 최고 (°C) ✎ <span id="w-minmax-source" style="display:none;font-size:9px;font-weight:800;color:#fff;border-radius:100px;padding:1px 6px;margin-left:3px;"></span> <span id="w-minmax-badge" onclick="event.stopPropagation();revertStatToAuto('minmax','최저 / 최고 기온')" title="눌러서 자동값으로 되돌리기" style="display:none;cursor:pointer;font-size:9px;font-weight:800;color:#fff;background:#B8690A;border-radius:100px;padding:1px 6px;margin-left:3px;">✏ 수동 ↺</span></div>
+            <div class="wx-el">최저 / 최고 (°C) ✎ <span id="w-minmax-source" style="display:none;font-size:9px;font-weight:800;color:#fff;white-space:nowrap;border-radius:100px;padding:1px 6px;margin-left:3px;"></span> <span id="w-minmax-badge" onclick="event.stopPropagation();revertStatToAuto('minmax','최저 / 최고 기온')" title="눌러서 자동값으로 되돌리기" style="display:none;cursor:pointer;font-size:9px;font-weight:800;color:#fff;background:#B8690A;white-space:nowrap;border-radius:100px;padding:1px 6px;margin-left:3px;">✏ 수동 ↺</span></div>
           </div>
           <div class="wx-ei" style="margin:0;cursor:pointer;" onclick="editWeatherStat('w-month-rain','월 누적강우량 (mm)','number')" title="클릭하여 수정">
             <div class="wx-ev" id="w-month-rain" style="text-decoration:underline dotted;text-underline-offset:2px;">--</div>
-            <div class="wx-el">월 누적강우량 (mm) ✎ <span id="w-month-rain-source" style="display:none;font-size:9px;font-weight:800;color:#fff;border-radius:100px;padding:1px 6px;margin-left:3px;"></span> <span id="w-month-rain-badge" onclick="event.stopPropagation();revertStatToAuto('monthRain','월 누적강우량')" title="눌러서 자동값으로 되돌리기" style="display:none;cursor:pointer;font-size:9px;font-weight:800;color:#fff;background:#B8690A;border-radius:100px;padding:1px 6px;margin-left:3px;">✏ 수동 ↺</span></div>
+            <div class="wx-el">월 누적강우량 (mm) ✎ <span id="w-month-rain-source" style="display:none;font-size:9px;font-weight:800;color:#fff;white-space:nowrap;border-radius:100px;padding:1px 6px;margin-left:3px;"></span> <span id="w-month-rain-badge" onclick="event.stopPropagation();revertStatToAuto('monthRain','월 누적강우량')" title="눌러서 자동값으로 되돌리기" style="display:none;cursor:pointer;font-size:9px;font-weight:800;color:#fff;background:#B8690A;white-space:nowrap;border-radius:100px;padding:1px 6px;margin-left:3px;">✏ 수동 ↺</span></div>
           </div>
           <div class="wx-ei" style="margin:0;cursor:pointer;" onclick="editWeatherStat('w-year-rain','연 누적강우량 (mm)','number')" title="클릭하여 수정">
             <div class="wx-ev" id="w-year-rain" style="text-decoration:underline dotted;text-underline-offset:2px;">--</div>
-            <div class="wx-el">연 누적강우량 (mm) ✎ <span id="w-year-rain-source" style="display:none;font-size:9px;font-weight:800;color:#fff;border-radius:100px;padding:1px 6px;margin-left:3px;"></span> <span id="w-year-rain-badge" onclick="event.stopPropagation();revertStatToAuto('yearRain','연 누적강우량')" title="눌러서 자동값으로 되돌리기" style="display:none;cursor:pointer;font-size:9px;font-weight:800;color:#fff;background:#B8690A;border-radius:100px;padding:1px 6px;margin-left:3px;">✏ 수동 ↺</span></div>
+            <div class="wx-el">연 누적강우량 (mm) ✎ <span id="w-year-rain-source" style="display:none;font-size:9px;font-weight:800;color:#fff;white-space:nowrap;border-radius:100px;padding:1px 6px;margin-left:3px;"></span> <span id="w-year-rain-badge" onclick="event.stopPropagation();revertStatToAuto('yearRain','연 누적강우량')" title="눌러서 자동값으로 되돌리기" style="display:none;cursor:pointer;font-size:9px;font-weight:800;color:#fff;background:#B8690A;white-space:nowrap;border-radius:100px;padding:1px 6px;margin-left:3px;">✏ 수동 ↺</span></div>
           </div>
         </div>
       </div>
@@ -1357,7 +1357,7 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
           <span>정규직</span>
           <span style="display:flex;align-items:center;gap:5px;">
             <span id="reg-badge" class="badge badge-reg">0명</span>
-            <span id="reg-attend-badge" style="font-size:10px;color:#0C447C;font-weight:600;background:#fff;border:1px solid #85B7EB;border-radius:100px;padding:1px 7px;display:none;">출근 <b id="reg-cnt-attend">0</b>명 · 휴무 <b id="reg-cnt-off2">0</b>명<span id="reg-cnt-leave-wrap"> · 연차 <b id="reg-cnt-leave">0</b>명</span></span>
+            <span id="reg-attend-badge" style="font-size:10px;color:#0C447C;font-weight:600;background:#fff;border:1px solid #85B7EB;white-space:nowrap;border-radius:100px;padding:1px 7px;display:none;">출근 <b id="reg-cnt-attend">0</b>명 · 휴무 <b id="reg-cnt-off2">0</b>명<span id="reg-cnt-leave-wrap"> · 연차 <b id="reg-cnt-leave">0</b>명</span></span>
           </span>
         </div>
         <div id="reg-list"></div>
@@ -1372,7 +1372,7 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
           <div style="display:flex;justify-content:space-between;width:100%;align-items:center;">
             <span style="display:flex;align-items:center;gap:5px;">
               일용 <span id="daily-badge" class="badge badge-daily">0명</span>
-              <span id="daily-attend-badge" style="font-size:10px;color:#633806;font-weight:600;background:#fff;border:1px solid #EF9F27;border-radius:100px;padding:1px 7px;display:none;">출근 <b id="daily-cnt-attend">0</b>명 · 휴무 <b id="daily-cnt-off2">0</b>명</span>
+              <span id="daily-attend-badge" style="font-size:10px;color:#633806;font-weight:600;background:#fff;border:1px solid #EF9F27;white-space:nowrap;border-radius:100px;padding:1px 7px;display:none;">출근 <b id="daily-cnt-attend">0</b>명 · 휴무 <b id="daily-cnt-off2">0</b>명</span>
             </span>
             <button class="btn btn-sm" style="font-size:10px;padding:2px 7px;border-color:#EF9F27;color:#633806;background:rgba(255,255,255,0.5);" onclick="addDailySubgroup()">+ 소분류</button>
           </div>
@@ -4789,15 +4789,21 @@ function saveReport(){
   } else {
     all.unshift(r);
   }
-  /* ── 저장 시 일용 직원 소분류를 프리셋에 반영 (다음 날 자주 쓰는 직원 클릭 시 올바른 소분류로 배정) ── */
+  /* ── 저장 시 직원을 프리셋(자주 쓰는 직원)에 반영 ──
+     일용 직원은 소분류까지 갱신해서 다음 날 자주 쓰는 직원 클릭 시 올바른 소분류로 배정됨.
+     정규직은 원래 이 로직에서 제외되어 있었는데, 그 결과 addWorker()(이름+추가 버튼)를
+     거치지 않고 curWorkers에 들어온 정규직(예: 이전 날짜 불러오기/데이터 복원 등)은
+     저장을 아무리 반복해도 "자주 쓰는 직원"에 영영 등록되지 않는 문제가 있었음 —
+     정규직도 함께 포함해서 저장할 때마다 누락분이 자동으로 채워지도록 수정. */
   const presets=gp();
   let presetChanged=false;
-  curWorkers.filter(w=>w.type!=='정규직').forEach(w=>{
+  curWorkers.forEach(w=>{
     const pi=presets.findIndex(x=>x.name===w.name);
     if(pi>=0){
-      if(presets[pi].sub!==w.sub){presets[pi].sub=w.sub;presetChanged=true;}
+      if(w.type!=='정규직' && presets[pi].sub!==w.sub){presets[pi].sub=w.sub;presetChanged=true;}
+      if(presets[pi].type!==w.type && w.type){presets[pi].type=w.type;presetChanged=true;}
     } else {
-      presets.push({name:w.name,type:w.type||'일용',sub:w.sub||''});presetChanged=true;
+      presets.push({name:w.name,type:w.type||'일용',sub:w.type==='정규직'?'':(w.sub||'')});presetChanged=true;
     }
   });
   if(presetChanged){sp(presets);renderPresets();if(typeof fbSaveSharedSettings==='function') setTimeout(fbSaveSharedSettings,500);}
@@ -5118,9 +5124,9 @@ function showSearchDetail(idx){
       return`<div style="padding:5px 0;border-bottom:1px solid #e8e8e8;font-size:12px;">
         <span style="font-size:10px;padding:1px 5px;border-radius:100px;margin-right:4px;font-weight:600;${sCols[t.section]||''}">${t.section}</span>
         <b>${t.name}</b>
-        ${t.early?'<span style="font-size:10px;background:#FEF0E3;color:#E67E22;border-radius:100px;padding:1px 5px;margin-left:3px;">[조출]</span>':''}
+        ${t.early?'<span style="font-size:10px;background:#FEF0E3;color:#E67E22;white-space:nowrap;border-radius:100px;padding:1px 5px;margin-left:3px;">[조출]</span>':''}
         ${t.day?'<span style="font-size:10px;color:#888;margin-left:3px;">[주간]</span>':''}
-        ${t.night?'<span style="font-size:10px;background:#EEEDFE;color:#7F77DD;border-radius:100px;padding:1px 5px;margin-left:3px;">[야간]</span>':''}
+        ${t.night?'<span style="font-size:10px;background:#EEEDFE;color:#7F77DD;white-space:nowrap;border-radius:100px;padding:1px 5px;margin-left:3px;">[야간]</span>':''}
         ${t.detail?`<div style="margin-top:2px;color:#333;">${t.detail}</div>`:''}
         ${ws?`<div style="font-size:11px;color:#888;">작업자: ${ws}</div>`:''}
       </div>`;}).join(''):'<div style="color:#888;font-size:12px;">없음</div>'}
@@ -5648,9 +5654,9 @@ function showHistDetail(idx){
       return`<div style="padding:5px 0;border-bottom:1px solid #f0f0f0;font-size:12px;">
         <span style="font-size:10px;padding:1px 5px;border-radius:100px;margin-right:4px;font-weight:600;${sCols[t.section]||''}">${t.section}</span>
         <b>${t.name}</b>
-        ${t.early?'<span style="font-size:10px;background:#FEF0E3;color:#E67E22;border-radius:100px;padding:1px 5px;margin-left:3px;">[조출]</span>':''}
+        ${t.early?'<span style="font-size:10px;background:#FEF0E3;color:#E67E22;white-space:nowrap;border-radius:100px;padding:1px 5px;margin-left:3px;">[조출]</span>':''}
         ${t.day?'<span style="font-size:10px;color:#888;margin-left:3px;">[주간]</span>':''}
-        ${t.night?'<span style="font-size:10px;background:#EEEDFE;color:#7F77DD;border-radius:100px;padding:1px 5px;margin-left:3px;">[야간]</span>':''}
+        ${t.night?'<span style="font-size:10px;background:#EEEDFE;color:#7F77DD;white-space:nowrap;border-radius:100px;padding:1px 5px;margin-left:3px;">[야간]</span>':''}
         ${t.detail?`<div style="margin-top:2px;color:#555;">${t.detail}</div>`:''}
         ${ws?`<div style="font-size:11px;color:#888;">작업자: ${ws}</div>`:''}
       </div>`;}).join('')}`:''}
@@ -5738,9 +5744,9 @@ function showDetail(idx){
       return`<div style="padding:6px 0;border-bottom:1.5px solid #e0e0e0;font-size:12px;">
         <span style="font-size:10px;padding:1px 5px;border-radius:100px;margin-right:4px;font-weight:600;${sCols[t.section]||''}">${t.section}</span>
         <b>${t.name}</b>
-        ${(t.early||(t.am&&t.day===undefined))?'<span style="font-size:10px;background:#FEF0E3;color:#E67E22;border-radius:100px;padding:1px 5px;margin-left:3px;font-weight:700;">[조출]</span>':''}
+        ${(t.early||(t.am&&t.day===undefined))?'<span style="font-size:10px;background:#FEF0E3;color:#E67E22;white-space:nowrap;border-radius:100px;padding:1px 5px;margin-left:3px;font-weight:700;">[조출]</span>':''}
         ${(t.day||(t.am&&t.day===undefined)||(t.pm&&t.day===undefined))?'<span style="font-size:10px;color:#888;margin-left:3px;">[주간]</span>':''}
-        ${(t.night)?'<span style="font-size:10px;background:#EEEDFE;color:#7F77DD;border-radius:100px;padding:1px 5px;margin-left:3px;font-weight:700;">[야간]</span>':''}
+        ${(t.night)?'<span style="font-size:10px;background:#EEEDFE;color:#7F77DD;white-space:nowrap;border-radius:100px;padding:1px 5px;margin-left:3px;font-weight:700;">[야간]</span>':''}
         ${t.detail?`<div style="margin-top:2px;">${t.detail}</div>`:''}
         ${t.equip?`<div style="font-size:11px;color:#888;">장비: ${t.equip}</div>`:''}
         ${ws?`<div style="font-size:11px;color:#888;">작업자: ${ws}</div>`:''}
