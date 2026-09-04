@@ -995,10 +995,11 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
       <button class="btn btn-sm" onclick="fetchWeather()">&#8635; 자동 불러오기</button>
     </div>
 
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;align-items:start;margin-bottom:10px;">
+    <div style="font-size:9px;color:#999;text-align:right;margin-bottom:2px;">◀ 좌우로 스크롤 가능 ▶</div>
+    <div style="display:flex;gap:10px;align-items:start;margin-bottom:10px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px;">
 
       <!-- ① 출근 / 운영 -->
-      <div style="background:#f9f9f9;border:2px solid #c8c8c8;border-radius:10px;overflow:hidden;">
+      <div style="background:#f9f9f9;border:2px solid #c8c8c8;border-radius:10px;overflow:hidden;flex-shrink:0;width:170px;">
         <div style="background:#444;color:#fff;font-size:10px;font-weight:700;padding:5px 10px;">출근 / 운영</div>
         <div style="padding:8px 7px;display:flex;flex-direction:column;gap:6px;">
           <div class="field" style="margin:0;"><label>티오프</label><input type="text" id="inp-teeoff" placeholder="06:30"></div>
@@ -1012,7 +1013,7 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
       </div>
 
       <!-- ② 현재 날씨 -->
-      <div style="background:#f5f8ff;border:2px solid #b5d4f4;border-radius:10px;overflow:hidden;">
+      <div style="background:#f5f8ff;border:2px solid #b5d4f4;border-radius:10px;overflow:hidden;flex-shrink:0;width:220px;">
         <div style="background:#185FA5;color:#fff;font-size:10px;font-weight:700;padding:5px 10px;display:flex;align-items:center;gap:5px;">
           <span>&#127760;</span> 현재 날씨
           <span id="w-temp-source" style="display:none;margin-left:auto;font-size:9px;font-weight:800;color:#185FA5;background:#fff;white-space:nowrap;border-radius:100px;padding:1px 7px;"></span>
@@ -1046,7 +1047,7 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
       </div>
 
       <!-- ③ 일 통계 -->
-      <div style="background:#f9f9f9;border:2px solid #c8c8c8;border-radius:10px;overflow:hidden;">
+      <div style="background:#f9f9f9;border:2px solid #c8c8c8;border-radius:10px;overflow:hidden;flex-shrink:0;width:200px;">
         <div style="background:#444;color:#fff;font-size:10px;font-weight:700;padding:5px 10px;display:flex;align-items:center;gap:5px;">
           <span>&#128200;</span> 일 통계
           <span style="margin-left:auto;font-size:9px;font-weight:400;opacity:.7;">✏️ 클릭하여 수정</span>
@@ -1083,7 +1084,7 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
       </div>
 
       <!-- ④ 수동 입력 -->
-      <div style="background:#fffdf5;border:2px solid #EF9F27;border-radius:10px;overflow:hidden;">
+      <div style="background:#fffdf5;border:2px solid #EF9F27;border-radius:10px;overflow:hidden;flex-shrink:0;width:170px;">
         <div style="background:#854F0B;color:#fff;font-size:10px;font-weight:700;padding:5px 10px;display:flex;align-items:center;gap:5px;">
           <span>&#9999;&#65039;</span> 수동 입력
         </div>
@@ -1118,11 +1119,12 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
     <!-- 볼스피드 입력 + 추이 차트 -->
     <div style="margin-bottom:8px;">
       <div style="font-size:10px;font-weight:700;color:#185FA5;margin-bottom:6px;">⛳ 볼스피드 (스팀프미터)</div>
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:6px;">
-        <div class="bs-item"><div class="bs-lbl">오전</div><div class="bs-row"><input type="number" id="bs-am" step="0.1" min="0" placeholder="--"><span class="bs-unit">m</span></div></div>
-        <div class="bs-item"><div class="bs-lbl">오후</div><div class="bs-row"><input type="number" id="bs-pm" step="0.1" min="0" placeholder="--"><span class="bs-unit">m</span></div></div>
-        <div class="bs-item"><div class="bs-lbl">목표</div><div class="bs-row"><input type="number" id="bs-target" step="0.1" min="0" placeholder="--"><span class="bs-unit">m</span></div></div>
-        <div class="bs-item"><div class="bs-lbl">메모</div><input type="text" id="bs-note" placeholder="특이사항" style="font-size:11px;padding:3px 5px;width:100%;box-sizing:border-box;"></div>
+      <div style="font-size:9px;color:#999;text-align:right;margin-bottom:2px;">◀ 좌우로 스크롤 가능 ▶</div>
+      <div style="display:flex;gap:6px;margin-bottom:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px;">
+        <div class="bs-item" style="flex-shrink:0;width:110px;"><div class="bs-lbl">오전</div><div class="bs-row"><input type="number" id="bs-am" step="0.1" min="0" placeholder="--"><span class="bs-unit">m</span></div></div>
+        <div class="bs-item" style="flex-shrink:0;width:110px;"><div class="bs-lbl">오후</div><div class="bs-row"><input type="number" id="bs-pm" step="0.1" min="0" placeholder="--"><span class="bs-unit">m</span></div></div>
+        <div class="bs-item" style="flex-shrink:0;width:110px;"><div class="bs-lbl">목표</div><div class="bs-row"><input type="number" id="bs-target" step="0.1" min="0" placeholder="--"><span class="bs-unit">m</span></div></div>
+        <div class="bs-item" style="flex-shrink:0;width:170px;"><div class="bs-lbl">메모</div><input type="text" id="bs-note" placeholder="특이사항" style="font-size:11px;padding:3px 5px;width:100%;box-sizing:border-box;"></div>
       </div>
       <div id="bs-write-chart" style="margin-top:2px;"></div>
     </div>
@@ -1354,7 +1356,7 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
     </div>
     <div style="font-size:9px;color:#999;text-align:right;margin:-4px 0 4px;">◀ 좌우로 스크롤 가능 ▶</div>
     <div class="worker-3col">
-      <div class="worker-col" style="width:190px;">
+      <div class="worker-col" style="width:260px;">
         <div class="worker-col-hdr reg">
           <span>정규직</span>
           <span style="display:flex;align-items:center;gap:5px;">
@@ -1369,7 +1371,7 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
           <button class="btn btn-sm" onclick="addWorker('reg')">추가</button>
         </div>
       </div>
-      <div class="worker-col" style="border-color:#EF9F27;width:340px;">
+      <div class="worker-col" style="border-color:#EF9F27;width:420px;">
         <div class="worker-col-hdr daily" style="flex-direction:column;align-items:flex-start;gap:5px;padding-bottom:7px;">
           <div style="display:flex;justify-content:space-between;width:100%;align-items:center;">
             <span style="display:flex;align-items:center;gap:5px;">
