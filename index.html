@@ -134,8 +134,13 @@ async function fbFullSyncFromCloud(){
     const shSnap = await _fbDb.collection(FB_COL_SHARED).doc('settings').get();
     if(shSnap.exists){
       const sh = shSnap.data();
-      if(sh.pestData)    localStorage.setItem('custom_pest_data', JSON.stringify(sh.pestData));
-      if(sh.fertData)    localStorage.setItem('custom_fert_data', JSON.stringify(sh.fertData));
+      /* 자재정보(농약/비료/모래)는 여러 기기가 공유하는 마스터 데이터라서,
+         클라우드 쪽 값이 실수로 빈 배열([])로 저장돼 있으면 그걸 그대로
+         받아와 로컬의 정상 데이터를 지워버리는 사고가 날 수 있다.
+         길이가 0인 경우는 무시하고 기존 로컬 값을 유지한다. */
+      if(Array.isArray(sh.pestData)&&sh.pestData.length) localStorage.setItem('custom_pest_data', JSON.stringify(sh.pestData));
+      if(Array.isArray(sh.fertData)&&sh.fertData.length) localStorage.setItem('custom_fert_data', JSON.stringify(sh.fertData));
+      if(Array.isArray(sh.sandData)&&sh.sandData.length) localStorage.setItem('custom_sand_data', JSON.stringify(sh.sandData));
       if(sh.presets)     localStorage.setItem('golf_presets_v7', JSON.stringify(sh.presets));
       if(sh.rates)       localStorage.setItem('golf_worker_rates_v1', JSON.stringify(sh.rates));
       if(sh.taskPresets) localStorage.setItem('golf_task_presets_v1', JSON.stringify(sh.taskPresets));
@@ -177,8 +182,13 @@ async function fbSaveSharedSettings(){
   if(!_fbUser || _fbRole==='viewer') return;
   try{
     const settings = {};
-    const p=localStorage.getItem('custom_pest_data'); if(p) settings.pestData=JSON.parse(p);
-    const f=localStorage.getItem('custom_fert_data'); if(f) settings.fertData=JSON.parse(f);
+    /* 자재정보(농약/비료/모래)는 팀 전체가 공유하는 마스터 데이터라서,
+       이 기기의 로컬 값이 (버그·초기화 등으로) 비어있는 상태에서 그대로
+       올리면 클라우드의 정상 데이터를 빈 배열로 덮어써버릴 수 있다.
+       길이가 0이면 아예 이번 저장에서 제외해 기존 클라우드 값을 보존한다. */
+    const p=localStorage.getItem('custom_pest_data'); if(p){const pa=JSON.parse(p); if(pa.length)settings.pestData=pa;}
+    const f=localStorage.getItem('custom_fert_data'); if(f){const fa=JSON.parse(f); if(fa.length)settings.fertData=fa;}
+    const sd=localStorage.getItem('custom_sand_data'); if(sd){const sa=JSON.parse(sd); if(sa.length)settings.sandData=sa;}
     const pr=localStorage.getItem('golf_presets_v7'); if(pr) settings.presets=JSON.parse(pr);
     const rt=localStorage.getItem('golf_worker_rates_v1'); if(rt) settings.rates=JSON.parse(rt);
     const tp=localStorage.getItem('golf_task_presets_v1'); if(tp) settings.taskPresets=JSON.parse(tp);
