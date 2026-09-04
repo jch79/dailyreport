@@ -721,8 +721,8 @@ textarea{resize:vertical;min-height:55px;}
 .yego-table td .yego-unit{font-size:11px;color:#888;font-weight:500;}
 
 /* ── 작업자 3열 ── */
-.worker-3col{display:grid;grid-template-columns:1.35fr 2.3fr;gap:10px;}
-.worker-col{border:2px solid #c8c8c8;border-radius:10px;overflow:hidden;}
+.worker-3col{display:flex;gap:10px;overflow-x:auto;-webkit-overflow-scrolling:touch;align-items:start;padding-bottom:4px;}
+.worker-col{border:2px solid #c8c8c8;border-radius:10px;overflow:hidden;flex-shrink:0;}
 .worker-col-hdr{padding:8px 12px;font-size:12px;font-weight:700;display:flex;justify-content:space-between;align-items:center;}
 .worker-col-hdr.reg{background:#daeaf9;color:#0C447C;border-bottom:2px solid #85B7EB;}
 .worker-col-hdr.daily{background:#faeeda;color:#633806;border-bottom:2px solid #EF9F27;}
@@ -1352,8 +1352,9 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
 
       </div>
     </div>
+    <div style="font-size:9px;color:#999;text-align:right;margin:-4px 0 4px;">◀ 좌우로 스크롤 가능 ▶</div>
     <div class="worker-3col">
-      <div class="worker-col">
+      <div class="worker-col" style="width:190px;">
         <div class="worker-col-hdr reg">
           <span>정규직</span>
           <span style="display:flex;align-items:center;gap:5px;">
@@ -1368,7 +1369,7 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
           <button class="btn btn-sm" onclick="addWorker('reg')">추가</button>
         </div>
       </div>
-      <div class="worker-col" style="border-color:#EF9F27;">
+      <div class="worker-col" style="border-color:#EF9F27;width:340px;">
         <div class="worker-col-hdr daily" style="flex-direction:column;align-items:flex-start;gap:5px;padding-bottom:7px;">
           <div style="display:flex;justify-content:space-between;width:100%;align-items:center;">
             <span style="display:flex;align-items:center;gap:5px;">
