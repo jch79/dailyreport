@@ -150,6 +150,7 @@ async function fbFullSyncFromCloud(){
       if(sh.regLeaveMeta) localStorage.setItem('golf_reg_leave_meta_v1', JSON.stringify(sh.regLeaveMeta));
       if(sh.elapsedItems) {localStorage.setItem('golf_elapsed_items_v1', JSON.stringify(sh.elapsedItems));if(typeof renderElapsedItems==='function') renderElapsedItems();}
       if(sh.tdrZoneLabels) {localStorage.setItem('tdr_zone_labels_v1', JSON.stringify(sh.tdrZoneLabels));if(typeof applyTdrLabelsToUI==='function'){applyTdrLabelsToUI();if(typeof renderTdrHistory==='function')renderTdrHistory();}}
+      if(sh.gpTargets)   {localStorage.setItem('golf_gp_target_n_v1', JSON.stringify(sh.gpTargets));if(typeof renderGpWriteBox==='function')renderGpWriteBox();if(typeof renderGpStatsCard==='function')renderGpStatsCard();}
       console.log('[FB] 공유 설정 동기화 완료');
     }
 
@@ -192,6 +193,7 @@ async function fbSaveSharedSettings(){
     const rl=localStorage.getItem('golf_reg_leave_meta_v1'); if(rl) settings.regLeaveMeta=JSON.parse(rl);
     const el=localStorage.getItem('golf_elapsed_items_v1'); if(el) settings.elapsedItems=JSON.parse(el);
     const tl=localStorage.getItem('tdr_zone_labels_v1'); if(tl) settings.tdrZoneLabels=JSON.parse(tl);
+    const gt=localStorage.getItem('golf_gp_target_n_v1'); if(gt) settings.gpTargets=JSON.parse(gt);
     settings._updatedAt = firebase.firestore.FieldValue.serverTimestamp();
     await _fbDb.collection(FB_COL_SHARED).doc('settings').set(settings, {merge:true});
     console.log('[FB] 공유 설정 저장 완료');
@@ -1137,6 +1139,20 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
       <div id="temp-trend-chart"></div>
     </div>
 
+    <!-- GP(생육잠재력) & 권장 시비량 -->
+    <div style="border-top:1px solid #eee;padding-top:8px;">
+      <div style="font-size:10px;font-weight:700;color:#3B6D11;margin-bottom:6px;display:flex;align-items:center;gap:4px;">
+        🌱 GP(생육잠재력) 기반 질소시비 가이드
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
+        <select id="gp-area-sel" onchange="onGpAreaChange()" style="font-size:11px;padding:4px 7px;border:1.5px solid #c8c8c8;border-radius:6px;background:#fff;"></select>
+        <span style="font-size:10px;color:#888;">GP=100% 기준 주간 목표 N(g)</span>
+        <input type="number" id="gp-target-input" placeholder="예: 20" step="0.1" onchange="onGpTargetChange()"
+          style="width:64px;font-size:11px;padding:3px 6px;border:1.5px solid #c8c8c8;border-radius:6px;">
+      </div>
+      <div id="gp-write-box"></div>
+    </div>
+
   </div><!-- /card -->
   </div><!-- /write-sec-wrap ballspeed -->
 
@@ -1700,6 +1716,21 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
           </div>
         </div>
         <div id="team-stats"></div>
+      </div>
+    </div>
+
+    <!-- GP · 질소시비 분석 -->
+    <div class="stats-card-wrap" data-card-id="gp">
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:6px;">
+          <div style="display:flex;align-items:center;gap:6px;">
+            <div class="stats-move-btns"></div>
+            <div class="card-title" style="margin:0;border:none;padding-bottom:0;">🌱 GP · 질소시비 분석</div>
+          </div>
+          <select id="gp-stat-area-sel" onchange="renderGpStatsCard()" style="font-size:11px;padding:4px 7px;border:1.5px solid #c8c8c8;border-radius:6px;background:#fff;"></select>
+        </div>
+        <div id="gp-stats-chart"></div>
+        <div id="gp-stats-summary" style="margin-top:8px;"></div>
       </div>
     </div>
 
@@ -6461,6 +6492,8 @@ function renderStats(){
   }
 
   /* 볼스피드 - 작성탭에서만 표시 (renderBsChartInto 공통함수 사용) */
+  /* GP · 질소시비 분석 */
+  renderGpStatsCard();
   /* 스크롤 위치 복원 */
   requestAnimationFrame(()=>window.scrollTo({top:_rsSY}));
 }
@@ -6792,6 +6825,7 @@ function renderTempChart(){
         ${clickOverlays}
       </svg>
     </div>`;
+  renderGpWriteBox();
 }
 
 function tempNav(dir){
@@ -6801,6 +6835,288 @@ function tempNav(dir){
   _tempOffset=Math.max(0,Math.min(total-win,_tempOffset+dir*win));
   _tempManualNav=true; /* 수동 이동 표시 */
   renderTempChart();
+}
+
+/* ══════════════════════════════════════════
+   🌱 GP(Growth Potential, 생육잠재력) — PACE Turf 공식
+   한지형 잔디(벤트그라스) 최적 생육온도 20°C 기준 종형(가우스) 곡선, 0~1 값
+   GP = EXP( -0.5 × ((일평균기온 - 20) / 4)² )
+   ══════════════════════════════════════════ */
+const GP_TOPT=20;   /* 한지형(벤트그라스) 최적 생육온도(°C), PACE Turf 기준 */
+const GP_SIGMA=4;
+function calcGP(tempC){
+  if(tempC===null||tempC===undefined||isNaN(tempC))return null;
+  return Math.exp(-0.5*Math.pow((tempC-GP_TOPT)/GP_SIGMA,2));
+}
+/* 날짜(iso)별 GP 맵 — 이미 저장된 일평균기온(기온 추이 차트와 동일 데이터) 재사용 */
+function getDailyGPMap(){
+  const map={};
+  getTempDataFromRecords().forEach(d=>{
+    const gp=calcGP(d.tavg);
+    if(gp!==null)map[d.date]=gp;
+  });
+  return map;
+}
+/* 오늘(또는 picker 날짜) GP */
+function getGpForISO(iso){
+  const map=getDailyGPMap();
+  return map[iso]!==undefined?map[iso]:null;
+}
+
+/* GP=1.0 기준 처리지역별 주간 목표 질소량(g) 저장 */
+const GP_TARGET_KEY='golf_gp_target_n_v1';
+function getGpTargets(){
+  try{return JSON.parse(localStorage.getItem(GP_TARGET_KEY)||'{}');}catch(e){return{};}
+}
+function setGpTarget(area,val){
+  const t=getGpTargets();
+  if(val===''||val===null||isNaN(val))delete t[area];
+  else t[area]=parseFloat(val);
+  localStorage.setItem(GP_TARGET_KEY,JSON.stringify(t));
+  if(typeof fbSaveSharedSettings==='function')setTimeout(fbSaveSharedSettings,300);
+}
+
+/* 특정 처리지역(그린)의 날짜별 실제 시비 질소량(g) 맵: {iso: gramsN}
+   자재사용량 탭에 이미 기록된 비료 항목의 순성분량(N) 계산을 그대로 재사용 */
+function getDailyNByArea(areaName){
+  const map={};
+  gd().forEach(r=>{
+    const m=r.date?.match(/(\d+)년\s*(\d+)월\s*(\d+)일/);
+    if(!m)return;
+    const yy=parseInt(m[1]);const yyyy=yy<50?2000+yy:1900+yy;
+    const iso=`${yyyy}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+    let nSum=0;
+    (r.matUseRows||[]).forEach(block=>{
+      if(block.areaName!==areaName)return;
+      (block.items||[]).forEach(item=>{
+        if(item.type!=='fert')return;
+        const nutr=calcFertNutr(item);
+        const nEntry=nutr&&nutr.find(x=>x.n==='N');
+        if(nEntry)nSum+=nEntry.g;
+      });
+    });
+    if(nSum>0)map[iso]=(map[iso]||0)+nSum;
+  });
+  return map;
+}
+
+/* 처리지역 선택 드롭다운 공통 채우기 (자재사용량 탭에 등록된 처리지역 이름 재사용) */
+function populateGpAreaSelect(selId){
+  const sel=document.getElementById(selId);
+  if(!sel)return;
+  const areas=getAreaPresets();
+  const prev=sel.value;
+  if(!areas.length){
+    sel.innerHTML='<option value="">등록된 처리지역 없음</option>';
+    return;
+  }
+  sel.innerHTML=areas.map(a=>`<option value="${a.replace(/"/g,'&quot;')}">${a}</option>`).join('');
+  if(areas.includes(prev))sel.value=prev;
+}
+
+/* ── 작성 탭: 오늘의 GP & 권장 시비량 박스 ── */
+function onGpAreaChange(){
+  const area=document.getElementById('gp-area-sel')?.value||'';
+  const targets=getGpTargets();
+  const inp=document.getElementById('gp-target-input');
+  if(inp)inp.value=targets[area]!==undefined?targets[area]:'';
+  renderGpWriteBox();
+}
+function onGpTargetChange(){
+  const area=document.getElementById('gp-area-sel')?.value||'';
+  const val=document.getElementById('gp-target-input')?.value;
+  if(!area)return;
+  setGpTarget(area,val);
+  renderGpWriteBox();
+}
+function renderGpWriteBox(){
+  const box=document.getElementById('gp-write-box');
+  if(!box)return;
+  populateGpAreaSelect('gp-area-sel');
+  const area=document.getElementById('gp-area-sel')?.value||'';
+  if(!area){
+    box.innerHTML='<div style="font-size:11px;color:#aaa;padding:6px 0;">자재사용량 탭에서 처리지역(좌그린/우그린 등)을 먼저 등록해 주세요</div>';
+    return;
+  }
+  const targets=getGpTargets();
+  const targetInp=document.getElementById('gp-target-input');
+  if(targetInp && document.activeElement!==targetInp)
+    targetInp.value=targets[area]!==undefined?targets[area]:'';
+
+  const iso=getPickerISO()||(()=>{const t=new Date();return`${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`;})();
+  const gpToday=getGpForISO(iso);
+  const gpMap=getDailyGPMap();
+  const nMap=getDailyNByArea(area);
+
+  /* 최근 7일(선택 날짜 포함) 평균 GP · 실제 시비 합계 */
+  const d0=new Date(iso);
+  const week=[];
+  for(let i=6;i>=0;i--){const d=new Date(d0);d.setDate(d.getDate()-i);week.push(d.toISOString().slice(0,10));}
+  const weekGpVals=week.map(w=>gpMap[w]).filter(v=>v!==undefined);
+  const weekGpAvg=weekGpVals.length?weekGpVals.reduce((s,v)=>s+v,0)/weekGpVals.length:null;
+  const weekNSum=week.reduce((s,w)=>s+(nMap[w]||0),0);
+
+  const target=targets[area];
+  let judgeHtml='';
+  if(target && weekGpAvg!==null){
+    const recommended=target*weekGpAvg;
+    const ratio=recommended>0?(weekNSum/recommended*100):null;
+    let color='#3B6D11',label='적정';
+    if(ratio!==null){
+      if(ratio>130){color='#c0392b';label='과다';}
+      else if(ratio<70){color='#B8690A';label='부족';}
+    }
+    judgeHtml=`<div style="font-size:11px;color:#444;display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:4px;">
+      <span>최근7일 평균GP <b>${(weekGpAvg*100).toFixed(0)}%</b></span>
+      <span>권장 N <b>${recommended.toFixed(1)}g</b></span>
+      <span>실제 시비 N <b>${weekNSum.toFixed(1)}g</b></span>
+      ${ratio!==null?`<span style="background:${color}1a;color:${color};font-weight:700;border-radius:100px;padding:2px 10px;">${label} (${ratio.toFixed(0)}%)</span>`:''}
+    </div>`;
+  } else {
+    judgeHtml=`<div style="font-size:10px;color:#888;margin-top:4px;">목표 시비율을 입력하면 실제 시비량과 과부족을 비교해줘요</div>`;
+  }
+
+  box.innerHTML=`
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <span style="font-size:10px;color:#555;">${iso} GP</span>
+      <span style="font-size:14px;font-weight:800;color:#3B6D11;">${gpToday!==null?(gpToday*100).toFixed(0)+'%':'--'}</span>
+      ${gpToday!==null?`<div style="flex:1;min-width:80px;max-width:160px;height:6px;background:#e8e8e8;border-radius:100px;overflow:hidden;"><div style="width:${(gpToday*100).toFixed(0)}%;height:100%;background:#3B6D11;"></div></div>`:''}
+    </div>
+    ${judgeHtml}`;
+}
+
+/* ── 통계 탭: GP · 질소시비 분석 카드 ── */
+function getStatsFilteredRange(){
+  const dateFrom=document.getElementById('stats-date-from')?.value;
+  const dateTo=document.getElementById('stats-date-to')?.value;
+  if(dateFrom||dateTo)return{from:dateFrom||'',to:dateTo||''};
+  const selMonth=document.getElementById('stats-month')?.value;
+  if(selMonth){
+    const[sy,smo]=selMonth.split('-').map(Number);
+    const lastDay=new Date(sy,smo,0).getDate();
+    return{from:`${sy}-${String(smo).padStart(2,'0')}-01`,to:`${sy}-${String(smo).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`};
+  }
+  return{from:'',to:''};
+}
+function renderGpStatsCard(){
+  const chartEl=document.getElementById('gp-stats-chart');
+  const sumEl=document.getElementById('gp-stats-summary');
+  if(!chartEl)return;
+  populateGpAreaSelect('gp-stat-area-sel');
+  const area=document.getElementById('gp-stat-area-sel')?.value||'';
+  if(!area){
+    chartEl.innerHTML='<div style="font-size:11px;color:#aaa;padding:10px 0;">자재사용량 탭에서 처리지역(좌그린/우그린 등)을 먼저 등록해 주세요</div>';
+    sumEl.innerHTML='';
+    return;
+  }
+  const gpMap=getDailyGPMap();
+  const nMap=getDailyNByArea(area);
+  const{from,to}=getStatsFilteredRange();
+  let dates=Object.keys(gpMap).sort();
+  if(from)dates=dates.filter(d=>d>=from);
+  if(to)dates=dates.filter(d=>d<=to);
+  if(!dates.length){
+    chartEl.innerHTML='<div style="font-size:11px;color:#aaa;padding:10px 0;">기온 데이터 없음 (운영/날씨 섹션에서 기온 입력 후 표시)</div>';
+    sumEl.innerHTML='';
+    return;
+  }
+  const chartDates=dates.length>60?dates.slice(dates.length-60):dates;
+  chartEl.innerHTML=buildGpNChartSVG(chartDates,gpMap,nMap);
+
+  const gpVals=dates.map(d=>gpMap[d]);
+  const gpAvg=gpVals.reduce((s,v)=>s+v,0)/gpVals.length;
+  const nSum=dates.reduce((s,d)=>s+(nMap[d]||0),0);
+  const targets=getGpTargets();
+  const weeklyTarget=targets[area];
+  let judgeHtml='';
+  if(weeklyTarget){
+    const weeks=dates.length/7;
+    const recommended=weeklyTarget*gpAvg*weeks;
+    const ratio=recommended>0?(nSum/recommended*100):null;
+    let color='#3B6D11',label='적정';
+    if(ratio!==null){
+      if(ratio>130){color='#c0392b';label='과다';}
+      else if(ratio<70){color='#B8690A';label='부족';}
+    }
+    judgeHtml=`<div style="font-size:11px;color:#444;display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
+      <span>기간 평균 GP <b>${(gpAvg*100).toFixed(0)}%</b></span>
+      <span>실제 시비 N <b>${nSum.toFixed(1)}g</b></span>
+      <span>권장 시비 N <b>${recommended.toFixed(1)}g</b></span>
+      ${ratio!==null?`<span style="background:${color}1a;color:${color};font-weight:700;border-radius:100px;padding:2px 10px;">${label} (${ratio.toFixed(0)}%)</span>`:''}
+    </div>`;
+  } else {
+    judgeHtml=`<div style="font-size:11px;color:#888;">기간 평균 GP <b>${(gpAvg*100).toFixed(0)}%</b> · 실제 시비 N <b>${nSum.toFixed(1)}g</b> (작성 탭에서 목표 시비율을 입력하면 과부족 비교가 표시돼요)</div>`;
+  }
+  sumEl.innerHTML=judgeHtml;
+}
+
+/* GP 라인 + 일일 질소시비량 막대 결합 SVG 차트 */
+function buildGpNChartSVG(dates,gpMap,nMap){
+  const n=dates.length;
+  const nVals=dates.map(d=>nMap[d]||0);
+  const maxN=Math.max(...nVals,0.001);
+
+  const W=500,H=70,PL=24,PR=24,PT=6,PB=10;
+  const cW=W-PL-PR,cH=H-PT-PB;
+  const xPos=i=>PL+(n<=1?cW/2:i/(n-1)*cW);
+  const yPosGp=v=>PT+cH-v*cH;              /* GP 0~1 → 좌측 축 */
+  const yPosN=v=>PT+cH-(v/maxN)*cH;        /* N grams → 우측 축(스케일 별도) */
+
+  /* 격자 (GP 기준, 0/0.5/1.0) */
+  let grid='';
+  [0,0.5,1].forEach(gv=>{
+    const gy=yPosGp(gv);
+    grid+=`<line x1="${PL}" y1="${gy.toFixed(1)}" x2="${W-PR}" y2="${gy.toFixed(1)}" stroke="${gv===0?'#ddd':'#f2f2f2'}" stroke-width="${gv===0?0.4:0.2}"/>`;
+    grid+=`<text x="${PL-3}" y="${(gy+2).toFixed(1)}" font-size="4" fill="#3B6D11" text-anchor="end">${(gv*100).toFixed(0)}%</text>`;
+  });
+
+  /* N 막대 */
+  const barW=Math.max(1,(cW/n)*0.55);
+  let bars='';
+  dates.forEach((d,i)=>{
+    const v=nMap[d]||0;
+    if(v<=0)return;
+    const x=xPos(i)-barW/2;
+    const y=yPosN(v);
+    bars+=`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${(PT+cH-y).toFixed(1)}" fill="#185FA5" opacity="0.55"><title>${d} 시비 N: ${v.toFixed(1)}g</title></rect>`;
+  });
+
+  /* GP 라인 */
+  let path='',dots='';
+  dates.forEach((d,i)=>{
+    const v=gpMap[d];
+    if(v===undefined)return;
+    const px=xPos(i),py=yPosGp(v);
+    path+=(i===0?`M${px.toFixed(1)},${py.toFixed(1)}`:`L${px.toFixed(1)},${py.toFixed(1)}`);
+    if(i%Math.max(1,Math.ceil(n/8))===0||i===n-1)
+      dots+=`<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="0.9" fill="#3B6D11" stroke="#fff" stroke-width="0.4"><title>${d} GP: ${(v*100).toFixed(0)}%</title></circle>`;
+  });
+  const gpLine=`<path d="${path}" fill="none" stroke="#3B6D11" stroke-width="0.7" stroke-linejoin="round" stroke-linecap="round"/>${dots}`;
+
+  /* X축 라벨 */
+  let xLabels='';
+  const step=Math.max(1,Math.ceil(n/7));
+  dates.forEach((d,i)=>{
+    if(i%step!==0&&i!==n-1)return;
+    const[,mm,dd]=d.split('-');
+    xLabels+=`<text x="${xPos(i).toFixed(1)}" y="${H-2}" font-size="4" fill="#aaa" text-anchor="middle">${parseInt(mm)}/${parseInt(dd)}</text>`;
+  });
+
+  return `
+    <div style="display:flex;gap:10px;font-size:6.5px;color:#555;margin-bottom:3px;">
+      <span style="display:flex;align-items:center;gap:2px;"><span style="width:12px;height:2.5px;background:#3B6D11;border-radius:1px;display:inline-block;"></span>GP(생육잠재력)</span>
+      <span style="display:flex;align-items:center;gap:2px;"><span style="width:8px;height:8px;background:#185FA5;opacity:0.55;display:inline-block;"></span>일일 시비 N(g)</span>
+    </div>
+    <div style="overflow-x:auto;">
+      <svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;min-width:220px;">
+        ${grid}
+        <line x1="${PL}" y1="${PT}" x2="${PL}" y2="${PT+cH}" stroke="#ddd" stroke-width="0.8"/>
+        <line x1="${PL}" y1="${PT+cH}" x2="${W-PR}" y2="${PT+cH}" stroke="#ddd" stroke-width="0.8"/>
+        ${bars}
+        ${gpLine}
+        ${xLabels}
+      </svg>
+    </div>`;
 }
 
 /* ── 인쇄 ── */
@@ -7713,7 +8029,7 @@ function migrateRegWorkerNames(){
   showToast(`✅ ${changedCount}건 변경 완료! (${Object.keys(nameMap).length}명)`);
 }
 /* ── 통계 카드 순서 관리 ── */
-const STATS_DEFAULT_ORDER=['reg','daily','cost','teams'];
+const STATS_DEFAULT_ORDER=['reg','daily','cost','teams','gp'];
 
 function getStatsOrder(){
   try{
@@ -8125,7 +8441,7 @@ function exportDataFile(){
   if(_isContentUriOrigin()){ _warnRestrictedOrigin('내보내기'); return; }
   /* 모든 localStorage 키 수집 */
   const allKeys=[SK,PK,RK,CNK,RATE_KEY,DSK,WCK,LOC_KEY,IRR_ZONES_KEY,MAT_PEST_KEY,MAT_FERT_KEY,MAT_AREA_PRESET_KEY,
-    TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY,TDR_ZONE_LABEL_KEY];
+    TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY,TDR_ZONE_LABEL_KEY,GP_TARGET_KEY];
   const exportObj={};
   allKeys.forEach(k=>{
     const v=localStorage.getItem(k);
@@ -8220,7 +8536,7 @@ function importDataFile(event){
 
       /* 기존 관련 키 지우기 */
       [SK,PK,RK,CNK,RATE_KEY,DSK,WCK,LOC_KEY,IRR_ZONES_KEY,MAT_PEST_KEY,MAT_FERT_KEY,MAT_AREA_PRESET_KEY,
-        TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY,TDR_ZONE_LABEL_KEY].forEach(k=>localStorage.removeItem(k));
+        TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY,TDR_ZONE_LABEL_KEY,GP_TARGET_KEY].forEach(k=>localStorage.removeItem(k));
 
       /* 새 데이터 적재 */
       importedKeys.forEach(k=>{
