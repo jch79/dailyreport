@@ -1155,11 +1155,12 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
       </div>
     </div>
 
-    <!-- ── 좌(관수) + 우(TDR) 2열 메인 레이아웃 ── -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start;">
+    <!-- ── 좌(관수) + 우(TDR) 2열 메인 레이아웃 (전체 좌우 스크롤) ── -->
+    <div style="font-size:9px;color:#999;text-align:right;margin-bottom:2px;">◀ 좌우로 스크롤 가능 ▶</div>
+    <div style="display:flex;gap:10px;align-items:start;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px;">
 
       <!-- ★ 좌: 관수 4구역 -->
-      <div>
+      <div style="flex:0 0 300px;min-width:300px;">
         <div style="font-size:10px;font-weight:700;color:#185FA5;display:flex;align-items:center;justify-content:space-between;gap:5px;margin-bottom:6px;">
           <span style="display:flex;align-items:center;gap:5px;">
             <span style="display:inline-block;width:3px;height:12px;border-radius:2px;background:#378ADD;"></span>
@@ -1176,7 +1177,7 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
       </div><!-- /좌 관수 -->
 
       <!-- ★ 우: TDR350 측정 -->
-      <div style="min-width:0;">
+      <div style="flex:0 0 auto;">
         <div style="font-size:10px;font-weight:700;color:#16A085;display:flex;align-items:center;justify-content:space-between;gap:5px;margin-bottom:6px;">
           <span style="display:flex;align-items:center;gap:5px;">
             <span style="display:inline-block;width:3px;height:12px;border-radius:2px;background:#16A085;"></span>
@@ -1187,8 +1188,6 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
           <button onclick="resetTdrRecord()" title="TDR350 측정값 및 측정 메모 초기화"
             style="font-size:9px;padding:2px 7px;border:1.3px solid #a3d9cf;border-radius:5px;background:#fff;color:#16A085;cursor:pointer;font-weight:700;">↺ 초기화</button>
         </div>
-        <div style="font-size:9px;color:#999;text-align:right;margin-bottom:2px;">◀ 좌우로 스크롤 가능 ▶</div>
-        <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:8px;">
         <div style="background:#f0faf7;border:2px solid #a3d9cf;border-radius:8px;overflow:hidden;min-width:340px;">
 
           <!-- ── 가로 헤더: 구역명 열 ── -->
@@ -1294,10 +1293,9 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
             </div>
           </div>
         </div>
-        </div>
       </div><!-- /우 TDR -->
 
-    </div><!-- /2열 메인 -->
+    </div><!-- /2열 메인 (가로 스크롤) -->
 
     <!-- ── 메모 2열: 좌(관수) + 우(TDR) ── -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px;">
