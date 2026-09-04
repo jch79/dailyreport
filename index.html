@@ -48,7 +48,7 @@ let _fbReady   = false;  // Auth 초기화 완료 여부
 
 /* ── 작성 탭 섹션 정의 (팀 관리에서 부분편집 권한을 나눌 때도 이 목록/이름을 그대로 사용) ── */
 const WRITE_SEC_LABELS = {
-  weather:'운영/날씨', ballspeed:'볼스피드', irr:'관수 기록', workers:'작업자',
+  weather:'운영/날씨', ballspeed:'볼스피드', gp:'GP·질소시비', irr:'관수 기록', workers:'작업자',
   tasks:'작업 내용', notes:'비고', materials_use:'비료·농약·모래 자재 사용', elapsed:'경과일 기록'
 };
 
@@ -1139,22 +1139,30 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
       <div id="temp-trend-chart"></div>
     </div>
 
-    <!-- GP(생육잠재력) & 권장 시비량 -->
-    <div style="border-top:1px solid #eee;padding-top:8px;">
-      <div style="font-size:10px;font-weight:700;color:#3B6D11;margin-bottom:6px;display:flex;align-items:center;gap:4px;">
-        🌱 GP(생육잠재력) 기반 질소시비 가이드
-      </div>
-      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
-        <select id="gp-area-sel" onchange="onGpAreaChange()" style="font-size:11px;padding:4px 7px;border:1.5px solid #c8c8c8;border-radius:6px;background:#fff;"></select>
-        <span style="font-size:10px;color:#888;">GP=100% 기준 주간 목표 N(g)</span>
-        <input type="number" id="gp-target-input" placeholder="예: 20" step="0.1" onchange="onGpTargetChange()"
-          style="width:64px;font-size:11px;padding:3px 6px;border:1.5px solid #c8c8c8;border-radius:6px;">
-      </div>
-      <div id="gp-write-box"></div>
+  </div><!-- /card -->
+  </div><!-- /write-sec-wrap ballspeed -->
+
+  <!-- GP(생육잠재력) · 질소시비 가이드 섹션 -->
+  <div class="write-sec-wrap" data-sec-id="gp">
+    <div class="write-sec-btns"></div>
+  <div class="card">
+    <div class="card-title">🌱 GP(생육잠재력) · 질소시비 가이드</div>
+
+    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+      <select id="gp-area-sel" onchange="onGpAreaChange()" style="font-size:11px;padding:4px 7px;border:1.5px solid #c8c8c8;border-radius:6px;background:#fff;"></select>
+      <span style="font-size:10px;color:#888;">GP=100% 기준 주간 목표 N(g)</span>
+      <input type="number" id="gp-target-input" placeholder="예: 20" step="0.1" onchange="onGpTargetChange()"
+        style="width:64px;font-size:11px;padding:3px 6px;border:1.5px solid #c8c8c8;border-radius:6px;">
+    </div>
+    <div id="gp-write-box"></div>
+
+    <div style="border-top:1px solid #eee;padding-top:8px;margin-top:10px;">
+      <div style="font-size:10px;font-weight:700;color:#555;margin-bottom:4px;">📈 GP · 일일 질소시비 추이 (최근 30일)</div>
+      <div id="gp-write-chart"></div>
     </div>
 
   </div><!-- /card -->
-  </div><!-- /write-sec-wrap ballspeed -->
+  </div><!-- /write-sec-wrap gp -->
 
 
   <!-- 관수/TDR -->
@@ -6876,9 +6884,22 @@ function setGpTarget(area,val){
   if(typeof fbSaveSharedSettings==='function')setTimeout(fbSaveSharedSettings,300);
 }
 
-/* 특정 처리지역(그린)의 날짜별 실제 시비 질소량(g) 맵: {iso: gramsN}
+/* GP 계산 대상 지역: 자재사용량 분석의 "좌그린 기준(그린전면+좌그린)" ·
+   "우그린 기준(그린전면+우그린)" 그룹과 동일한 기준을 재사용 (NPK_LEFT_NAMES/NPK_RIGHT_NAMES) */
+const GP_AREA_OPTIONS=[
+  {id:'__left_green__', label:'🟦 좌그린 기준 (그린전면+좌그린)'},
+  {id:'__right_green__',label:'🟩 우그린 기준 (그린전면+우그린)'}
+];
+function gpAreaNames(areaId){
+  if(areaId==='__left_green__')return NPK_LEFT_NAMES;
+  if(areaId==='__right_green__')return NPK_RIGHT_NAMES;
+  return [];
+}
+
+/* 특정 그린 기준(좌그린 기준/우그린 기준)의 날짜별 실제 시비 질소량(g) 맵: {iso: gramsN}
    자재사용량 탭에 이미 기록된 비료 항목의 순성분량(N) 계산을 그대로 재사용 */
-function getDailyNByArea(areaName){
+function getDailyNByArea(areaId){
+  const names=gpAreaNames(areaId);
   const map={};
   gd().forEach(r=>{
     const m=r.date?.match(/(\d+)년\s*(\d+)월\s*(\d+)일/);
@@ -6887,7 +6908,7 @@ function getDailyNByArea(areaName){
     const iso=`${yyyy}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
     let nSum=0;
     (r.matUseRows||[]).forEach(block=>{
-      if(block.areaName!==areaName)return;
+      if(!names.some(x=>String(block.areaName||'').trim()===x))return;
       (block.items||[]).forEach(item=>{
         if(item.type!=='fert')return;
         const nutr=calcFertNutr(item);
@@ -6900,18 +6921,13 @@ function getDailyNByArea(areaName){
   return map;
 }
 
-/* 처리지역 선택 드롭다운 공통 채우기 (자재사용량 탭에 등록된 처리지역 이름 재사용) */
+/* 처리지역 선택 드롭다운 공통 채우기 (좌그린 기준 / 우그린 기준 고정 2개) */
 function populateGpAreaSelect(selId){
   const sel=document.getElementById(selId);
   if(!sel)return;
-  const areas=getAreaPresets();
   const prev=sel.value;
-  if(!areas.length){
-    sel.innerHTML='<option value="">등록된 처리지역 없음</option>';
-    return;
-  }
-  sel.innerHTML=areas.map(a=>`<option value="${a.replace(/"/g,'&quot;')}">${a}</option>`).join('');
-  if(areas.includes(prev))sel.value=prev;
+  sel.innerHTML=GP_AREA_OPTIONS.map(a=>`<option value="${a.id}">${a.label}</option>`).join('');
+  if(GP_AREA_OPTIONS.some(a=>a.id===prev))sel.value=prev;
 }
 
 /* ── 작성 탭: 오늘의 GP & 권장 시비량 박스 ── */
@@ -6935,7 +6951,7 @@ function renderGpWriteBox(){
   populateGpAreaSelect('gp-area-sel');
   const area=document.getElementById('gp-area-sel')?.value||'';
   if(!area){
-    box.innerHTML='<div style="font-size:11px;color:#aaa;padding:6px 0;">자재사용량 탭에서 처리지역(좌그린/우그린 등)을 먼저 등록해 주세요</div>';
+    box.innerHTML='<div style="font-size:11px;color:#aaa;padding:6px 0;">그린 기준을 선택해 주세요</div>';
     return;
   }
   const targets=getGpTargets();
@@ -6983,6 +6999,24 @@ function renderGpWriteBox(){
       ${gpToday!==null?`<div style="flex:1;min-width:80px;max-width:160px;height:6px;background:#e8e8e8;border-radius:100px;overflow:hidden;"><div style="width:${(gpToday*100).toFixed(0)}%;height:100%;background:#3B6D11;"></div></div>`:''}
     </div>
     ${judgeHtml}`;
+
+  renderGpWriteChart(area,iso,gpMap,nMap);
+}
+
+/* 작성 탭: GP·일일 시비 N 추이 차트 (선택 날짜 기준 최근 30일) */
+function renderGpWriteChart(area,iso,gpMap,nMap){
+  const el=document.getElementById('gp-write-chart');
+  if(!el)return;
+  gpMap=gpMap||getDailyGPMap();
+  nMap=nMap||getDailyNByArea(area);
+  let dates=Object.keys(gpMap).sort();
+  if(iso)dates=dates.filter(d=>d<=iso);
+  if(!dates.length){
+    el.innerHTML='<div style="font-size:11px;color:#aaa;padding:8px 0;">기온 데이터 없음 (운영/날씨 섹션에서 기온 입력 후 표시)</div>';
+    return;
+  }
+  if(dates.length>30)dates=dates.slice(dates.length-30);
+  el.innerHTML=buildGpNChartSVG(dates,gpMap,nMap);
 }
 
 /* ── 통계 탭: GP · 질소시비 분석 카드 ── */
@@ -7005,7 +7039,7 @@ function renderGpStatsCard(){
   populateGpAreaSelect('gp-stat-area-sel');
   const area=document.getElementById('gp-stat-area-sel')?.value||'';
   if(!area){
-    chartEl.innerHTML='<div style="font-size:11px;color:#aaa;padding:10px 0;">자재사용량 탭에서 처리지역(좌그린/우그린 등)을 먼저 등록해 주세요</div>';
+    chartEl.innerHTML='<div style="font-size:11px;color:#aaa;padding:10px 0;">그린 기준을 선택해 주세요</div>';
     sumEl.innerHTML='';
     return;
   }
@@ -8091,7 +8125,7 @@ function moveStatsCard(cardId, dir){
 }
 
 /* ── 작성 패널 섹션 위아래 이동 ── */
-const WRITE_SEC_DEFAULT=['weather','ballspeed','irr','workers','tasks','notes','materials_use','elapsed'];
+const WRITE_SEC_DEFAULT=['weather','ballspeed','gp','irr','workers','tasks','notes','materials_use','elapsed'];
 
 function getWriteSecOrder(){
   try{
