@@ -8728,8 +8728,6 @@ const SAND_DATA = [
   {"name":"소토사","category":"소토용 모래","size":"1톤","usage":"","price":""}
 ];
 
-/* 현재 보고 있는 자재 탭 */
-let curMatTab = 'pest';
 let matEditMode = false;
 let matEditIdx = -1;
 let matEditType = '';
@@ -8773,16 +8771,6 @@ function saveFertList(arr){ localStorage.setItem(MAT_FERT_KEY, JSON.stringify(ar
     }catch(e){}
   }
 })();
-
-/* ── 탭 전환 ── */
-function switchMatTab(tab){
-  curMatTab = tab;
-  document.getElementById('mat-tab-pest').style.background = tab==='pest'?'#185FA5':'#fff';
-  document.getElementById('mat-tab-pest').style.color     = tab==='pest'?'#fff':'#185FA5';
-  document.getElementById('mat-tab-fert').style.background = tab==='fert'?'#3B6D11':'#fff';
-  document.getElementById('mat-tab-fert').style.color     = tab==='fert'?'#fff':'#3B6D11';
-  renderMaterialsTable();
-}
 
 /* ── 자재정보 패널 진입 시 ── */
 function renderMaterialsPanel(){
@@ -9332,7 +9320,7 @@ function deleteMatItem(type, idx){
 /* ── 추가 모달 ── */
 function openAddMaterialModal(type){
   if(!guardMemberOrAdmin('자재정보 추가'))return;
-  const addType = type || curMatTab || 'pest';
+  const addType = type || 'pest';
   matEditMode=true; matEditIdx=-1; matEditType=addType;
   document.getElementById('mat-modal-title').textContent = addType==='pest'?'🌿 농약 추가':addType==='sand'?'🏖 모래 추가':'🌱 비료 추가';
   document.getElementById('mat-modal-edit-btn').textContent='💾 저장';
