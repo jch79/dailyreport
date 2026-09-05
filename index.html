@@ -8474,11 +8474,21 @@ function checkBackupReminder(){
 function _isContentUriOrigin(){
   return location.protocol==='content:';
 }
+/* 네이버·카카오톡 등 앱 내장 브라우저는 보안 정책상 파일 선택(input[type=file]) 창이
+   아예 안 열리거나 클릭에 반응하지 않는 경우가 흔하다. "가져오기" 버튼을 눌러도
+   아무 반응이 없다는 문의의 상당수가 이 케이스라서, 먼저 감지해서 안내한다. */
+function _isInAppBrowser(){
+  const ua=navigator.userAgent||'';
+  return /NAVER|KAKAOTALK|Line\/|FBAN|FBAV|Instagram|Whale/i.test(ua) && !/Chrome\/.*Mobile Safari/i.test(ua);
+}
 function _warnRestrictedOrigin(action){
   alert(`⚠️ 지금 파일을 기기에서 직접 열어서 사용 중입니다.\n(주소창이 content:// 로 시작)\n\n이 방식에서는 ${action} 기능이 정상 작동하지 않습니다.\n반드시 GitHub Pages 주소(https:// 로 시작하는 주소)로 접속해서 이용해주세요.`);
 }
 function triggerImportFile(id){
   if(_isContentUriOrigin()){ _warnRestrictedOrigin('가져오기'); return; }
+  if(_isInAppBrowser()){
+    alert(`⚠️ 지금 네이버·카카오톡 같은 앱 내장 브라우저로 접속 중인 것 같습니다.\n\n이런 앱 내장 브라우저는 파일 선택 창이 열리지 않거나 버튼을 눌러도 반응이 없는 경우가 많습니다.\n\n주소창 옆 메뉴(⋮ 또는 공유 아이콘)에서 "다른 브라우저로 열기" / "Chrome으로 열기"를 선택해서 다시 시도해주세요.`);
+  }
   document.getElementById(id).click();
 }
 function exportDataFile(){
