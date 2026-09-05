@@ -7031,8 +7031,9 @@ function renderGpWriteChart(area,iso,gpMap,nMap){
     el.innerHTML='<div style="font-size:11px;color:#aaa;padding:8px 0;">기온 데이터 없음 (운영/날씨 섹션에서 기온 입력 후 표시)</div>';
     return;
   }
-  if(dates.length>30)dates=dates.slice(dates.length-30);
   el.innerHTML=buildGpNChartSVG(dates,gpMap,nMap);
+  const sc=el.querySelector('.gp-chart-scroll');
+  if(sc)sc.scrollLeft=sc.scrollWidth;
 }
 
 /* ── 통계 탭: GP · 질소시비 분석 카드 ── */
@@ -7070,8 +7071,10 @@ function renderGpStatsCard(){
     sumEl.innerHTML='';
     return;
   }
-  const chartDates=dates.length>60?dates.slice(dates.length-60):dates;
+  const chartDates=dates;
   chartEl.innerHTML=buildGpNChartSVG(chartDates,gpMap,nMap);
+  const sc=chartEl.querySelector('.gp-chart-scroll');
+  if(sc)sc.scrollLeft=sc.scrollWidth;
 
   const gpVals=dates.map(d=>gpMap[d]);
   const gpAvg=gpVals.reduce((s,v)=>s+v,0)/gpVals.length;
@@ -7100,15 +7103,18 @@ function renderGpStatsCard(){
   sumEl.innerHTML=judgeHtml;
 }
 
-/* GP 라인 + 일일 질소시비량 막대 결합 SVG 차트 */
+/* GP 라인 + 일일 질소시비량 막대 결합 SVG 차트 (좌우 스크롤 가능, 날짜 클릭 시 산출근거 팝업) */
 function buildGpNChartSVG(dates,gpMap,nMap){
   const n=dates.length;
   const nVals=dates.map(d=>nMap[d]||0);
   const maxN=Math.max(...nVals,0.001);
 
-  const W=500,H=70,PL=24,PR=24,PT=6,PB=10;
+  const DAY_W=16; /* 하루당 실제 픽셀 폭 — 데이터가 많아지면 SVG 자체가 넓어져서 좌우 스크롤이 가능해짐 */
+  const H=70,PL=24,PR=10,PT=6,PB=10;
+  const W=Math.max(220,PL+PR+n*DAY_W);
   const cW=W-PL-PR,cH=H-PT-PB;
-  const xPos=i=>PL+(n<=1?cW/2:i/(n-1)*cW);
+  const colW=cW/n;
+  const xPos=i=>PL+i*colW+colW/2;
   const yPosGp=v=>PT+cH-v*cH;              /* GP 0~1 → 좌측 축 */
   const yPosN=v=>PT+cH-(v/maxN)*cH;        /* N grams → 우측 축(스케일 별도) */
 
@@ -7121,14 +7127,14 @@ function buildGpNChartSVG(dates,gpMap,nMap){
   });
 
   /* N 막대 */
-  const barW=Math.max(1,(cW/n)*0.55);
+  const barW=Math.max(1,colW*0.55);
   let bars='';
   dates.forEach((d,i)=>{
     const v=nMap[d]||0;
     if(v<=0)return;
     const x=xPos(i)-barW/2;
     const y=yPosN(v);
-    bars+=`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${(PT+cH-y).toFixed(1)}" fill="#185FA5" opacity="0.55"><title>${d} 시비 N: ${v.toFixed(1)}g</title></rect>`;
+    bars+=`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${(PT+cH-y).toFixed(1)}" fill="#185FA5" opacity="0.55"/>`;
   });
 
   /* GP 라인 */
@@ -7138,35 +7144,70 @@ function buildGpNChartSVG(dates,gpMap,nMap){
     if(v===undefined)return;
     const px=xPos(i),py=yPosGp(v);
     path+=(i===0?`M${px.toFixed(1)},${py.toFixed(1)}`:`L${px.toFixed(1)},${py.toFixed(1)}`);
-    if(i%Math.max(1,Math.ceil(n/8))===0||i===n-1)
-      dots+=`<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="0.9" fill="#3B6D11" stroke="#fff" stroke-width="0.4"><title>${d} GP: ${(v*100).toFixed(0)}%</title></circle>`;
+    dots+=`<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="1.1" fill="#3B6D11" stroke="#fff" stroke-width="0.4"/>`;
   });
   const gpLine=`<path d="${path}" fill="none" stroke="#3B6D11" stroke-width="0.7" stroke-linejoin="round" stroke-linecap="round"/>${dots}`;
 
+  /* 날짜별 클릭 영역 (투명, 탭하면 그 날짜의 GP 산출근거 팝업) */
+  let clickAreas='';
+  dates.forEach((d,i)=>{
+    const x=PL+i*colW;
+    clickAreas+=`<rect x="${x.toFixed(1)}" y="${PT}" width="${colW.toFixed(1)}" height="${cH}" fill="transparent" style="cursor:pointer;" onclick="showGpCalcModal('${d}')"><title>${d} 탭하여 산출근거 보기</title></rect>`;
+  });
+
   /* X축 라벨 */
   let xLabels='';
-  const step=Math.max(1,Math.ceil(n/7));
+  const labelStep=Math.max(1,Math.ceil(38/DAY_W));
   dates.forEach((d,i)=>{
-    if(i%step!==0&&i!==n-1)return;
+    if(i%labelStep!==0&&i!==n-1)return;
     const[,mm,dd]=d.split('-');
     xLabels+=`<text x="${xPos(i).toFixed(1)}" y="${H-2}" font-size="4" fill="#aaa" text-anchor="middle">${parseInt(mm)}/${parseInt(dd)}</text>`;
   });
 
   return `
-    <div style="display:flex;gap:10px;font-size:6.5px;color:#555;margin-bottom:3px;">
-      <span style="display:flex;align-items:center;gap:2px;"><span style="width:12px;height:2.5px;background:#3B6D11;border-radius:1px;display:inline-block;"></span>GP(생육잠재력)</span>
-      <span style="display:flex;align-items:center;gap:2px;"><span style="width:8px;height:8px;background:#185FA5;opacity:0.55;display:inline-block;"></span>일일 시비 N(g)</span>
+    <div style="display:flex;justify-content:space-between;align-items:center;font-size:6.5px;color:#555;margin-bottom:3px;">
+      <div style="display:flex;gap:10px;">
+        <span style="display:flex;align-items:center;gap:2px;"><span style="width:12px;height:2.5px;background:#3B6D11;border-radius:1px;display:inline-block;"></span>GP(생육잠재력)</span>
+        <span style="display:flex;align-items:center;gap:2px;"><span style="width:8px;height:8px;background:#185FA5;opacity:0.55;display:inline-block;"></span>일일 시비 N(g)</span>
+      </div>
+      <span style="color:#999;">◀ 스크롤 · 탭하여 산출근거 ▶</span>
     </div>
-    <div style="overflow-x:auto;">
-      <svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;min-width:220px;">
+    <div class="gp-chart-scroll" style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
+      <svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="display:block;">
         ${grid}
         <line x1="${PL}" y1="${PT}" x2="${PL}" y2="${PT+cH}" stroke="#ddd" stroke-width="0.8"/>
         <line x1="${PL}" y1="${PT+cH}" x2="${W-PR}" y2="${PT+cH}" stroke="#ddd" stroke-width="0.8"/>
         ${bars}
         ${gpLine}
         ${xLabels}
+        ${clickAreas}
       </svg>
     </div>`;
+}
+
+/* 특정 날짜의 GP 산출근거 팝업 */
+function showGpCalcModal(iso){
+  const body=document.getElementById('gp-calc-modal-body');
+  const modal=document.getElementById('gp-calc-modal');
+  if(!body||!modal)return;
+  const gp=getDailyGPMap()[iso];
+  const tempRow=getTempDataFromRecords().find(d=>d.date===iso);
+  const tavg=tempRow?tempRow.tavg:null;
+  if(gp===undefined||tavg===null||tavg===undefined){
+    body.innerHTML=`<div>${iso} 날짜는 기온 데이터가 없어 GP를 계산할 수 없습니다.</div>`;
+  } else {
+    const diff=(tavg-GP_TOPT);
+    body.innerHTML=`
+      <div style="font-weight:700;font-size:14px;margin-bottom:8px;">${iso}</div>
+      <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f0f0f0;"><span>일평균기온</span><b>${tavg.toFixed(1)}°C</b></div>
+      <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f0f0f0;"><span>최적 생육온도(Topt)</span><b>${GP_TOPT}°C</b></div>
+      <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f0f0f0;"><span>온도 편차</span><b>${diff>=0?'+':''}${diff.toFixed(1)}°C</b></div>
+      <div style="margin:10px 0;padding:9px 11px;background:#f5f8f5;border-radius:8px;font-size:12px;color:#555;">
+        GP = EXP( -0.5 × ((${tavg.toFixed(1)} - ${GP_TOPT}) / ${GP_SIGMA})² )
+      </div>
+      <div style="font-size:20px;font-weight:800;color:#3B6D11;text-align:center;">GP = ${(gp*100).toFixed(1)}%</div>`;
+  }
+  modal.style.display='flex';
 }
 
 /* ── 인쇄 ── */
@@ -13248,7 +13289,17 @@ function showPdfGuide(ri){
   </div>
 </div>
 
-<!-- 작성탭 팝업: PDF 지침서 -->
+<!-- GP(생육잠재력) 산출근거 팝업 -->
+<div id="gp-calc-modal" class="modal-wrap" onclick="if(event.target===this)this.style.display='none'" style="display:none;">
+  <div class="modal" style="max-width:380px;width:92%;">
+    <div class="modal-hdr">
+      <div class="modal-ttl">🌱 GP 산출근거</div>
+      <button class="btn btn-sm" onclick="document.getElementById('gp-calc-modal').style.display='none'">✕ 닫기</button>
+    </div>
+    <div id="gp-calc-modal-body" style="padding:8px 2px 4px;font-size:13px;line-height:1.7;"></div>
+  </div>
+</div>
+
 <div id="write-pdf-modal" class="modal-wrap" onclick="if(event.target===this)this.style.display='none'" style="display:none;">
   <div class="modal" style="max-width:860px;width:97%;height:88vh;display:flex;flex-direction:column;">
     <div class="modal-hdr" style="border-bottom:1px solid #e0e0e0;padding-bottom:8px;flex-shrink:0;">
