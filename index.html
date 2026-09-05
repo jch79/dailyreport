@@ -8484,7 +8484,7 @@ function triggerImportFile(id){
 function exportDataFile(){
   if(_isContentUriOrigin()){ _warnRestrictedOrigin('내보내기'); return; }
   /* 모든 localStorage 키 수집 */
-  const allKeys=[SK,PK,RK,CNK,RATE_KEY,DSK,WCK,LOC_KEY,IRR_ZONES_KEY,MAT_PEST_KEY,MAT_FERT_KEY,MAT_AREA_PRESET_KEY,
+  const allKeys=[SK,PK,RK,CNK,RATE_KEY,DSK,WCK,LOC_KEY,IRR_ZONES_KEY,MAT_PEST_KEY,MAT_FERT_KEY,MAT_SAND_KEY,MAT_AREA_PRESET_KEY,
     TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY,TDR_ZONE_LABEL_KEY,GP_TARGET_KEY];
   const exportObj={};
   allKeys.forEach(k=>{
@@ -8579,7 +8579,7 @@ function importDataFile(event){
       if(!confirm(`가져오기를 진행하면 현재 기기의 모든 데이터가 파일의 데이터로 교체됩니다.\n\n가져올 데이터: ${data[SK]?JSON.parse(data[SK]).length:0}건\n현재 데이터: ${recordsBefore}건\n\n계속하겠습니까?`))return;
 
       /* 기존 관련 키 지우기 */
-      [SK,PK,RK,CNK,RATE_KEY,DSK,WCK,LOC_KEY,IRR_ZONES_KEY,MAT_PEST_KEY,MAT_FERT_KEY,MAT_AREA_PRESET_KEY,
+      [SK,PK,RK,CNK,RATE_KEY,DSK,WCK,LOC_KEY,IRR_ZONES_KEY,MAT_PEST_KEY,MAT_FERT_KEY,MAT_SAND_KEY,MAT_AREA_PRESET_KEY,
         TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY,TDR_ZONE_LABEL_KEY,GP_TARGET_KEY].forEach(k=>localStorage.removeItem(k));
 
       /* 새 데이터 적재 */
