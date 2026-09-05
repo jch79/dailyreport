@@ -2010,6 +2010,12 @@ const WRITE_SEC_ORDER_KEY='golf_write_sec_order_v1';
 const MAT_PEST_KEY = 'custom_pest_data';
 const MAT_FERT_KEY = 'custom_fert_data';
 const MAT_SAND_KEY = 'custom_sand_data';
+/* 처리지역 "좌그린 기준(그린전면+좌그린)" / "우그린 기준(그린전면+우그린)" 그룹 정의.
+   자재사용량 분석의 NPK 요약카드와 GP(생육잠재력) 기능이 함께 사용하므로,
+   초기 로딩(init) 중에도 안전하게 참조되도록 스크립트 최상단에 선언해둔다. */
+const NPK_CARDS_KEY='golf_matu_npk_cards_v1';
+const NPK_LEFT_NAMES  = ['그린전면','좌그린'];
+const NPK_RIGHT_NAMES = ['그린전면','우그린'];
 const MAT_USE_KEY  = 'material_use_rows';
 const MAT_AREA_PRESET_KEY = 'mat_area_custom_presets';
 const REG_NAME_ORDER_KEY = 'reg_name_order_v1';
@@ -10408,10 +10414,9 @@ let _matuChartPage = 0; /* 0~1 (6개씩 2페이지) */
    "자재사용량 분석" 제목 옆에, 상단 지역 필터와 무관하게 사용자가 고른
    처리지역 기준들을 한눈에 볼 수 있도록 표시. 선택된 연도(matu-year)
    전체 기간 합계임. 관수 기록의 "구역별 관수 시간" 카드처럼 카드를
-   추가/삭제할 수 있음 — 저장된 카드 구성은 golf_matu_npk_cards_v1 에 보관. */
-const NPK_CARDS_KEY='golf_matu_npk_cards_v1';
-const NPK_LEFT_NAMES  = ['그린전면','좌그린'];
-const NPK_RIGHT_NAMES = ['그린전면','우그린'];
+   추가/삭제할 수 있음 — 저장된 카드 구성은 golf_matu_npk_cards_v1 에 보관.
+   (NPK_CARDS_KEY / NPK_LEFT_NAMES / NPK_RIGHT_NAMES 상수는 GP 기능 등
+    다른 곳에서도 참조하므로 스크립트 최상단 상수 모음으로 옮겨 선언함) */
 function getNpkCards(){
   try{
     const s=localStorage.getItem(NPK_CARDS_KEY);
