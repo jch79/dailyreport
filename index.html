@@ -9132,15 +9132,7 @@ function init(){
   document.querySelectorAll('.panel').forEach(p=>p.style.display='none');
   document.getElementById('panel-history').style.display='block';
   setToday();
-  /* 오늘 날짜에 이미 저장된 기록이 있으면 작성 탭 입력칸에도 조용히 복원해둔다.
-     예전에는 여기서 아무것도 안 해서, 저장 후 새로고침되면(또는 다른 기기에서
-     다시 접속하면) 분명 저장했는데 작성 탭이 빈 화면으로 보여 "기록이 지워졌다"고
-     오인하게 만드는 문제가 있었음 — 화면만 비어있었을 뿐 데이터 자체는 안전했음. */
-  {
-    const _todayLabel=document.getElementById('inp-date').value;
-    const _todayIdx=gd().findIndex(x=>x.date===_todayLabel);
-    if(_todayIdx>=0) loadForEdit(_todayIdx,true);
-  }
+  /* 오늘 날짜 자동 복원은 init() 뒷부분(다른 초기화가 다 끝난 뒤)에서 처리 — 아래 참고 */
   applyTdrLabelsToUI(); /* TDR350 측정표 헤더에 사용자 지정 이름(있다면) 반영 */
   const cn=gcn();document.getElementById('nav-course-name').textContent=cn;document.getElementById('inp-course').value=cn;
   /* 날씨 지역 복원 */
@@ -9171,6 +9163,17 @@ function init(){
   applyWriteSecOrder();
   syncStickyTop();
   setTimeout(syncStickyTop,300);
+  /* 오늘 날짜에 이미 저장된 기록이 있으면 작성 탭 입력칸에도 조용히 복원해둔다.
+     예전에는 여기서 아무것도 안 해서, 저장 후 새로고침되면(또는 다른 기기에서
+     다시 접속하면) 분명 저장했는데 작성 탭이 빈 화면으로 보여 "기록이 지워졌다"고
+     오인하게 만드는 문제가 있었음 — 화면만 비어있었을 뿐 데이터 자체는 안전했음.
+     (다른 초기화가 모두 끝난 뒤에 실행해야 안전 — renderWorkers/renderIrrZoneCards
+      등이 의존하는 dailySubs·구역 DOM이 이 시점엔 이미 준비돼 있음) */
+  setTimeout(()=>{
+    const _todayLabel=document.getElementById('inp-date').value;
+    const _todayIdx=gd().findIndex(x=>x.date===_todayLabel);
+    if(_todayIdx>=0) loadForEdit(_todayIdx,true);
+  },0);
   /* 저장 후 새로고침으로 돌아온 경우, 방금 저장한 기록을 자동으로 보여줌 */
   _showJustSavedRecord();
   /* 작성탭 볼스피드 차트 초기 렌더 */
