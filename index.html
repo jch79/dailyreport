@@ -1169,7 +1169,7 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
     <div id="gp-write-box"></div>
 
     <div style="border-top:1px solid #eee;padding-top:8px;margin-top:10px;">
-      <div style="font-size:10px;font-weight:700;color:#555;margin-bottom:4px;">📈 GP · 일일 질소시비 추이 (최근 30일)</div>
+      <div style="font-size:10px;font-weight:700;color:#555;margin-bottom:4px;">📈 GP · 일일 질소시비 추이</div>
       <div id="gp-write-chart"></div>
     </div>
 
@@ -7198,7 +7198,7 @@ function buildGpNChartSVG(dates,gpMap,nMap){
   const tempMap=getDailyTempMap();
 
   const DAY_W=16; /* 하루당 실제 픽셀 폭 — 데이터가 많아지면 SVG 자체가 넓어져서 좌우 스크롤이 가능해짐 */
-  const H=100,PL=28,PR=10,PT=16,PB=22;  /* 이전엔 px 그대로 고정폭이라 기온추이(너비 100%로 늘어남)보다 훨씬 작게 보였음 — 실제 렌더 크기 자체를 키움 */
+  const H=130,PL=32,PR=12,PT=20,PB=28;  /* 기온추이(너비 100%로 화면폭만큼 늘어나 세로도 같이 커짐)와 비슷한 크기감을 내기 위해 고정 높이 자체를 더 키움 */
   const W=Math.max(220,PL+PR+n*DAY_W);
   const cW=W-PL-PR,cH=H-PT-PB;
   const colW=cW/n;
@@ -7210,8 +7210,8 @@ function buildGpNChartSVG(dates,gpMap,nMap){
   let grid='';
   [0,0.5,1].forEach(gv=>{
     const gy=yPosGp(gv);
-    grid+=`<line x1="${PL}" y1="${gy.toFixed(1)}" x2="${W-PR}" y2="${gy.toFixed(1)}" stroke="${gv===0?'#ddd':'#f2f2f2'}" stroke-width="${gv===0?0.6:0.3}"/>`;
-    grid+=`<text x="${PL-3}" y="${(gy+2).toFixed(1)}" font-size="5" fill="#3B6D11" text-anchor="end">${(gv*100).toFixed(0)}%</text>`;
+    grid+=`<line x1="${PL}" y1="${gy.toFixed(1)}" x2="${W-PR}" y2="${gy.toFixed(1)}" stroke="${gv===0?'#ddd':'#f2f2f2'}" stroke-width="${gv===0?0.7:0.35}"/>`;
+    grid+=`<text x="${PL-3}" y="${(gy+2.4).toFixed(1)}" font-size="6.2" fill="#3B6D11" text-anchor="end">${(gv*100).toFixed(0)}%</text>`;
   });
 
   /* N 막대 + 시비량(g) 라벨 */
@@ -7223,7 +7223,7 @@ function buildGpNChartSVG(dates,gpMap,nMap){
     const x=xPos(i)-barW/2;
     const y=yPosN(v);
     bars+=`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${(PT+cH-y).toFixed(1)}" fill="#185FA5" opacity="0.55"/>`;
-    bars+=`<text x="${xPos(i).toFixed(1)}" y="${(y-1.8).toFixed(1)}" font-size="4.8" fill="#185FA5" text-anchor="middle" font-weight="700">${v.toFixed(1)}g</text>`;
+    bars+=`<text x="${xPos(i).toFixed(1)}" y="${(y-2.2).toFixed(1)}" font-size="5.8" fill="#185FA5" text-anchor="middle" font-weight="700">${v.toFixed(1)}g</text>`;
   });
 
   /* GP 라인 + 점 */
@@ -7234,9 +7234,9 @@ function buildGpNChartSVG(dates,gpMap,nMap){
     const d=dates[i],v=gpMap[d];
     const px=xPos(i),py=yPosGp(v);
     path+=(k===0?`M${px.toFixed(1)},${py.toFixed(1)}`:`L${px.toFixed(1)},${py.toFixed(1)}`);
-    dots+=`<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="1.4" fill="#3B6D11" stroke="#fff" stroke-width="0.6"/>`;
+    dots+=`<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="1.8" fill="#3B6D11" stroke="#fff" stroke-width="0.75"/>`;
   });
-  const gpLine=`<path d="${path}" fill="none" stroke="#3B6D11" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>${dots}`;
+  const gpLine=`<path d="${path}" fill="none" stroke="#3B6D11" stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round"/>${dots}`;
 
   /* 위/아래 꼭지점(극댓값·극솟값)에 산출근거인 일평균기온 라벨 표시 */
   let tempLabels='';
@@ -7249,8 +7249,8 @@ function buildGpNChartSVG(dates,gpMap,nMap){
     const d=dates[i], t=tempMap[d];
     if(t===undefined) return;
     const px=xPos(i), py=yPosGp(curV);
-    const ty = isPeak ? py-4 : py+9.5;
-    tempLabels+=`<text x="${px.toFixed(1)}" y="${ty.toFixed(1)}" font-size="5" fill="#B45309" text-anchor="middle" font-weight="700">${t.toFixed(1)}°</text>`;
+    const ty = isPeak ? py-5 : py+12;
+    tempLabels+=`<text x="${px.toFixed(1)}" y="${ty.toFixed(1)}" font-size="6.2" fill="#B45309" text-anchor="middle" font-weight="700">${t.toFixed(1)}°</text>`;
   });
   /* 날짜별 클릭 영역 (투명, 탭하면 그 날짜의 GP 산출근거 팝업) */
   let clickAreas='';
@@ -7265,7 +7265,7 @@ function buildGpNChartSVG(dates,gpMap,nMap){
   dates.forEach((d,i)=>{
     if(i%labelStep!==0&&i!==n-1)return;
     const[,mm,dd]=d.split('-');
-    xLabels+=`<text x="${xPos(i).toFixed(1)}" y="${H-3}" font-size="5" fill="#aaa" text-anchor="middle">${parseInt(mm)}/${parseInt(dd)}</text>`;
+    xLabels+=`<text x="${xPos(i).toFixed(1)}" y="${H-4}" font-size="6.2" fill="#aaa" text-anchor="middle">${parseInt(mm)}/${parseInt(dd)}</text>`;
   });
 
   return `
