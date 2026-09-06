@@ -156,6 +156,7 @@ async function fbFullSyncFromCloud(){
       if(sh.elapsedItems) {localStorage.setItem('golf_elapsed_items_v1', JSON.stringify(sh.elapsedItems));if(typeof renderElapsedItems==='function') renderElapsedItems();}
       if(sh.tdrZoneLabels) {localStorage.setItem('tdr_zone_labels_v1', JSON.stringify(sh.tdrZoneLabels));if(typeof applyTdrLabelsToUI==='function'){applyTdrLabelsToUI();if(typeof renderTdrHistory==='function')renderTdrHistory();}}
       if(sh.gpTargets)   {localStorage.setItem('golf_gp_target_n_v1', JSON.stringify(sh.gpTargets));if(typeof renderGpWriteBox==='function')renderGpWriteBox();if(typeof renderGpStatsCard==='function')renderGpStatsCard();}
+      if(Array.isArray(sh.writeSecOrder)&&sh.writeSecOrder.length) {localStorage.setItem('golf_write_sec_order_v1', JSON.stringify(sh.writeSecOrder));if(typeof applyWriteSecOrder==='function')applyWriteSecOrder();}
       console.log('[FB] 공유 설정 동기화 완료');
     }
 
@@ -204,6 +205,7 @@ async function fbSaveSharedSettings(){
     const el=localStorage.getItem('golf_elapsed_items_v1'); if(el) settings.elapsedItems=JSON.parse(el);
     const tl=localStorage.getItem('tdr_zone_labels_v1'); if(tl) settings.tdrZoneLabels=JSON.parse(tl);
     const gt=localStorage.getItem('golf_gp_target_n_v1'); if(gt) settings.gpTargets=JSON.parse(gt);
+    const wo=localStorage.getItem('golf_write_sec_order_v1'); if(wo){const woa=JSON.parse(wo); if(woa.length)settings.writeSecOrder=woa;}
     settings._updatedAt = firebase.firestore.FieldValue.serverTimestamp();
     await _fbDb.collection(FB_COL_SHARED).doc('settings').set(settings, {merge:true});
     console.log('[FB] 공유 설정 저장 완료');
@@ -1390,7 +1392,7 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
     </div>
     <div style="font-size:9px;color:#999;text-align:right;margin:-4px 0 4px;">◀ 좌우로 스크롤 가능 ▶</div>
     <div class="worker-3col">
-      <div class="worker-col" style="width:260px;">
+      <div class="worker-col" style="width:320px;">
         <div class="worker-col-hdr reg">
           <span>정규직</span>
           <span style="display:flex;align-items:center;gap:5px;">
@@ -1405,7 +1407,7 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
           <button class="btn btn-sm" onclick="addWorker('reg')">추가</button>
         </div>
       </div>
-      <div class="worker-col" style="border-color:#EF9F27;width:420px;">
+      <div class="worker-col" style="border-color:#EF9F27;width:560px;">
         <div class="worker-col-hdr daily" style="flex-direction:column;align-items:flex-start;gap:5px;padding-bottom:7px;">
           <div style="display:flex;justify-content:space-between;width:100%;align-items:center;">
             <span style="display:flex;align-items:center;gap:5px;">
@@ -8190,13 +8192,19 @@ function getWriteSecOrder(){
     if(!s)return[...WRITE_SEC_DEFAULT];
     const saved=JSON.parse(s);
     const extra=WRITE_SEC_DEFAULT.filter(id=>!saved.includes(id));
-    /* 새로 추가된 섹션('elapsed')은 사용자가 이미 저장해둔 순서가 있어도
-       맨 끝이 아니라 '비료·농약 자재 사용' 바로 뒤에 자연스럽게 끼워 넣음 */
+    /* 새로 추가된 섹션은 사용자가 이미 저장해둔 순서가 있어도
+       맨 끝이 아니라 자연스러운 위치에 끼워 넣는다.
+       - 'elapsed' → '비료·농약 자재 사용' 바로 뒤
+       - 'gp' → '볼스피드' 바로 뒤 (기온추이 차트 아래) */
     let order=[...saved];
     extra.forEach(id=>{
       if(id==='elapsed'){
         const mi=order.indexOf('materials_use');
         if(mi>=0) order.splice(mi+1,0,id);
+        else order.push(id);
+      } else if(id==='gp'){
+        const bi=order.indexOf('ballspeed');
+        if(bi>=0) order.splice(bi+1,0,id);
         else order.push(id);
       } else {
         order.push(id);
@@ -8206,7 +8214,10 @@ function getWriteSecOrder(){
   }
   catch(e){return[...WRITE_SEC_DEFAULT];}
 }
-function saveWriteSecOrder(order){localStorage.setItem(WRITE_SEC_ORDER_KEY,JSON.stringify(order));}
+function saveWriteSecOrder(order){
+  localStorage.setItem(WRITE_SEC_ORDER_KEY,JSON.stringify(order));
+  if(typeof fbSaveSharedSettings==='function') setTimeout(fbSaveSharedSettings,300);
+}
 
 function applyWriteSecOrder(){
   const container=document.getElementById('write-sortable');
