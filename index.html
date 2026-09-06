@@ -6888,6 +6888,14 @@ function getGpForISO(iso){
   const map=getDailyGPMap();
   return map[iso]!==undefined?map[iso]:null;
 }
+/* 날짜(iso)별 일평균기온 맵 — GP 차트의 꼭지점 라벨(산출근거인 기온)에 사용 */
+function getDailyTempMap(){
+  const map={};
+  getTempDataFromRecords().forEach(d=>{
+    if(d.tavg!==null&&d.tavg!==undefined)map[d.date]=d.tavg;
+  });
+  return map;
+}
 
 /* GP=1.0 기준 처리지역별 주간 목표 질소량(g) 저장 */
 const GP_TARGET_KEY='golf_gp_target_n_v1';
@@ -7110,9 +7118,10 @@ function buildGpNChartSVG(dates,gpMap,nMap){
   const n=dates.length;
   const nVals=dates.map(d=>nMap[d]||0);
   const maxN=Math.max(...nVals,0.001);
+  const tempMap=getDailyTempMap();
 
   const DAY_W=16; /* 하루당 실제 픽셀 폭 — 데이터가 많아지면 SVG 자체가 넓어져서 좌우 스크롤이 가능해짐 */
-  const H=70,PL=24,PR=10,PT=6,PB=10;
+  const H=88,PL=24,PR=10,PT=13,PB=24;  /* 위/아래 여백을 넉넉히 잡아 꼭지점 기온 라벨이 잘리지 않게 함 */
   const W=Math.max(220,PL+PR+n*DAY_W);
   const cW=W-PL-PR,cH=H-PT-PB;
   const colW=cW/n;
@@ -7139,17 +7148,32 @@ function buildGpNChartSVG(dates,gpMap,nMap){
     bars+=`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${(PT+cH-y).toFixed(1)}" fill="#185FA5" opacity="0.55"/>`;
   });
 
-  /* GP 라인 */
+  /* GP 라인 + 점 */
+  const validIdx=[];
+  dates.forEach((d,i)=>{ if(gpMap[d]!==undefined) validIdx.push(i); });
   let path='',dots='';
-  dates.forEach((d,i)=>{
-    const v=gpMap[d];
-    if(v===undefined)return;
+  validIdx.forEach((i,k)=>{
+    const d=dates[i],v=gpMap[d];
     const px=xPos(i),py=yPosGp(v);
-    path+=(i===0?`M${px.toFixed(1)},${py.toFixed(1)}`:`L${px.toFixed(1)},${py.toFixed(1)}`);
+    path+=(k===0?`M${px.toFixed(1)},${py.toFixed(1)}`:`L${px.toFixed(1)},${py.toFixed(1)}`);
     dots+=`<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="1.1" fill="#3B6D11" stroke="#fff" stroke-width="0.4"/>`;
   });
   const gpLine=`<path d="${path}" fill="none" stroke="#3B6D11" stroke-width="0.7" stroke-linejoin="round" stroke-linecap="round"/>${dots}`;
 
+  /* 위/아래 꼭지점(극댓값·극솟값)에 산출근거인 일평균기온 라벨 표시 */
+  let tempLabels='';
+  validIdx.forEach((i,k)=>{
+    if(k===0||k===validIdx.length-1)return; /* 양끝은 제외, 방향이 꺾이는 지점만 */
+    const prevV=gpMap[dates[validIdx[k-1]]], curV=gpMap[dates[i]], nextV=gpMap[dates[validIdx[k+1]]];
+    const isPeak = curV>prevV && curV>nextV;
+    const isValley = curV<prevV && curV<nextV;
+    if(!isPeak && !isValley) return;
+    const d=dates[i], t=tempMap[d];
+    if(t===undefined) return;
+    const px=xPos(i), py=yPosGp(curV);
+    const ty = isPeak ? py-3.2 : py+6.5;
+    tempLabels+=`<text x="${px.toFixed(1)}" y="${ty.toFixed(1)}" font-size="4.2" fill="#B45309" text-anchor="middle" font-weight="700">${t.toFixed(1)}°</text>`;
+  });
   /* 날짜별 클릭 영역 (투명, 탭하면 그 날짜의 GP 산출근거 팝업) */
   let clickAreas='';
   dates.forEach((d,i)=>{
@@ -7181,6 +7205,7 @@ function buildGpNChartSVG(dates,gpMap,nMap){
         <line x1="${PL}" y1="${PT+cH}" x2="${W-PR}" y2="${PT+cH}" stroke="#ddd" stroke-width="0.8"/>
         ${bars}
         ${gpLine}
+        ${tempLabels}
         ${xLabels}
         ${clickAreas}
       </svg>
