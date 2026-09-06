@@ -770,8 +770,8 @@ textarea{resize:vertical;min-height:55px;}
 .task-block.work   .task-block-hdr{background:#3B6D11;color:#fff;border-radius:7px 7px 0 0;}
 .task-block.etc    .task-block-hdr{background:#5F5E5A;color:#fff;border-radius:7px 7px 0 0;}
 
-.task-col-hdr{display:grid;grid-template-columns:120px 34px 34px 34px 1fr 120px 1fr 40px;gap:0;font-size:10px;font-weight:700;text-align:center;border-bottom:2px solid #c0c0c0;min-width:680px;}
-.task-block.work .task-col-hdr{grid-template-columns:192px 34px 34px 34px 1.25fr 120px 0.8fr 40px;min-width:760px;}
+.task-col-hdr{display:grid;grid-template-columns:120px 34px 34px 34px 170px 120px 170px 40px;gap:0;font-size:10px;font-weight:700;text-align:center;border-bottom:2px solid #c0c0c0;min-width:722px;}
+.task-block.work .task-col-hdr{grid-template-columns:192px 34px 34px 34px 213px 120px 136px 40px;min-width:803px;}
 .task-block.mowing .task-col-hdr{background:#daeaf9;color:#0C447C;}
 .task-block.work   .task-col-hdr{background:#d4eac0;color:#27500A;}
 .task-block.etc    .task-col-hdr{background:#e8e7e3;color:#444;}
@@ -779,8 +779,8 @@ textarea{resize:vertical;min-height:55px;}
 .task-col-hdr div:last-child{border-right:none;}
 .task-col-hdr .tl{text-align:left;padding-left:8px;}
 
-.task-row{display:grid;grid-template-columns:120px 34px 34px 34px 1fr 120px 1fr 40px;gap:0;align-items:stretch;border-top:1.5px solid #d8d8d8;min-width:680px;}
-.task-block.work .task-row{grid-template-columns:192px 34px 34px 34px 1.25fr 120px 0.8fr 40px;min-width:760px;}
+.task-row{display:grid;grid-template-columns:120px 34px 34px 34px 170px 120px 170px 40px;gap:0;align-items:stretch;border-top:1.5px solid #d8d8d8;min-width:722px;}
+.task-block.work .task-row{grid-template-columns:192px 34px 34px 34px 213px 120px 136px 40px;min-width:803px;}
 .task-block.mowing .task-row:nth-child(even){background:#f2f8fd;}
 .task-block.work   .task-row:nth-child(even){background:#f2f9ec;}
 /* Work/Mowing/기타 표(헤더+행)를 한 덩어리로 가로 스크롤 — 열이 고정 폭이라
@@ -847,6 +847,11 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
 /* ── 작성 섹션 이동 버튼 ── */
 .write-sec-wrap{position:relative;}
 .write-sec-wrap.sec-locked > *:not(.sec-lock-badge){opacity:.82;filter:none;pointer-events:none;user-select:none;}
+/* 잠긴(읽기 전용) 섹션이라도 좌우 스크롤 영역만큼은 계속 스크롤해서 볼 수 있어야 함 —
+   위 규칙이 자식 전체에 pointer-events:none을 걸어버려서 스크롤 제스처 자체가 안 먹히던 문제.
+   스크롤 컨테이너 자신은 다시 활성화하고, 그 안의 입력/버튼 등은 계속 막아 열람만 가능하게 유지. */
+.write-sec-wrap.sec-locked [style*="overflow-x:auto"]{pointer-events:auto;}
+.write-sec-wrap.sec-locked [style*="overflow-x:auto"] *{pointer-events:none;}
 .sec-lock-badge{position:relative;z-index:5;background:#fff3cd;border:1.5px solid #e8c766;border-radius:8px;padding:7px 11px;margin-bottom:10px;font-size:11.5px;font-weight:700;color:#8a6d1a;display:flex;align-items:center;gap:6px;}
 .write-sec-btns{position:absolute;top:10px;right:10px;display:flex;flex-direction:column;gap:2px;z-index:10;}
 .write-sec-btn{border:none;background:#e8e8e8;border-radius:4px;width:20px;height:18px;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#666;transition:background .15s;padding:0;line-height:1;}
@@ -2605,7 +2610,7 @@ function renderWorkers(){
       </div>
       <span style="font-size:11px;color:#999;min-width:18px;text-align:center;">${ri+1}</span>
       <span style="font-size:12px;font-weight:600;min-width:40px;white-space:nowrap;${w.off?'text-decoration:line-through;color:#aaa;':''}">${w.name}</span>
-      <input type="text" value="${w.task||''}" placeholder="담당" onchange="curWorkers[${i}].task=this.value" style="flex:1;min-width:30px;${w.off?'color:#aaa;':''}">
+      <input type="text" value="${w.task||''}" placeholder="담당" onchange="curWorkers[${i}].task=this.value" style="flex:0 0 auto;width:64px;${w.off?'color:#aaa;':''}">
       <span id="reg-ot-month-${i}" style="font-size:10px;color:#185FA5;font-weight:700;background:#e8f1fb;border:1px solid #b5d4f4;border-radius:4px;padding:1px 5px;white-space:nowrap;flex-shrink:0;"></span>
       <div style="display:flex;align-items:center;gap:1px;flex-shrink:0;">
         <input type="number" value="${w.ot||''}" placeholder="OT" min="0" max="24" step="0.5"
