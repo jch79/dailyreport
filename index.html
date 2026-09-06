@@ -10728,7 +10728,7 @@ function _npkCardTrendSvg(monthData, cardId, selYear){
     xLabels+=`<text x="${x}" y="${SVG_H-PAD_B+14}" text-anchor="middle" font-size="10" fill="#888" font-family="맑은 고딕,sans-serif">${MONTHS_KO[i]}</text>`;
     gridLines+=`<line x1="${x}" y1="${PAD_T}" x2="${x}" y2="${PAD_T+CHART_H}" stroke="#f0f0f0" stroke-width="1" stroke-dasharray="3,4"/>`;
   }
-  let paths='',dots='';
+  let paths='';
   keys.forEach(k=>{
     const color=NUTR_COLORS2[k];
     const vals=seriesData[k];
@@ -10739,24 +10739,38 @@ function _npkCardTrendSvg(monthData, cardId, selYear){
       const x=xPos(i),y=yPos(vals[i]);
       if(vals[i]>0){ path+=(inSeg?'L ':'M ')+x+' '+y+' '; inSeg=true; } else inSeg=false;
     }
-    paths+=`<path d="${path}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" opacity="0.9"/>`;
+    let seriesDots='';
     ptsd.forEach(({v,i,x,y})=>{
       const lbl=v>=1000?(v/1000).toFixed(1)+'k':v.toFixed(1);
       const mo=i+1;
-      dots+=`<text x="${x}" y="${y-9}" text-anchor="middle" font-size="8" font-weight="700" fill="${color}" font-family="맑은 고딕,sans-serif" style="pointer-events:none;">${lbl}</text>`;
-      dots+=`<circle cx="${x}" cy="${y}" r="6" fill="${color}" stroke="#fff" stroke-width="1.5" style="cursor:pointer;" onclick="showMatUseMonthDetail(${mo},${selYear},'${k}',${cardIdArg})"><title>${MONTHS_KO[i]} ${NUTR_LABELS2[k]} ${lbl}g · 탭하여 상세 내역 보기</title></circle>`;
+      seriesDots+=`<text x="${x}" y="${y-9}" text-anchor="middle" font-size="8" font-weight="700" fill="${color}" font-family="맑은 고딕,sans-serif" style="pointer-events:none;">${lbl}</text>`;
+      seriesDots+=`<circle cx="${x}" cy="${y}" r="6" fill="${color}" stroke="#fff" stroke-width="1.5" style="cursor:pointer;" onclick="showMatUseMonthDetail(${mo},${selYear},'${k}',${cardIdArg})"><title>${MONTHS_KO[i]} ${NUTR_LABELS2[k]} ${lbl}g · 탭하여 상세 내역 보기</title></circle>`;
     });
+    const path2=`<path d="${path}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" opacity="0.9"/>`;
+    paths+=`<g id="npk-trend-g-${k}">${path2}${seriesDots}</g>`;
   });
+  /* 범례를 클릭하면 해당 성분(N/P/K) 선을 켜고 끌 수 있음 — 세 선이 겹쳐서 구분이 어려운 문제 해결 */
   const legend=keys.map(k=>`
-    <span style="display:inline-flex;align-items:center;gap:4px;margin-right:12px;">
-      <span style="width:10px;height:10px;border-radius:3px;background:${NUTR_COLORS2[k]};display:inline-block;"></span>
-      <span style="font-size:11px;font-weight:700;color:#444;">${NUTR_LABELS2[k]}</span>
+    <span onclick="toggleNpkTrendSeries('${k}')" style="display:inline-flex;align-items:center;gap:4px;margin-right:12px;cursor:pointer;user-select:none;">
+      <span id="npk-trend-swatch-${k}" style="width:10px;height:10px;border-radius:3px;background:${NUTR_COLORS2[k]};display:inline-block;"></span>
+      <span id="npk-trend-label-${k}" style="font-size:11px;font-weight:700;color:#444;">${NUTR_LABELS2[k]}</span>
     </span>`).join('');
   const svg=paths?`<svg viewBox="0 0 ${SVG_W} ${SVG_H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:100%;display:block;overflow:visible;">
-      <g>${gridLines}</g><g>${yLabels}</g><g>${xLabels}</g><g>${paths}</g><g>${dots}</g>
+      <g>${gridLines}</g><g>${yLabels}</g><g>${xLabels}</g>${paths}
       <text x="10" y="${PAD_T+CHART_H/2}" text-anchor="middle" font-size="9" fill="#aaa" font-family="맑은 고딕,sans-serif" transform="rotate(-90,10,${PAD_T+CHART_H/2})">순성분량 (g)</text>
     </svg>`:`<div style="text-align:center;padding:40px 0;color:#bbb;font-size:12px;">이 처리지역에 해당하는 비료 사용 기록이 없습니다</div>`;
   return `<div style="margin-bottom:8px;">${legend}</div>${svg}`;
+}
+/* 성분별(N/P/K) 추이 차트 범례 클릭 시 해당 선 표시/숨김 토글 */
+function toggleNpkTrendSeries(k){
+  const g=document.getElementById(`npk-trend-g-${k}`);
+  const label=document.getElementById(`npk-trend-label-${k}`);
+  const swatch=document.getElementById(`npk-trend-swatch-${k}`);
+  if(!g)return;
+  const hidden=g.style.display==='none';
+  g.style.display=hidden?'':'none';
+  if(label){ label.style.color=hidden?'#444':'#bbb'; label.style.textDecoration=hidden?'none':'line-through'; }
+  if(swatch){ swatch.style.opacity=hidden?'1':'0.3'; }
 }
 function openNpkCardTrendModal(cardId){
   const cards=getNpkCards();
