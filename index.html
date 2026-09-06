@@ -7137,7 +7137,7 @@ function buildGpNChartSVG(dates,gpMap,nMap){
     grid+=`<text x="${PL-3}" y="${(gy+2).toFixed(1)}" font-size="4" fill="#3B6D11" text-anchor="end">${(gv*100).toFixed(0)}%</text>`;
   });
 
-  /* N 막대 */
+  /* N 막대 + 시비량(g) 라벨 */
   const barW=Math.max(1,colW*0.55);
   let bars='';
   dates.forEach((d,i)=>{
@@ -7146,6 +7146,7 @@ function buildGpNChartSVG(dates,gpMap,nMap){
     const x=xPos(i)-barW/2;
     const y=yPosN(v);
     bars+=`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${(PT+cH-y).toFixed(1)}" fill="#185FA5" opacity="0.55"/>`;
+    bars+=`<text x="${xPos(i).toFixed(1)}" y="${(y-1.5).toFixed(1)}" font-size="4" fill="#185FA5" text-anchor="middle" font-weight="700">${v.toFixed(1)}g</text>`;
   });
 
   /* GP 라인 + 점 */
