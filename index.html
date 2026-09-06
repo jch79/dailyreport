@@ -3033,6 +3033,44 @@ function mergeRainData(cachedArr, newArr){
   });
   return [...map.values()].sort((a,b)=>a.date.localeCompare(b.date));
 }
+/* 이 기록(현재 화면에 표시된 날짜) 자신의 마지막 불러오기 시각·실측/예측 출처를
+   화면에 반영. 전역 날씨 캐시가 아니라 그 기록 자체에 저장된 값을 기준으로
+   표시하므로, 과거 기록을 열어봐도 "그 기록이 언제·무엇이 실측이었는지"를
+   알 수 있다. 값이 없으면(수동 입력만 있던 기록) 조용히 숨긴다. */
+function applyWeatherMetaToUI(meta){
+  const lastFetchEl=document.getElementById('weather-last-fetch');
+  const lastTimeEl=document.getElementById('weather-last-time');
+  if(meta&&meta.fetchedAt){
+    const d=new Date(meta.fetchedAt);
+    const timeStr=`${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    if(lastTimeEl)lastTimeEl.textContent=timeStr;
+    if(lastFetchEl)lastFetchEl.style.display='block';
+  } else if(lastFetchEl){
+    lastFetchEl.style.display='none';
+  }
+  const badgeMap={
+    temp:['w-temp-source',null],
+    rain:['w-rain-source','w-rain-today-badge'],
+    avg:['w-avg-source','w-avg-badge'],
+    minmax:['w-minmax-source','w-minmax-badge'],
+    monthRain:['w-month-rain-source','w-month-rain-badge'],
+    yearRain:['w-year-rain-source','w-year-rain-badge']
+  };
+  Object.keys(badgeMap).forEach(key=>{
+    const[badgeId,manualBadgeId]=badgeMap[key];
+    const badge=document.getElementById(badgeId);
+    if(!badge)return;
+    const isReal=meta&&meta.badges?meta.badges[key]:undefined;
+    if(isReal===undefined){ badge.style.display='none'; return; }
+    const manualBadge=manualBadgeId?document.getElementById(manualBadgeId):null;
+    const isManualShown=manualBadge&&manualBadge.style.display!=='none';
+    if(isManualShown){ badge.style.display='none'; return; }
+    badge.style.display='inline';
+    badge.textContent=isReal?'📡 실측':'📊 예측';
+    badge.style.background=isReal?'#1a7a3c':'#888';
+    badge.style.color='#fff';
+  });
+}
 function applyWeatherToUI(w){
   if(!w)return;
   if(w.temp&&w.temp!='--')document.getElementById('w-temp').textContent=w.temp;
@@ -4091,6 +4129,11 @@ function renderIrrChart(){
 
 /* ── 날씨 + 30일 천우표 ── */
 let rainData30=[];
+/* 이 기록(현재 날짜피커에 표시된 날짜)의 날씨가 언제·어떤 항목이 실측으로 불러와졌는지.
+   기존에는 전역 캐시의 마지막 조회시각만 보여줘서, 과거 기록을 열어봐도 그 기록 자체가
+   언제 조회됐는지 알 수 없었음 — 저장 시 이 값을 weather.fetchedAt / weather.badges 로
+   레코드에 함께 저장하고, 불러올 때 그 레코드 자신의 값을 복원해서 표시한다. */
+let _curWeatherMeta={date:null,fetchedAt:null,badges:{}};
 let _rainPage=0; /* 0=최신 */
 let _rainManualNav=false; /* nav 버튼 수동 이동 시 true */
 const RAIN_PAGE=30;
@@ -4539,6 +4582,22 @@ async function fetchWeather(){
       _setSrc('w-month-rain-source', 'w-month-rain-badge', kmaOverrideMonthRain!=null);
       _setSrc('w-year-rain-source', 'w-year-rain-badge', kmaOverrideYearRain!=null);
     }
+    /* 지금 화면에 있는 날짜(targetDate) 기준으로 "이 기록"의 불러오기 시각·출처를 기록.
+       저장할 때 weather.fetchedAt / weather.badges 로 함께 저장되고,
+       나중에 이 기록을 다시 열면 전역 캐시가 아니라 이 값을 그대로 복원해서 보여준다. */
+    _curWeatherMeta={
+      date:targetDate,
+      fetchedAt:new Date().toISOString(),
+      badges:{
+        temp:isToday&&kmaTodaySuccess,
+        rain:(()=>{const _e=rainData30.find(d=>d.date===targetDate);return kmaOverrideRain!=null&&_e&&Math.abs((_e.rain||0)-kmaOverrideRain)<0.05;})(),
+        avg:(isToday||isPast)&&kmaOverrideAvg!=null,
+        minmax:(isToday||isPast)&&kmaOverrideMinmax!=null,
+        monthRain:kmaOverrideMonthRain!=null,
+        yearRain:kmaOverrideYearRain!=null
+      }
+    };
+    applyWeatherMetaToUI(_curWeatherMeta);
     /* 병합 후 차트 재렌더 (누적 데이터 반영) */
     _rainManualNav=false;
     renderRainChart();
@@ -4803,6 +4862,15 @@ function saveReport(){
   const date=document.getElementById('inp-date').value;
   const all0=gd();const ex0=all0.findIndex(x=>x.date===date);
   const existingId = ex0>=0 ? (all0[ex0].id||null) : null;
+  /* 이 날짜(date)에 대한 날씨 불러오기 시각·실측/예측 출처 —
+     방금 이 날짜를 대상으로 fetchWeather()가 실행됐으면 그 결과(_curWeatherMeta)를,
+     아니면 기존에 저장돼 있던 값을 그대로 유지한다(다른 항목만 고쳐서 저장하는
+     경우에 날씨 출처 정보가 사라지지 않도록). */
+  const _saveDateISO=(()=>{const m=date.match(/(\d+)년\s*(\d+)월\s*(\d+)일/);if(!m)return null;const yy=parseInt(m[1]);const yyyy=yy<50?2000+yy:1900+yy;return`${yyyy}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;})();
+  const _existingWr=ex0>=0?(all0[ex0].weather||{}):{};
+  const _wxMeta=(_curWeatherMeta&&_curWeatherMeta.date===_saveDateISO)
+    ?{fetchedAt:_curWeatherMeta.fetchedAt,badges:_curWeatherMeta.badges}
+    :{fetchedAt:_existingWr.fetchedAt||null,badges:_existingWr.badges||{}};
   const r={
     id: existingId || ('rec_'+Date.now()+'_'+Math.random().toString(36).slice(2,10)),
     date,course:document.getElementById('inp-course').value||gcn(),
@@ -4810,7 +4878,7 @@ function saveReport(){
     early:document.getElementById('inp-early').value,normal:document.getElementById('inp-normal').value,
     late:document.getElementById('inp-late').value,remark:document.getElementById('inp-remark').value,
     ballSpeed:{am:document.getElementById('bs-am').value,pm:document.getElementById('bs-pm').value,target:document.getElementById('bs-target').value,note:document.getElementById('bs-note').value},
-    weather:{temp:document.getElementById('w-temp').textContent,feel:document.getElementById('w-feel').textContent,humid:document.getElementById('w-humid').textContent,wind:document.getElementById('w-wind').textContent,sky:document.getElementById('w-sky').textContent,avg:document.getElementById('w-avg').textContent,monthRain:document.getElementById('w-month-rain').textContent,yearRain:document.getElementById('w-year-rain')?.textContent||'--',minmax:document.getElementById('w-minmax').textContent,rain:document.getElementById('inp-rain').value||'0',snow:document.getElementById('inp-snow').value||'0',wdir:document.getElementById('inp-wdir').value,note:document.getElementById('inp-weather-note')?.value||''},
+    weather:{temp:document.getElementById('w-temp').textContent,feel:document.getElementById('w-feel').textContent,humid:document.getElementById('w-humid').textContent,wind:document.getElementById('w-wind').textContent,sky:document.getElementById('w-sky').textContent,avg:document.getElementById('w-avg').textContent,monthRain:document.getElementById('w-month-rain').textContent,yearRain:document.getElementById('w-year-rain')?.textContent||'--',minmax:document.getElementById('w-minmax').textContent,rain:document.getElementById('inp-rain').value||'0',snow:document.getElementById('inp-snow').value||'0',wdir:document.getElementById('inp-wdir').value,note:document.getElementById('inp-weather-note')?.value||'',fetchedAt:_wxMeta.fetchedAt,badges:_wxMeta.badges},
     yego:{...yegoData},yegoItems:YEGO.map(d=>({cat:d.cat,key:d.key})),
     yegoNote:document.getElementById('yego-note')?.value||'',
     irrigation:(()=>{const zones=getIrrZones();const obj={note:document.getElementById('irr-note')?.value||''};zones.forEach(z=>{obj[z.key+'_auto']=document.getElementById(`irr-${z.key}-auto`)?.value||'';obj[z.key+'_man']=document.getElementById(`irr-${z.key}-man`)?.value||'';});/* 레거시 키도 유지 */const gla=document.getElementById('irr-green-left-auto');const glm=document.getElementById('irr-green-left-man');const gra=document.getElementById('irr-green-right-auto');const grm=document.getElementById('irr-green-right-man');if(gla)obj.gl_a=gla.value;if(glm)obj.gl_m=glm.value;if(gra)obj.gr_a=gra.value;if(grm)obj.gr_m=grm.value;return obj;})(),
@@ -5552,6 +5620,10 @@ function loadForEdit(idx){
   document.getElementById('inp-rain').value=wr.rain||'';
   document.getElementById('inp-snow').value=wr.snow||'';
   document.getElementById('inp-wdir').value=wr.wdir||'';
+  /* 이 기록 자신의 마지막 불러오기 시각·실측/예측 출처를 복원 —
+     전역 캐시(오늘 기준 마지막 조회시각)를 그대로 보여주면 과거 기록을 열었을 때
+     "언제 조회된 값인지" 알 수 없는 문제가 있었음. */
+  _curWeatherMeta={date:dm?(()=>{const _yy=parseInt(dm[1]);const _yyyy=_yy<50?2000+_yy:1900+_yy;return`${_yyyy}-${dm[2].padStart(2,'0')}-${dm[3].padStart(2,'0')}`;})():null,fetchedAt:wr.fetchedAt||null,badges:wr.badges||{}};
 
   /* 예고 */
   yegoData={...(r.yego||{})};
@@ -5622,6 +5694,7 @@ function loadForEdit(idx){
   showPanel('write', writeTabs[0]);
   window.scrollTo(0,0);
   updateStatManualBadges();
+  applyWeatherMetaToUI(_curWeatherMeta);
   showToast(`"${r.date}" 기록을 불러왔습니다. 수정 후 저장하세요.`);
 }
 
@@ -8579,7 +8652,7 @@ function exportDataFile(){
   if(_isContentUriOrigin()){ _warnRestrictedOrigin('내보내기'); return; }
   /* 모든 localStorage 키 수집 */
   const allKeys=[SK,PK,RK,CNK,RATE_KEY,DSK,WCK,LOC_KEY,IRR_ZONES_KEY,MAT_PEST_KEY,MAT_FERT_KEY,MAT_SAND_KEY,MAT_AREA_PRESET_KEY,
-    TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY,TDR_ZONE_LABEL_KEY,GP_TARGET_KEY];
+    TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY,TDR_ZONE_LABEL_KEY,GP_TARGET_KEY,REG_NAME_ORDER_KEY,WSK];
   const exportObj={};
   allKeys.forEach(k=>{
     const v=localStorage.getItem(k);
@@ -8674,7 +8747,7 @@ function importDataFile(event){
 
       /* 기존 관련 키 지우기 */
       [SK,PK,RK,CNK,RATE_KEY,DSK,WCK,LOC_KEY,IRR_ZONES_KEY,MAT_PEST_KEY,MAT_FERT_KEY,MAT_SAND_KEY,MAT_AREA_PRESET_KEY,
-        TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY,TDR_ZONE_LABEL_KEY,GP_TARGET_KEY].forEach(k=>localStorage.removeItem(k));
+        TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY,TDR_ZONE_LABEL_KEY,GP_TARGET_KEY,REG_NAME_ORDER_KEY,WSK].forEach(k=>localStorage.removeItem(k));
 
       /* 새 데이터 적재 */
       importedKeys.forEach(k=>{
@@ -8976,7 +9049,14 @@ function applyDatePicker(val){
      읽어 그리므로 정상 표시되지만, 작성 폼의 입력칸들은 그대로 남아있었음) */
   const dateLabel=formatDateStr(yyyy,mm,dd);
   const idx=gd().findIndex(r=>r.date===dateLabel);
-  if(idx>=0) loadForEdit(idx);
+  if(idx>=0){
+    loadForEdit(idx);
+  } else {
+    /* 기록이 없는 새 날짜로 이동 — 이전 날짜의 "마지막 불러온 시각"/실측 배지가
+       그대로 남아있으면 혼동을 주므로 비워준다 */
+    _curWeatherMeta={date:val,fetchedAt:null,badges:{}};
+    applyWeatherMetaToUI(_curWeatherMeta);
+  }
   updateStatManualBadges();
 }
 function setToday(){
