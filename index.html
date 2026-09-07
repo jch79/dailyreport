@@ -6974,6 +6974,7 @@ function getGpTargets(){
   try{return JSON.parse(localStorage.getItem(GP_TARGET_KEY)||'{}');}catch(e){return{};}
 }
 function setGpTarget(area,val){
+  if(!guardMemberOrAdmin('GP 목표 시비율 설정'))return;
   const t=getGpTargets();
   if(val===''||val===null||isNaN(val))delete t[area];
   else t[area]=parseFloat(val);
@@ -9988,6 +9989,7 @@ function renderRegNameOrderList(){
     </div>`).join('') || `<div style="text-align:center;padding:20px;color:#bbb;font-size:12px;">등록된 정규직 이름이 없습니다</div>`;
 }
 function moveRegNameOrderItem(idx, dir){
+  if(!guardMemberOrAdmin('정규직 이름순서 변경'))return;
   const arr = getRegNameOrder();
   const newIdx = idx+dir;
   if(newIdx<0||newIdx>=arr.length) return;
