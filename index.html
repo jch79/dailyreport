@@ -7081,6 +7081,7 @@ function renderGpWriteBox(){
   const weekNSum=week.reduce((s,w)=>s+(nMap[w]||0),0);
 
   const target=targets[area];
+  const weekAvgHtml=`<div style="font-size:11px;color:#444;margin-top:4px;">최근7일 평균GP <b style="color:#3B6D11;">${weekGpAvg!==null?(weekGpAvg*100).toFixed(0)+'%':'--'}</b></div>`;
   let judgeHtml='';
   if(target && weekGpAvg!==null){
     const recommended=target*weekGpAvg;
@@ -7091,7 +7092,6 @@ function renderGpWriteBox(){
       else if(ratio<70){color='#B8690A';label='부족';}
     }
     judgeHtml=`<div style="font-size:11px;color:#444;display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:4px;">
-      <span>최근7일 평균GP <b>${(weekGpAvg*100).toFixed(0)}%</b></span>
       <span>권장 N <b>${recommended.toFixed(1)}g</b></span>
       <span>실제 시비 N <b>${weekNSum.toFixed(1)}g</b></span>
       ${ratio!==null?`<span style="background:${color}1a;color:${color};font-weight:700;border-radius:100px;padding:2px 10px;">${label} (${ratio.toFixed(0)}%)</span>`:''}
@@ -7106,6 +7106,7 @@ function renderGpWriteBox(){
       <span style="font-size:14px;font-weight:800;color:#3B6D11;">${gpToday!==null?(gpToday*100).toFixed(0)+'%':'--'}</span>
       ${gpToday!==null?`<div style="flex:1;min-width:80px;max-width:160px;height:6px;background:#e8e8e8;border-radius:100px;overflow:hidden;"><div style="width:${(gpToday*100).toFixed(0)}%;height:100%;background:#3B6D11;"></div></div>`:''}
     </div>
+    ${weekAvgHtml}
     ${judgeHtml}`;
 
   renderGpWriteChart(area,iso,gpMap,nMap);
