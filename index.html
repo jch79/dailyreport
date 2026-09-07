@@ -148,15 +148,17 @@ async function fbFullSyncFromCloud(){
       if(sh.dailySubs)   localStorage.setItem('golf_daily_subs_v7', JSON.stringify(sh.dailySubs));
       if(sh.courseName)  localStorage.setItem('golf_course_name', sh.courseName);
       if(sh.statsOrder)  localStorage.setItem('golf_stats_order_v1', JSON.stringify(sh.statsOrder));
-      if(sh.writeSec)    localStorage.setItem('golf_write_sec_order_v1', JSON.stringify(sh.writeSec));
+      if(sh.writeSec)    {localStorage.setItem('golf_write_sec_order_v1', JSON.stringify(sh.writeSec));if(typeof applyWriteSecOrder==='function')applyWriteSecOrder();}
       if(sh.weatherLoc)  localStorage.setItem('golf_weather_location', JSON.stringify(sh.weatherLoc));
       if(sh.irrZones)    {localStorage.setItem('golf_irr_zones_v1', JSON.stringify(sh.irrZones));if(typeof renderIrrZoneCards==='function'){renderIrrZoneCards();calcIrrTotal();renderIrrBarChart();}}
       if(sh.npkCards)    localStorage.setItem('golf_matu_npk_cards_v1', JSON.stringify(sh.npkCards));
       if(sh.regLeaveMeta) localStorage.setItem('golf_reg_leave_meta_v1', JSON.stringify(sh.regLeaveMeta));
       if(sh.elapsedItems) {localStorage.setItem('golf_elapsed_items_v1', JSON.stringify(sh.elapsedItems));if(typeof renderElapsedItems==='function') renderElapsedItems();}
       if(sh.tdrZoneLabels) {localStorage.setItem('tdr_zone_labels_v1', JSON.stringify(sh.tdrZoneLabels));if(typeof applyTdrLabelsToUI==='function'){applyTdrLabelsToUI();if(typeof renderTdrHistory==='function')renderTdrHistory();}}
-      if(sh.gpTargets)   {localStorage.setItem('golf_gp_target_n_v1', JSON.stringify(sh.gpTargets));if(typeof renderGpWriteBox==='function')renderGpWriteBox();if(typeof renderGpStatsCard==='function')renderGpStatsCard();}
-      if(Array.isArray(sh.writeSecOrder)&&sh.writeSecOrder.length) {localStorage.setItem('golf_write_sec_order_v1', JSON.stringify(sh.writeSecOrder));if(typeof applyWriteSecOrder==='function')applyWriteSecOrder();}
+      if(sh.gpTargets)   {localStorage.setItem('golf_gp_target_n_v1', JSON.stringify(sh.gpTargets));if(typeof renderGpWriteBox==='function')renderGpWriteBox();}
+      if(sh.areaPresets) localStorage.setItem('mat_area_custom_presets', JSON.stringify(sh.areaPresets));
+      if(sh.regNameOrder) localStorage.setItem('reg_name_order_v1', JSON.stringify(sh.regNameOrder));
+      if(sh.weatherManual) localStorage.setItem('golf_weather_stat_manual_v1', JSON.stringify(sh.weatherManual));
       console.log('[FB] 공유 설정 동기화 완료');
     }
 
@@ -165,6 +167,8 @@ async function fbFullSyncFromCloud(){
     if(typeof renderStats==='function') renderStats();
     if(typeof renderPresets==='function') renderPresets();
     if(typeof renderMaterialsPanel==='function') renderMaterialsPanel();
+    if(typeof renderAreaPresetBar==='function') renderAreaPresetBar();
+    if(typeof renderRegNameOrderList==='function') renderRegNameOrderList();
     const mp=document.getElementById('panel-matuse');
     if(mp&&mp.classList.contains('active')&&typeof renderMatUsePanel==='function') renderMatUsePanel();
     const cnEl=document.getElementById('nav-course-name');
@@ -205,7 +209,9 @@ async function fbSaveSharedSettings(){
     const el=localStorage.getItem('golf_elapsed_items_v1'); if(el) settings.elapsedItems=JSON.parse(el);
     const tl=localStorage.getItem('tdr_zone_labels_v1'); if(tl) settings.tdrZoneLabels=JSON.parse(tl);
     const gt=localStorage.getItem('golf_gp_target_n_v1'); if(gt) settings.gpTargets=JSON.parse(gt);
-    const wo=localStorage.getItem('golf_write_sec_order_v1'); if(wo){const woa=JSON.parse(wo); if(woa.length)settings.writeSecOrder=woa;}
+    const ap=localStorage.getItem('mat_area_custom_presets'); if(ap) settings.areaPresets=JSON.parse(ap);
+    const rno=localStorage.getItem('reg_name_order_v1'); if(rno) settings.regNameOrder=JSON.parse(rno);
+    const wm=localStorage.getItem('golf_weather_stat_manual_v1'); if(wm) settings.weatherManual=JSON.parse(wm);
     settings._updatedAt = firebase.firestore.FieldValue.serverTimestamp();
     await _fbDb.collection(FB_COL_SHARED).doc('settings').set(settings, {merge:true});
     console.log('[FB] 공유 설정 저장 완료');
@@ -1744,21 +1750,6 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
       </div>
     </div>
 
-    <!-- GP · 질소시비 분석 -->
-    <div class="stats-card-wrap" data-card-id="gp">
-      <div class="card">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:6px;">
-          <div style="display:flex;align-items:center;gap:6px;">
-            <div class="stats-move-btns"></div>
-            <div class="card-title" style="margin:0;border:none;padding-bottom:0;">🌱 GP · 질소시비 분석</div>
-          </div>
-          <select id="gp-stat-area-sel" onchange="renderGpStatsCard()" style="font-size:11px;padding:4px 7px;border:1.5px solid #c8c8c8;border-radius:6px;background:#fff;"></select>
-        </div>
-        <div id="gp-stats-chart"></div>
-        <div id="gp-stats-summary" style="margin-top:8px;"></div>
-      </div>
-    </div>
-
   </div><!-- /stats-sortable-container -->
 
   <!-- 맨 위로 버튼 -->
@@ -2944,7 +2935,7 @@ function loadWeatherCache(){try{return JSON.parse(localStorage.getItem(WCK)||'nu
  * 구조가 달라 분리함). */
 const WSK='golf_weather_stat_manual_v1';
 function loadStatManual(){try{return JSON.parse(localStorage.getItem(WSK)||'{}');}catch(e){return {};}}
-function saveStatManualAll(all){try{localStorage.setItem(WSK,JSON.stringify(all));}catch(e){}}
+function saveStatManualAll(all){try{localStorage.setItem(WSK,JSON.stringify(all));if(typeof fbSaveSharedSettings==='function') setTimeout(fbSaveSharedSettings,300);}catch(e){}}
 function setStatManual(dateISO,field,value){
   const all=loadStatManual();
   if(!all[dateISO])all[dateISO]={};
@@ -6600,8 +6591,6 @@ function renderStats(){
   }
 
   /* 볼스피드 - 작성탭에서만 표시 (renderBsChartInto 공통함수 사용) */
-  /* GP · 질소시비 분석 */
-  renderGpStatsCard();
   /* 스크롤 위치 복원 */
   requestAnimationFrame(()=>window.scrollTo({top:_rsSY}));
 }
@@ -7161,72 +7150,6 @@ function renderGpWriteChart(area,iso,gpMap,nMap){
   if(sc)sc.scrollLeft=sc.scrollWidth;
 }
 
-/* ── 통계 탭: GP · 질소시비 분석 카드 ── */
-function getStatsFilteredRange(){
-  const dateFrom=document.getElementById('stats-date-from')?.value;
-  const dateTo=document.getElementById('stats-date-to')?.value;
-  if(dateFrom||dateTo)return{from:dateFrom||'',to:dateTo||''};
-  const selMonth=document.getElementById('stats-month')?.value;
-  if(selMonth){
-    const[sy,smo]=selMonth.split('-').map(Number);
-    const lastDay=new Date(sy,smo,0).getDate();
-    return{from:`${sy}-${String(smo).padStart(2,'0')}-01`,to:`${sy}-${String(smo).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`};
-  }
-  return{from:'',to:''};
-}
-function renderGpStatsCard(){
-  const chartEl=document.getElementById('gp-stats-chart');
-  const sumEl=document.getElementById('gp-stats-summary');
-  if(!chartEl)return;
-  populateGpAreaSelect('gp-stat-area-sel');
-  const area=document.getElementById('gp-stat-area-sel')?.value||'';
-  if(!area){
-    chartEl.innerHTML='<div style="font-size:11px;color:#aaa;padding:10px 0;">그린 기준을 선택해 주세요</div>';
-    sumEl.innerHTML='';
-    return;
-  }
-  const gpMap=getDailyGPMap();
-  const nMap=getDailyNByArea(area);
-  const{from,to}=getStatsFilteredRange();
-  let dates=Object.keys(gpMap).sort();
-  if(from)dates=dates.filter(d=>d>=from);
-  if(to)dates=dates.filter(d=>d<=to);
-  if(!dates.length){
-    chartEl.innerHTML='<div style="font-size:11px;color:#aaa;padding:10px 0;">기온 데이터 없음 (운영/날씨 섹션에서 기온 입력 후 표시)</div>';
-    sumEl.innerHTML='';
-    return;
-  }
-  const chartDates=dates;
-  chartEl.innerHTML=buildGpNChartSVG(chartDates,gpMap,nMap);
-  const sc=chartEl.querySelector('.gp-chart-scroll');
-  if(sc)sc.scrollLeft=sc.scrollWidth;
-
-  const gpVals=dates.map(d=>gpMap[d]);
-  const gpAvg=gpVals.reduce((s,v)=>s+v,0)/gpVals.length;
-  const nSum=dates.reduce((s,d)=>s+(nMap[d]||0),0);
-  const targets=getGpTargets();
-  const weeklyTarget=targets[area];
-  let judgeHtml='';
-  if(weeklyTarget){
-    const weeks=dates.length/7;
-    const recommended=weeklyTarget*gpAvg*weeks;
-    const ratio=recommended>0?(nSum/recommended*100):null;
-    let color='#3B6D11',label='적정';
-    if(ratio!==null){
-      if(ratio>130){color='#c0392b';label='과다';}
-      else if(ratio<70){color='#B8690A';label='부족';}
-    }
-    judgeHtml=`<div style="font-size:11px;color:#444;display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
-      <span>기간 평균 GP <b>${(gpAvg*100).toFixed(0)}%</b></span>
-      <span>실제 시비 N <b>${nSum.toFixed(1)}g</b></span>
-      <span>권장 시비 N <b>${recommended.toFixed(1)}g</b></span>
-      ${ratio!==null?`<span style="background:${color}1a;color:${color};font-weight:700;border-radius:100px;padding:2px 10px;">${label} (${ratio.toFixed(0)}%)</span>`:''}
-    </div>`;
-  } else {
-    judgeHtml=`<div style="font-size:11px;color:#888;">기간 평균 GP <b>${(gpAvg*100).toFixed(0)}%</b> · 실제 시비 N <b>${nSum.toFixed(1)}g</b> (작성 탭에서 목표 시비율을 입력하면 과부족 비교가 표시돼요)</div>`;
-  }
-  sumEl.innerHTML=judgeHtml;
-}
 
 /* GP 라인 + 일일 질소시비량 막대 결합 SVG 차트 (좌우 스크롤 가능, 날짜 클릭 시 산출근거 팝업) */
 function buildGpNChartSVG(dates,gpMap,nMap){
@@ -8263,7 +8186,7 @@ function migrateRegWorkerNames(){
   showToast(`✅ ${changedCount}건 변경 완료! (${Object.keys(nameMap).length}명)`);
 }
 /* ── 통계 카드 순서 관리 ── */
-const STATS_DEFAULT_ORDER=['reg','daily','cost','teams','gp'];
+const STATS_DEFAULT_ORDER=['reg','daily','cost','teams'];
 
 function getStatsOrder(){
   try{
@@ -9939,10 +9862,12 @@ function getAreaPresets(){
 function saveAreaPreset(name){
   const custom = getAreaPresets();
   if(!custom.includes(name)){ custom.push(name); localStorage.setItem(MAT_AREA_PRESET_KEY, JSON.stringify(custom)); }
+  if(typeof fbSaveSharedSettings==='function') setTimeout(fbSaveSharedSettings,300);
 }
 function removeAreaPreset(name){
   const custom = getAreaPresets().filter(n=>n!==name);
   localStorage.setItem(MAT_AREA_PRESET_KEY, JSON.stringify(custom));
+  if(typeof fbSaveSharedSettings==='function') setTimeout(fbSaveSharedSettings,300);
 }
 
 /* ── 처리지역 표시 순서 (자재사용량 탭 드롭다운 + 자재 사용 캘린더가 공유) ──
@@ -10118,6 +10043,7 @@ function moveAreaPreset(idx, dir){
   [arr[idx],arr[newIdx]] = [arr[newIdx],arr[idx]];
   localStorage.setItem(MAT_AREA_PRESET_KEY, JSON.stringify(arr));
   renderAreaPresetBar();
+  if(typeof fbSaveSharedSettings==='function') setTimeout(fbSaveSharedSettings,300);
 }
 
 /* ── 프리셋 삭제 (칩만 삭제, 블록은 유지) ── */
