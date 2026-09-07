@@ -7053,6 +7053,31 @@ function onGpTargetChange(){
   setGpTarget(area,val);
   renderGpWriteBox();
 }
+/* 작성 탭 GP 가이드: "실제 시비 N"을 다른 값으로 바꿔가며 과부족 판정을 즉시 재계산
+   (실제 자재사용량 기록은 건드리지 않는 화면상의 what-if 계산용) */
+function recalcGpJudge(){
+  const inp=document.getElementById('gp-actual-n-input');
+  const badge=document.getElementById('gp-judge-badge');
+  if(!inp||!badge)return;
+  const recommended=parseFloat(badge.dataset.recommended)||0;
+  const val=parseFloat(inp.value);
+  if(isNaN(val)){ badge.textContent=''; return; }
+  const ratio=recommended>0?(val/recommended*100):null;
+  let color='#3B6D11',label='적정';
+  if(ratio!==null){
+    if(ratio>130){color='#c0392b';label='과다';}
+    else if(ratio<70){color='#B8690A';label='부족';}
+  }
+  badge.style.background=color+'1a';
+  badge.style.color=color;
+  badge.textContent=ratio!==null?`${label} (${ratio.toFixed(0)}%)`:'';
+}
+function resetGpActualN(){
+  const inp=document.getElementById('gp-actual-n-input');
+  if(!inp)return;
+  inp.value=inp.dataset.actual;
+  recalcGpJudge();
+}
 function renderGpWriteBox(){
   const box=document.getElementById('gp-write-box');
   if(!box)return;
@@ -7091,10 +7116,17 @@ function renderGpWriteBox(){
       if(ratio>130){color='#c0392b';label='과다';}
       else if(ratio<70){color='#B8690A';label='부족';}
     }
+    /* 실제 시비 N을 입력칸으로 바꿔서, 기록된 값이 기본으로 채워지되
+       다른 값을 넣어보면서 "이만큼 줬으면 어땠을까"를 바로 계산해볼 수 있게 함.
+       실제 기록(자재사용량)은 건드리지 않고 이 화면의 계산에만 쓰이는 값. */
     judgeHtml=`<div style="font-size:11px;color:#444;display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:4px;">
       <span>권장 N <b>${recommended.toFixed(1)}g</b></span>
-      <span>실제 시비 N <b>${weekNSum.toFixed(1)}g</b></span>
-      ${ratio!==null?`<span style="background:${color}1a;color:${color};font-weight:700;border-radius:100px;padding:2px 10px;">${label} (${ratio.toFixed(0)}%)</span>`:''}
+      <span style="display:flex;align-items:center;gap:3px;">실제 시비 N
+        <input type="number" id="gp-actual-n-input" value="${weekNSum.toFixed(1)}" data-actual="${weekNSum.toFixed(2)}" step="0.1" min="0"
+          oninput="recalcGpJudge()" style="width:52px;font-size:11px;padding:1px 4px;border:1px solid #ccc;border-radius:4px;">g
+        <button onclick="resetGpActualN()" title="실제 기록값으로 되돌리기" style="border:none;background:none;color:#888;cursor:pointer;font-size:11px;padding:0 2px;">↺</button>
+      </span>
+      <span id="gp-judge-badge" data-recommended="${recommended}" style="background:${color}1a;color:${color};font-weight:700;border-radius:100px;padding:2px 10px;">${ratio!==null?`${label} (${ratio.toFixed(0)}%)`:''}</span>
     </div>`;
   } else {
     judgeHtml=`<div style="font-size:10px;color:#888;margin-top:4px;">목표 시비율을 입력하면 실제 시비량과 과부족을 비교해줘요</div>`;
