@@ -1086,7 +1086,7 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
       </div>
 
       <!-- ③ 일 통계 -->
-      <div style="background:#f9f9f9;border:2px solid #c8c8c8;border-radius:10px;overflow:hidden;flex-shrink:0;width:240px;">
+      <div style="background:#f9f9f9;border:2px solid #c8c8c8;border-radius:10px;overflow:hidden;flex-shrink:0;width:260px;">
         <div style="background:#444;color:#fff;font-size:10px;font-weight:700;padding:5px 10px;display:flex;align-items:center;gap:5px;">
           <span>&#128200;</span> 일 통계
           <span style="margin-left:auto;font-size:9px;font-weight:400;opacity:.7;">✏️ 클릭하여 수정</span>
@@ -1110,6 +1110,14 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
           <div class="wx-ei" style="margin:0;cursor:pointer;" onclick="editWeatherStat('w-minmax','최저 / 최고 (°C)','text')" title="클릭하여 수정">
             <div class="wx-ev" id="w-minmax" style="text-decoration:underline dotted;text-underline-offset:2px;">--</div>
             <div class="wx-el">최저 / 최고 (°C) ✎ <span id="w-minmax-source" style="display:none;font-size:9px;font-weight:800;color:#fff;white-space:nowrap;border-radius:100px;padding:1px 6px;margin-left:3px;"></span> <span id="w-minmax-badge" onclick="event.stopPropagation();revertStatToAuto('minmax','최저 / 최고 기온')" title="눌러서 자동값으로 되돌리기" style="display:none;cursor:pointer;font-size:9px;font-weight:800;color:#fff;background:#B8690A;white-space:nowrap;border-radius:100px;padding:1px 6px;margin-left:3px;">✏ 수동 ↺</span></div>
+          </div>
+          <div class="wx-ei" style="margin:0;cursor:pointer;" onclick="editWeatherStat('w-avgh','일 평균습도 (%)','number')" title="클릭하여 수정">
+            <div class="wx-ev" id="w-avgh" style="text-decoration:underline dotted;text-underline-offset:2px;">--</div>
+            <div class="wx-el">일 평균습도 (%) ✎ <span id="w-avgh-source" style="display:none;font-size:9px;font-weight:800;color:#fff;white-space:nowrap;border-radius:100px;padding:1px 6px;margin-left:3px;"></span> <span id="w-avgh-badge" onclick="event.stopPropagation();revertStatToAuto('avgh','일 평균습도')" title="눌러서 자동값으로 되돌리기" style="display:none;cursor:pointer;font-size:9px;font-weight:800;color:#fff;background:#B8690A;white-space:nowrap;border-radius:100px;padding:1px 6px;margin-left:3px;">✏ 수동 ↺</span></div>
+          </div>
+          <div class="wx-ei" style="margin:0;cursor:pointer;" onclick="editWeatherStat('w-minmaxh','습도 최저 / 최고 (%)','text')" title="클릭하여 수정">
+            <div class="wx-ev" id="w-minmaxh" style="text-decoration:underline dotted;text-underline-offset:2px;">--</div>
+            <div class="wx-el">습도 최저 / 최고 (%) ✎ <span id="w-minmaxh-source" style="display:none;font-size:9px;font-weight:800;color:#fff;white-space:nowrap;border-radius:100px;padding:1px 6px;margin-left:3px;"></span> <span id="w-minmaxh-badge" onclick="event.stopPropagation();revertStatToAuto('minmaxh','습도 최저 / 최고')" title="눌러서 자동값으로 되돌리기" style="display:none;cursor:pointer;font-size:9px;font-weight:800;color:#fff;background:#B8690A;white-space:nowrap;border-radius:100px;padding:1px 6px;margin-left:3px;">✏ 수동 ↺</span></div>
           </div>
           <div class="wx-ei" style="margin:0;cursor:pointer;" onclick="editWeatherStat('w-month-rain','월 누적강우량 (mm)','number')" title="클릭하여 수정">
             <div class="wx-ev" id="w-month-rain" style="text-decoration:underline dotted;text-underline-offset:2px;">--</div>
@@ -2977,7 +2985,7 @@ function updateStatManualBadges(){
   const now=new Date();
   const todayISO2=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
   const dateForCheck=pickerISO||todayISO2;
-  [['avg','w-avg-badge'],['minmax','w-minmax-badge'],['monthRain','w-month-rain-badge'],['yearRain','w-year-rain-badge']].forEach(([field,badgeId])=>{
+  [['avg','w-avg-badge'],['minmax','w-minmax-badge'],['avgh','w-avgh-badge'],['minmaxh','w-minmaxh-badge'],['monthRain','w-month-rain-badge'],['yearRain','w-year-rain-badge']].forEach(([field,badgeId])=>{
     const badge=document.getElementById(badgeId);
     if(!badge)return;
     badge.style.display=(getStatManual(dateForCheck,field)!==undefined)?'inline':'none';
@@ -3063,6 +3071,8 @@ function applyWeatherMetaToUI(meta){
     rain:['w-rain-source','w-rain-today-badge'],
     avg:['w-avg-source','w-avg-badge'],
     minmax:['w-minmax-source','w-minmax-badge'],
+    avgh:['w-avgh-source','w-avgh-badge'],
+    minmaxh:['w-minmaxh-source','w-minmaxh-badge'],
     monthRain:['w-month-rain-source','w-month-rain-badge'],
     yearRain:['w-year-rain-source','w-year-rain-badge']
   };
@@ -4168,6 +4178,8 @@ async function fetchWeather(){
   /* 과거 날짜의 기상청 실측 평균/최저·최고 기온 — 공통 구간에서 화면에 반영됨.
      (isToday는 기존처럼 avg/minmax 지역변수를 그대로 쓰므로 이 값은 null로 둠) */
   let kmaOverrideAvg=null, kmaOverrideMinmax=null;
+  /* 습도도 기온과 동일한 방식으로 일평균/최저·최고를 계산해서 보여줌 */
+  let kmaOverrideAvgH=null, kmaOverrideMinmaxH=null;
   /* 월/연 누적강수량 — 기상청 AWS 일통계를 날짜범위(월초~대상일 / 1월1일~대상일)로
      조회해서 합산 성공하면 채워짐. 실패하면 null로 남고, 월 누적은 기존 격자모델
      합산값(로컬 rainData30 기반)으로, 연 누적은 이전 값 그대로 남는다. */
@@ -4182,13 +4194,13 @@ async function fetchWeather(){
   const lastTimeEl=document.getElementById('weather-last-time');
 
   try{
-    let temp,feel,humid,wind,sky,avg,minmax;
+    let temp,feel,humid,wind,sky,avg,minmax,avgh,minmaxh;
 
     if(isToday){
       /* ── Step1: 현재 날씨 (forecast current) — 실패해도 강우차트는 진행 ── */
       let todayRain=0, mx=null, mn=null;
       try{
-        const cur=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code&hourly=temperature_2m&daily=temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=Asia%2FSeoul&forecast_days=1`).then(r=>r.json());
+        const cur=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code&hourly=temperature_2m,relative_humidity_2m&daily=temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=Asia%2FSeoul&forecast_days=1`).then(r=>r.json());
         const c=cur.current;
         temp=String(Math.round(c.temperature_2m));
         feel=String(Math.round(c.apparent_temperature));
@@ -4197,6 +4209,9 @@ async function fetchWeather(){
         sky=wmo(c.weather_code);
         const hrs=cur.hourly?.temperature_2m||[];
         avg=hrs.length?(hrs.reduce((a,b)=>a+b,0)/hrs.length).toFixed(1):'--';
+        const hrsH=(cur.hourly?.relative_humidity_2m||[]).filter(v=>v!=null);
+        avgh=hrsH.length?(hrsH.reduce((a,b)=>a+b,0)/hrsH.length).toFixed(0):'--';
+        minmaxh=hrsH.length?`${Math.round(Math.min(...hrsH))} / ${Math.round(Math.max(...hrsH))}`:'--';
         mx=cur.daily?.temperature_2m_max?.[0]??null;
         mn=cur.daily?.temperature_2m_min?.[0]??null;
         minmax=(mx!=null&&mn!=null)?`${Math.round(mn)} / ${Math.round(mx)}`:'--';
@@ -4262,7 +4277,7 @@ async function fetchWeather(){
           return fetch(`https://empty-morning-c054.loveinch2000.workers.dev/?path=sfc_aws_day.php&tm2=${dISOToday}&obs=${obs}&stn=460`,{signal:ctrl.signal})
             .then(r=>r.text()).finally(()=>clearTimeout(tid));
         };
-        const [taMaxResT,taMinResT]=await Promise.allSettled([fetchKmaDay('ta_max'), fetchKmaDay('ta_min')]);
+        const [taMaxResT,taMinResT,hmMaxResT,hmMinResT]=await Promise.allSettled([fetchKmaDay('ta_max'), fetchKmaDay('ta_min'), fetchKmaDay('hm_max'), fetchKmaDay('hm_min')]);
         const kTaMaxT=taMaxResT.status==='fulfilled'?parseDayVal(taMaxResT.value):null;
         const kTaMinT=taMinResT.status==='fulfilled'?parseDayVal(taMinResT.value):null;
         if(taMaxResT.status==='rejected') console.warn('[날씨-오늘] ta_max 조회 실패:',taMaxResT.reason);
@@ -4272,6 +4287,16 @@ async function fetchWeather(){
           avg=((kTaMaxT+kTaMinT)/2).toFixed(1);
           kmaOverrideAvg=avg;
           kmaOverrideMinmax=minmax;
+        }
+        /* 습도 실측 최저/최고 — hm_max/hm_min obs 코드가 없는 관측소·API 버전이면
+           그냥 실패해서 격자 예측값(avgh/minmaxh)이 그대로 유지됨(안전한 실패) */
+        const kHmMaxT=hmMaxResT.status==='fulfilled'?parseDayVal(hmMaxResT.value):null;
+        const kHmMinT=hmMinResT.status==='fulfilled'?parseDayVal(hmMinResT.value):null;
+        if(kHmMaxT!=null && kHmMinT!=null){
+          minmaxh=`${Math.round(kHmMinT)} / ${Math.round(kHmMaxT)}`;
+          avgh=((kHmMaxT+kHmMinT)/2).toFixed(0);
+          kmaOverrideAvgH=avgh;
+          kmaOverrideMinmaxH=minmaxh;
         }
       }catch(eKmaTodayDay){console.warn('[날씨] 오늘 최저·최고 실측 조회 실패(격자 예측값 유지)',eKmaTodayDay);}
 
@@ -4367,6 +4392,11 @@ async function fetchWeather(){
         temp=hrBase>=0&&hrs[hrBase]!=null?String(Math.round(hrs[hrBase])):avg;
         const humidHrs=pf.hourly?.relative_humidity_2m||[];
         humid=hrBase>=0&&humidHrs[hrBase]!=null?String(Math.round(humidHrs[hrBase])):'--';
+        {
+          const _hWin=humidHrs.slice(Math.max(0,hrBase-12),hrBase+12).filter(v=>v!=null);
+          avgh=_hWin.length?(_hWin.reduce((a,b)=>a+b,0)/_hWin.length).toFixed(0):'--';
+          minmaxh=_hWin.length?`${Math.round(Math.min(..._hWin))} / ${Math.round(Math.max(..._hWin))}`:'--';
+        }
         const windHrs=pf.hourly?.wind_speed_10m||[];
         wind=hrBase>=0&&windHrs[hrBase]!=null?(windHrs[hrBase]/3.6).toFixed(1):'--';
         feel='--';
@@ -4397,8 +4427,8 @@ async function fetchWeather(){
           return fetch(`https://empty-morning-c054.loveinch2000.workers.dev/?path=sfc_aws_day.php&tm2=${dISO}&obs=${obs}&stn=460`,{signal:ctrl.signal})
             .then(r=>r.text()).finally(()=>clearTimeout(tid));
         };
-        const [rnDayRes,taMaxRes,taMinRes]=await Promise.allSettled([
-          fetchKma('rn_day'), fetchKma('ta_max'), fetchKma('ta_min')
+        const [rnDayRes,taMaxRes,taMinRes,hmMaxRes,hmMinRes]=await Promise.allSettled([
+          fetchKma('rn_day'), fetchKma('ta_max'), fetchKma('ta_min'), fetchKma('hm_max'), fetchKma('hm_min')
         ]);
         const kRnDay=rnDayRes.status==='fulfilled'?parseDayVal(rnDayRes.value):null;
         const kTaMax=taMaxRes.status==='fulfilled'?parseDayVal(taMaxRes.value):null;
@@ -4416,6 +4446,16 @@ async function fetchWeather(){
              이 값이 화면에 반영되도록 별도 변수에도 저장해둠 */
           kmaOverrideAvg=avg;
           kmaOverrideMinmax=minmax;
+        }
+        /* 습도 실측 최저/최고 — hm_max/hm_min obs 코드를 지원 안 하는 경우 그냥
+           실패해서 격자 예측값(avgh/minmaxh)이 그대로 유지됨(안전한 실패) */
+        const kHmMax=hmMaxRes.status==='fulfilled'?parseDayVal(hmMaxRes.value):null;
+        const kHmMin=hmMinRes.status==='fulfilled'?parseDayVal(hmMinRes.value):null;
+        if(kHmMax!=null && kHmMin!=null){
+          minmaxh=`${Math.round(kHmMin)} / ${Math.round(kHmMax)}`;
+          avgh=((kHmMax+kHmMin)/2).toFixed(0);
+          kmaOverrideAvgH=avgh;
+          kmaOverrideMinmaxH=minmaxh;
         }
       }catch(eKmaPast){console.warn('[날씨-과거] 기상청 AWS 실측 조회 실패(격자 예측값 유지)',eKmaPast);}
 
@@ -4467,6 +4507,21 @@ async function fetchWeather(){
       if(_manualMinmax!==undefined) document.getElementById('w-minmax').textContent=_manualMinmax;
       else if(_isDisplayToday && minmax&&minmax!='--') document.getElementById('w-minmax').textContent=minmax;
       else if(!_isDisplayToday && kmaOverrideMinmax!=null) document.getElementById('w-minmax').textContent=kmaOverrideMinmax;
+
+      /* 습도 일평균/최저·최고 — 기온과 동일한 우선순위(수동 > 실측 > 격자예측) */
+      const _avghEl=document.getElementById('w-avgh'), _minmaxhEl=document.getElementById('w-minmaxh');
+      if(_avghEl){
+        const _manualAvgh=getStatManual(targetDate,'avgh');
+        if(_manualAvgh!==undefined) _avghEl.textContent=_manualAvgh;
+        else if(_isDisplayToday && avgh&&avgh!='--') _avghEl.textContent=avgh;
+        else if(!_isDisplayToday && kmaOverrideAvgH!=null) _avghEl.textContent=kmaOverrideAvgH;
+      }
+      if(_minmaxhEl){
+        const _manualMinmaxh=getStatManual(targetDate,'minmaxh');
+        if(_manualMinmaxh!==undefined) _minmaxhEl.textContent=_manualMinmaxh;
+        else if(_isDisplayToday && minmaxh&&minmaxh!='--') _minmaxhEl.textContent=minmaxh;
+        else if(!_isDisplayToday && kmaOverrideMinmaxH!=null) _minmaxhEl.textContent=kmaOverrideMinmaxH;
+      }
     }
 
     /* ── 월/연 누적강수량: 기상청 AWS 일통계(sfc_aws_day.php)에 날짜범위(tm1~tm2)로
@@ -4589,6 +4644,8 @@ async function fetchWeather(){
          isPast뿐 아니라 isToday도 함께 인정 (예전엔 isPast만 인정해서 오늘은 항상 예측으로만 표시됐음) */
       _setSrc('w-avg-source', 'w-avg-badge', (isToday||isPast) && kmaOverrideAvg!=null);
       _setSrc('w-minmax-source', 'w-minmax-badge', (isToday||isPast) && kmaOverrideMinmax!=null);
+      _setSrc('w-avgh-source', 'w-avgh-badge', (isToday||isPast) && kmaOverrideAvgH!=null);
+      _setSrc('w-minmaxh-source', 'w-minmaxh-badge', (isToday||isPast) && kmaOverrideMinmaxH!=null);
       _setSrc('w-month-rain-source', 'w-month-rain-badge', kmaOverrideMonthRain!=null);
       _setSrc('w-year-rain-source', 'w-year-rain-badge', kmaOverrideYearRain!=null);
     }
@@ -4603,6 +4660,8 @@ async function fetchWeather(){
         rain:(()=>{const _e=rainData30.find(d=>d.date===targetDate);return kmaOverrideRain!=null&&_e&&Math.abs((_e.rain||0)-kmaOverrideRain)<0.05;})(),
         avg:(isToday||isPast)&&kmaOverrideAvg!=null,
         minmax:(isToday||isPast)&&kmaOverrideMinmax!=null,
+        avgh:(isToday||isPast)&&kmaOverrideAvgH!=null,
+        minmaxh:(isToday||isPast)&&kmaOverrideMinmaxH!=null,
         monthRain:kmaOverrideMonthRain!=null,
         yearRain:kmaOverrideYearRain!=null
       }
@@ -4888,7 +4947,7 @@ function saveReport(){
     early:document.getElementById('inp-early').value,normal:document.getElementById('inp-normal').value,
     late:document.getElementById('inp-late').value,remark:document.getElementById('inp-remark').value,
     ballSpeed:{am:document.getElementById('bs-am').value,pm:document.getElementById('bs-pm').value,target:document.getElementById('bs-target').value,note:document.getElementById('bs-note').value},
-    weather:{temp:document.getElementById('w-temp').textContent,feel:document.getElementById('w-feel').textContent,humid:document.getElementById('w-humid').textContent,wind:document.getElementById('w-wind').textContent,sky:document.getElementById('w-sky').textContent,avg:document.getElementById('w-avg').textContent,monthRain:document.getElementById('w-month-rain').textContent,yearRain:document.getElementById('w-year-rain')?.textContent||'--',minmax:document.getElementById('w-minmax').textContent,rain:document.getElementById('inp-rain').value||'0',snow:document.getElementById('inp-snow').value||'0',wdir:document.getElementById('inp-wdir').value,note:document.getElementById('inp-weather-note')?.value||'',fetchedAt:_wxMeta.fetchedAt,badges:_wxMeta.badges},
+    weather:{temp:document.getElementById('w-temp').textContent,feel:document.getElementById('w-feel').textContent,humid:document.getElementById('w-humid').textContent,wind:document.getElementById('w-wind').textContent,sky:document.getElementById('w-sky').textContent,avg:document.getElementById('w-avg').textContent,avgh:document.getElementById('w-avgh')?.textContent||'--',minmaxh:document.getElementById('w-minmaxh')?.textContent||'--',monthRain:document.getElementById('w-month-rain').textContent,yearRain:document.getElementById('w-year-rain')?.textContent||'--',minmax:document.getElementById('w-minmax').textContent,rain:document.getElementById('inp-rain').value||'0',snow:document.getElementById('inp-snow').value||'0',wdir:document.getElementById('inp-wdir').value,note:document.getElementById('inp-weather-note')?.value||'',fetchedAt:_wxMeta.fetchedAt,badges:_wxMeta.badges},
     yego:{...yegoData},yegoItems:YEGO.map(d=>({cat:d.cat,key:d.key})),
     yegoNote:document.getElementById('yego-note')?.value||'',
     irrigation:(()=>{const zones=getIrrZones();const obj={note:document.getElementById('irr-note')?.value||''};zones.forEach(z=>{obj[z.key+'_auto']=document.getElementById(`irr-${z.key}-auto`)?.value||'';obj[z.key+'_man']=document.getElementById(`irr-${z.key}-man`)?.value||'';});/* 레거시 키도 유지 */const gla=document.getElementById('irr-green-left-auto');const glm=document.getElementById('irr-green-left-man');const gra=document.getElementById('irr-green-right-auto');const grm=document.getElementById('irr-green-right-man');if(gla)obj.gl_a=gla.value;if(glm)obj.gl_m=glm.value;if(gra)obj.gr_a=gra.value;if(grm)obj.gr_m=grm.value;return obj;})(),
@@ -4998,7 +5057,7 @@ function clearForm(){
   [...staticIds,...zoneIds].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
   calcIrrTotal();
   clearTdrVals();;
-  ['w-temp','w-feel','w-humid','w-wind','w-sky','w-avg','w-month-rain','w-year-rain','w-minmax'].forEach(id=>{const _el=document.getElementById(id); if(_el)_el.textContent='--';});
+  ['w-temp','w-feel','w-humid','w-wind','w-sky','w-avg','w-avgh','w-minmaxh','w-month-rain','w-year-rain','w-minmax'].forEach(id=>{const _el=document.getElementById(id); if(_el)_el.textContent='--';});
   {const _rgEl=document.getElementById('rain-chart-container');if(_rgEl)_rgEl.innerHTML='<div style="font-size:11px;color:#aaa;padding:10px;">자동 불러오기 후 표시됩니다</div>';}
 }
 
@@ -5541,7 +5600,7 @@ function copyToToday(idx){
   if(wte2)wte2.value=wt.early||'';if(wtd2)wtd2.value=wt.day||'';if(wtn2)wtn2.value=wt.night||'';
 
   /* 날씨 초기화 (오늘 날씨는 새로 받아야 함) */
-  ['w-temp','w-feel','w-humid','w-wind','w-sky','w-avg','w-month-rain','w-year-rain','w-minmax'].forEach(id=>{const _el=document.getElementById(id); if(_el)_el.textContent='--';});
+  ['w-temp','w-feel','w-humid','w-wind','w-sky','w-avg','w-avgh','w-minmaxh','w-month-rain','w-year-rain','w-minmax'].forEach(id=>{const _el=document.getElementById(id); if(_el)_el.textContent='--';});
   document.getElementById('inp-rain').value='';
   document.getElementById('inp-snow').value='';
   document.getElementById('inp-wdir').value='';
@@ -5629,6 +5688,8 @@ function loadForEdit(idx,silent){
   document.getElementById('w-month-rain').textContent=wr.monthRain||'--';
   {const _yrEl=document.getElementById('w-year-rain'); if(_yrEl) _yrEl.textContent=wr.yearRain||'--';}
   document.getElementById('w-minmax').textContent=wr.minmax||'--';
+  {const _avghEl=document.getElementById('w-avgh'); if(_avghEl) _avghEl.textContent=wr.avgh||'--';}
+  {const _minmaxhEl=document.getElementById('w-minmaxh'); if(_minmaxhEl) _minmaxhEl.textContent=wr.minmaxh||'--';}
   document.getElementById('inp-rain').value=wr.rain||'';
   document.getElementById('inp-snow').value=wr.snow||'';
   document.getElementById('inp-wdir').value=wr.wdir||'';
@@ -7364,7 +7425,7 @@ function editWeatherStat(elId, label, type){
   const inp=document.getElementById('wx-stat-input');
   inp.type=type==='number'?'number':'text';
   inp.value=cur==='--'?'':cur;
-  const hints={'w-avg':'예) 18.5','w-minmax':'예) 12 / 27','w-month-rain':'예) 24.3','w-year-rain':'예) 320.5'};
+  const hints={'w-avg':'예) 18.5','w-minmax':'예) 12 / 27','w-avgh':'예) 65','w-minmaxh':'예) 48 / 82','w-month-rain':'예) 24.3','w-year-rain':'예) 320.5'};
   document.getElementById('wx-stat-hint').textContent=hints[elId]||'';
   modal.style.display='flex';
   setTimeout(()=>inp.select(),50);
@@ -7383,7 +7444,7 @@ function saveWxStatModal(){
     const _now=new Date();
     const _todayISO=`${_now.getFullYear()}-${String(_now.getMonth()+1).padStart(2,'0')}-${String(_now.getDate()).padStart(2,'0')}`;
     const _curDate=document.getElementById('inp-date-picker')?.value||_todayISO;
-    const _fieldMap={'w-avg':'avg','w-minmax':'minmax','w-month-rain':'monthRain','w-year-rain':'yearRain'};
+    const _fieldMap={'w-avg':'avg','w-minmax':'minmax','w-avgh':'avgh','w-minmaxh':'minmaxh','w-month-rain':'monthRain','w-year-rain':'yearRain'};
     const _field=_fieldMap[targetElId];
     if(_field) setStatManual(_curDate,_field,val);
   }
