@@ -4277,7 +4277,7 @@ async function fetchWeather(){
           return fetch(`https://empty-morning-c054.loveinch2000.workers.dev/?path=sfc_aws_day.php&tm2=${dISOToday}&obs=${obs}&stn=460`,{signal:ctrl.signal})
             .then(r=>r.text()).finally(()=>clearTimeout(tid));
         };
-        const [taMaxResT,taMinResT,hmMaxResT,hmMinResT]=await Promise.allSettled([fetchKmaDay('ta_max'), fetchKmaDay('ta_min'), fetchKmaDay('hm_max'), fetchKmaDay('hm_min')]);
+        const [taMaxResT,taMinResT]=await Promise.allSettled([fetchKmaDay('ta_max'), fetchKmaDay('ta_min')]);
         const kTaMaxT=taMaxResT.status==='fulfilled'?parseDayVal(taMaxResT.value):null;
         const kTaMinT=taMinResT.status==='fulfilled'?parseDayVal(taMinResT.value):null;
         if(taMaxResT.status==='rejected') console.warn('[날씨-오늘] ta_max 조회 실패:',taMaxResT.reason);
@@ -4288,16 +4288,9 @@ async function fetchWeather(){
           kmaOverrideAvg=avg;
           kmaOverrideMinmax=minmax;
         }
-        /* 습도 실측 최저/최고 — hm_max/hm_min obs 코드가 없는 관측소·API 버전이면
-           그냥 실패해서 격자 예측값(avgh/minmaxh)이 그대로 유지됨(안전한 실패) */
-        const kHmMaxT=hmMaxResT.status==='fulfilled'?parseDayVal(hmMaxResT.value):null;
-        const kHmMinT=hmMinResT.status==='fulfilled'?parseDayVal(hmMinResT.value):null;
-        if(kHmMaxT!=null && kHmMinT!=null){
-          minmaxh=`${Math.round(kHmMinT)} / ${Math.round(kHmMaxT)}`;
-          avgh=((kHmMaxT+kHmMinT)/2).toFixed(0);
-          kmaOverrideAvgH=avgh;
-          kmaOverrideMinmaxH=minmaxh;
-        }
+        /* 습도 실측 최저/최고(hm_max/hm_min)는 이 관측소·API에서 데이터가 아예
+           내려오지 않는 것을 실제로 확인함 — 그래서 KMA 실측 시도 없이
+           격자 예측값(avgh/minmaxh, 위에서 이미 계산됨)만 그대로 사용 */
       }catch(eKmaTodayDay){console.warn('[날씨] 오늘 최저·최고 실측 조회 실패(격자 예측값 유지)',eKmaTodayDay);}
 
       /* ── Step2: 강우 차트 — forecast past_days=89 (archive 완전 제거) ── */
@@ -4427,8 +4420,8 @@ async function fetchWeather(){
           return fetch(`https://empty-morning-c054.loveinch2000.workers.dev/?path=sfc_aws_day.php&tm2=${dISO}&obs=${obs}&stn=460`,{signal:ctrl.signal})
             .then(r=>r.text()).finally(()=>clearTimeout(tid));
         };
-        const [rnDayRes,taMaxRes,taMinRes,hmMaxRes,hmMinRes]=await Promise.allSettled([
-          fetchKma('rn_day'), fetchKma('ta_max'), fetchKma('ta_min'), fetchKma('hm_max'), fetchKma('hm_min')
+        const [rnDayRes,taMaxRes,taMinRes]=await Promise.allSettled([
+          fetchKma('rn_day'), fetchKma('ta_max'), fetchKma('ta_min')
         ]);
         const kRnDay=rnDayRes.status==='fulfilled'?parseDayVal(rnDayRes.value):null;
         const kTaMax=taMaxRes.status==='fulfilled'?parseDayVal(taMaxRes.value):null;
@@ -4447,16 +4440,9 @@ async function fetchWeather(){
           kmaOverrideAvg=avg;
           kmaOverrideMinmax=minmax;
         }
-        /* 습도 실측 최저/최고 — hm_max/hm_min obs 코드를 지원 안 하는 경우 그냥
-           실패해서 격자 예측값(avgh/minmaxh)이 그대로 유지됨(안전한 실패) */
-        const kHmMax=hmMaxRes.status==='fulfilled'?parseDayVal(hmMaxRes.value):null;
-        const kHmMin=hmMinRes.status==='fulfilled'?parseDayVal(hmMinRes.value):null;
-        if(kHmMax!=null && kHmMin!=null){
-          minmaxh=`${Math.round(kHmMin)} / ${Math.round(kHmMax)}`;
-          avgh=((kHmMax+kHmMin)/2).toFixed(0);
-          kmaOverrideAvgH=avgh;
-          kmaOverrideMinmaxH=minmaxh;
-        }
+        /* 습도 실측 최저/최고(hm_max/hm_min)는 이 관측소·API에서 데이터가 아예
+           내려오지 않는 것을 실제로 확인함 — 그래서 KMA 실측 시도 없이
+           격자 예측값(avgh/minmaxh, 위에서 이미 계산됨)만 그대로 사용 */
       }catch(eKmaPast){console.warn('[날씨-과거] 기상청 AWS 실측 조회 실패(격자 예측값 유지)',eKmaPast);}
 
       try{
