@@ -10590,11 +10590,11 @@ function parseGram(str){
   else if(u==='l') v *= 1000;   /* 리터 → ml 변환 */
   return v;
 }
-/* ── 모래 사용량 파싱 — 톤/kg/포 등 자유 단위를 그대로 존중해서 숫자+단위로 분리 ── */
+/* ── 모래 사용량 파싱 — 톤/kg/포/mm(두께) 등 자유 단위를 그대로 존중해서 숫자+단위로 분리 ── */
 function parseSandAmt(str){
   if(!str) return null;
   const s = String(str).trim().replace(/,/g,'');
-  const m = s.match(/([\d.]+)\s*(kg|g|t|톤|㎥|m3|포)?/i);
+  const m = s.match(/([\d.]+)\s*(kg|g|t|톤|㎥|m3|포|mm)?/i);
   if(!m) return null;
   let v = parseFloat(m[1]);
   if(isNaN(v)||v<=0) return null;
