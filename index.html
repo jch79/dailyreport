@@ -3344,6 +3344,8 @@ function calcIrrTotal(){
   document.getElementById('irr-total').textContent=grand;
   updateIrrTodayTonsBadge();
   refreshIrrUsageSummary();
+  /* 구역별 관수 시간을 입력하는 즉시 30일 관수 현황 차트에도 반영 (저장 전 미리보기) */
+  renderIrrBarChart();
 }
 
 /* ── 관수 기록 섹션만 초기화 (구역별 관수 시간 + 관수 메모) ── */
@@ -3986,6 +3988,29 @@ function renderIrrBarChart(page){
   if(!el)return;
   const all=gd();
   function toISO2(d){const m=d.match(/(\d+)년\s*(\d+)월\s*(\d+)일/);if(!m)return d;const yy=parseInt(m[1]);const yyyy=yy<50?2000+yy:1900+yy;return`${yyyy}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;}
+
+  /* 지금 작성 탭에서 입력 중인(아직 저장 안 한) 구역별 관수 시간도 30일 관수 현황
+     차트에 즉시 반영되도록, 저장된 기록 대신 현재 화면의 입력값으로 그 날짜
+     항목을 덮어쓰거나(기존 기록이 있으면) 새로 끼워넣는다(기존 기록이 없으면).
+     기온추이·GP 차트와 같은 맥락 — "저장 후 다시 열어야만" 반영되던 불편 해소. */
+  const pickerISO=getPickerISO();
+  if(pickerISO && document.getElementById(`irr-${getIrrZones()[0]?.key}-auto`)){
+    const zones=getIrrZones();
+    const liveIrr={};
+    let anyVal=false;
+    zones.forEach(z=>{
+      const v=getIrrVal(z.key);
+      if(v.total>0)anyVal=true;
+      liveIrr[z.key+'_auto']=v.auto;
+      liveIrr[z.key+'_man']=v.man;
+    });
+    if(anyVal){
+      const pickerLabel=document.getElementById('inp-date')?.value;
+      const idx=all.findIndex(r=>toISO2(r.date)===pickerISO);
+      if(idx>=0) all[idx]={...all[idx],irrigation:liveIrr};
+      else if(pickerLabel) all.push({date:pickerLabel,irrigation:liveIrr});
+    }
+  }
 
   /* 관수 기록 있는 것만 날짜 내림차순 */
   const sorted=all.filter(r=>r.irrigation)
@@ -6838,7 +6863,7 @@ function pickerEndIdx(isoArr){
 /* 날짜 picker 기준으로 _tempOffset 계산 (오늘이면 최신 끝, 과거면 그 날 기준) */
 /* 일보 레코드(golf_v7)에서 기온 데이터 추출 */
 function getTempDataFromRecords(){
-  return gd()
+  const arr = gd()
     .map(r=>{
       const w=r.weather||{};
       const mm=w.minmax||'';
@@ -6854,8 +6879,25 @@ function getTempDataFromRecords(){
       const iso=`20${dm[1]}-${dm[2]}-${dm[3]}`;
       return {date:iso,tmax,tmin,tavg};
     })
-    .filter(Boolean)
-    .sort((a,b)=>a.date.localeCompare(b.date));
+    .filter(Boolean);
+  /* 지금 작성 탭에서 편집 중인(아직 저장 안 한) 날짜의 기온값도 기온추이·GP 차트에
+     바로 반영되도록, 저장된 기록 대신 현재 화면(운영/날씨 섹션)에 표시된 값으로
+     그 날짜 항목을 덮어쓰거나 새로 끼워넣는다. 예전엔 "저장 후 다시 열어야만"
+     차트가 바뀌었는데, 이제 "자동 불러오기"만 눌러도 즉시 반영된다. */
+  const pickerVal=document.getElementById('inp-date-picker')?.value;
+  const avgEl=document.getElementById('w-avg'), minmaxEl=document.getElementById('w-minmax');
+  if(pickerVal && avgEl && minmaxEl){
+    const mmParts=(minmaxEl.textContent||'').split('/');
+    const tmin=parseFloat(mmParts[0]), tmax=parseFloat(mmParts[1]);
+    if(!isNaN(tmin) && !isNaN(tmax)){
+      const avgVal=parseFloat(avgEl.textContent);
+      const tavg=isNaN(avgVal)?(tmax+tmin)/2:avgVal;
+      const idx=arr.findIndex(d=>d.date===pickerVal);
+      const liveEntry={date:pickerVal,tmax,tmin,tavg};
+      if(idx>=0) arr[idx]=liveEntry; else arr.push(liveEntry);
+    }
+  }
+  return arr.sort((a,b)=>a.date.localeCompare(b.date));
 }
 
 function calcTempOffset(){
