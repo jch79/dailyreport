@@ -4613,6 +4613,16 @@ async function fetchWeather(){
     }
     const mergedRain=mergeRainData(prevCache?.rainData30||[], rainData30);
     rainData30=mergedRain; /* 병합된 전체 데이터로 교체 */
+    /* mergeRainData()는 "오늘 날짜"만 API 값으로 갱신하도록 돼 있어서, 과거 날짜를
+       직접 불러왔을 때 방금 조회한 실측값이 캐시(=강우현황 90일 차트)에는 반영되지
+       않고 그 날짜의 "금일 강우량" 입력창에만 반영되는 문제가 있었음 — 그래서 두 곳이
+       서로 다른 값을 보여주고 있었음. 병합 이후에 이번에 조회한 날짜만 한 번 더
+       확실하게 최신값으로 맞춰준다(사용자가 그 날짜를 수동 입력해뒀으면 보호). */
+    if(kmaOverrideRain!=null){
+      const _tgtEntry=rainData30.find(d=>d.date===targetDate);
+      if(_tgtEntry && !_tgtEntry.manual) _tgtEntry.rain=kmaOverrideRain;
+      else if(!_tgtEntry) rainData30.push({date:targetDate,rain:kmaOverrideRain,isToday:(targetDate===todayISO)});
+    }
     saveWeatherCache({temp,feel,humid,wind,sky,avg,monthRain,yearRain,minmax,rainData30});
     /* 입력창은 항상 최종 병합 결과(수동 > 기상청 실측 > 격자 예측 순)와 동일하게 맞춤 —
        그래야 강우현황 차트와 "금일 강우량" 입력창이 서로 다른 값을 보여주는 일이 없음 */
