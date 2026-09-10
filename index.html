@@ -4091,7 +4091,7 @@ function renderIrrBarChart(page){
         </div>`;
       });
       const barEl=`<div style="width:100%;display:flex;flex-direction:column;justify-content:flex-end;height:${colH}px;overflow:hidden;">${segments}</div>`;
-      return`<div onclick="openIrrModal(${start+(Math.min(PAGE,sorted.length-start)-1-di)})" title="${d.label} 클릭하여 관수·TDR 수정"
+      return`<div onclick="openIrrModal('${(d._r.date||'').replace(/'/g,"\\'")}')" title="${d.label} 클릭하여 관수·TDR 수정"
         style="flex:1;display:flex;flex-direction:column;align-items:center;min-width:${COL_MIN}px;max-width:${COL_MAX}px;cursor:pointer;transition:opacity .15s;box-sizing:border-box;"
         onmouseover="this.style.opacity='0.82'" onmouseout="this.style.opacity='1'">
         <div style="font-size:10px;font-weight:700;color:#185FA5;margin-bottom:3px;height:14px;line-height:14px;">${d.total}</div>
@@ -4105,7 +4105,7 @@ function renderIrrBarChart(page){
       </div>`;
     }
     /* 관수 기록 없는 날 */
-    return`<div onclick="openIrrModal(${start+(Math.min(PAGE,sorted.length-start)-1-di)})" title="${d.label} 관수 기록 없음 (클릭하여 입력)"
+    return`<div onclick="openIrrModal('${(d._r.date||'').replace(/'/g,"\\'")}')" title="${d.label} 관수 기록 없음 (클릭하여 입력)"
       style="flex:1;display:flex;flex-direction:column;align-items:center;min-width:${COL_MIN}px;max-width:${COL_MAX}px;cursor:pointer;opacity:0.6;transition:opacity .15s;box-sizing:border-box;"
       onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='0.6'">
       <div style="font-size:10px;color:#ccc;margin-bottom:3px;height:14px;"></div>
@@ -8497,17 +8497,30 @@ function moveWriteSec(secId,dir){
 
 /* ── 관수+TDR 클릭 팝업 수정 ── */
 let _irrModalIdx=null;
+let _irrModalDate=null;
 
-function openIrrModal(sortedIdx){
+function openIrrModal(dateStr){
   if(!guardSectionEdit('irr'))return;
   const all=gd();
-  /* sorted는 renderIrrBarChart 스코프라 직접 접근 불가 → 전체에서 irrigation 있는 것만 재정렬 */
-  function toISO2(d){const m=d.match(/(\d+)년\s*(\d+)월\s*(\d+)일/);if(!m)return d;const yy=parseInt(m[1]);const yyyy=yy<50?2000+yy:1900+yy;return`${yyyy}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;}
-  const sorted=all.filter(r=>r.irrigation).sort((a,b)=>toISO2(b.date).localeCompare(toISO2(a.date)));
-  const r=sorted[sortedIdx];
-  if(!r)return;
-  /* 실제 all 배열 내 인덱스 */
-  _irrModalIdx=all.indexOf(r);
+  /* v155 버그수정: 예전에는 renderIrrBarChart가 그린 화면상의 "순번"을 그대로 넘겨받아
+     저장소에서 같은 순번의 레코드를 찾았음. 그런데 30일 차트는 "작성" 탭에서 아직
+     저장 전인 입력값을 미리보기로 배열에 임시로 끼워넣은 뒤 순번을 매기기 때문에,
+     그 임시 항목 유무에 따라 두 쪽의 순번 계산이 하나씩 어긋날 수 있었음 → 클릭한
+     날짜와 실제로 열리고 저장되는 레코드가 달라지는(옆 날짜가 수정되는) 원인이었음.
+     이제는 순번 대신 클릭한 막대의 실제 날짜 문자열로 저장소에서 직접 찾아,
+     배열 순서/길이가 달라져도 항상 정확한 레코드를 가리키도록 함. */
+  _irrModalDate=dateStr;
+  let idx=all.findIndex(r=>r.date===dateStr);
+  let r;
+  if(idx>=0){
+    r=all[idx];
+    _irrModalIdx=idx;
+  }else{
+    /* 아직 저장된 적 없는 날짜(작성 탭 미리보기 전용 항목) — 새 레코드로 만들어서 편집 가능하게 함 */
+    r={date:dateStr};
+    all.push(r);
+    _irrModalIdx=all.length-1;
+  }
   const irr=r.irrigation||{};
   const tdr=r.tdr||{};
 
@@ -8610,10 +8623,13 @@ function openIrrModal(sortedIdx){
 }
 
 function saveIrrModal(){
-  if(_irrModalIdx===null)return;
+  if(_irrModalIdx===null||!_irrModalDate)return;
   const all=gd();
-  const r=all[_irrModalIdx];
-  if(!r)return;
+  /* 순번이 아니라 날짜로 다시 찾음 — openIrrModal이 배열을 연 뒤 사이에 다른 저장이
+     끼어들어도(혹은 신규 날짜라 그 사이 배열 길이가 달라져도) 항상 정확한 레코드를
+     가리키도록 함. 저장소에 아직 없는 날짜(최초 입력)면 새로 만들어 끝에 추가. */
+  let r=all.find(x=>x.date===_irrModalDate);
+  if(!r){ r={date:_irrModalDate}; all.push(r); }
   const g=id=>document.getElementById(id)?.value||'';
   const zones=getIrrZones();
   const irrObj={note:g('mp-irr-note')};
@@ -8670,6 +8686,7 @@ function closeIrrModal(e){
   if(e&&e.target!==document.getElementById('irr-edit-modal'))return;
   document.getElementById('irr-edit-modal').style.display='none';
   _irrModalIdx=null;
+  _irrModalDate=null;
 }
 
 function syncCourseName(v){if(!guardAdminOnly('골프장 이름')){ const cur=gcn(); const f=document.getElementById('inp-course'); if(f)f.value=cur; return; } const n=v.trim()||'골프장';document.getElementById('nav-course-name').textContent=n;scn(n);if(typeof fbSaveSharedSettings==='function') setTimeout(fbSaveSharedSettings,1000);}
@@ -10590,11 +10607,11 @@ function parseGram(str){
   else if(u==='l') v *= 1000;   /* 리터 → ml 변환 */
   return v;
 }
-/* ── 모래 사용량 파싱 — 톤/kg/포/mm(두께) 등 자유 단위를 그대로 존중해서 숫자+단위로 분리 ── */
+/* ── 모래 사용량 파싱 — 톤/kg/포 등 자유 단위를 그대로 존중해서 숫자+단위로 분리 ── */
 function parseSandAmt(str){
   if(!str) return null;
   const s = String(str).trim().replace(/,/g,'');
-  const m = s.match(/([\d.]+)\s*(kg|g|t|톤|㎥|m3|포|mm)?/i);
+  const m = s.match(/([\d.]+)\s*(kg|g|t|톤|㎥|m3|포)?/i);
   if(!m) return null;
   let v = parseFloat(m[1]);
   if(isNaN(v)||v<=0) return null;
