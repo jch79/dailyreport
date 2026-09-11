@@ -7385,6 +7385,44 @@ function buildGpNChartSVG(dates,gpMap,nMap){
     </div>`;
 }
 
+/* 특정 날짜 · 특정 그린기준(area)의 비료 시비 내역 — 상표명/사용량/질소 순성분량(g).
+   getDailyNByArea와 동일한 처리지역 매칭 기준을 재사용하되, 합계가 아니라 품목별 내역을 반환 */
+function getFertItemsForDateArea(iso,areaId){
+  const names=gpAreaNames(areaId);
+  if(!names.length)return[];
+  const rec=gd().find(r=>{
+    const m=r.date?.match(/(\d+)년\s*(\d+)월\s*(\d+)일/);
+    if(!m)return false;
+    const yy=parseInt(m[1]);const yyyy=yy<50?2000+yy:1900+yy;
+    return`${yyyy}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`===iso;
+  });
+  if(!rec)return[];
+  const items=[];
+  (rec.matUseRows||[]).forEach(block=>{
+    if(!names.some(x=>String(block.areaName||'').trim()===x))return;
+    (block.items||[]).forEach(item=>{
+      if(item.type!=='fert')return;
+      const nutr=calcFertNutr(item);
+      const nEntry=nutr&&nutr.find(x=>x.n==='N');
+      if(!nEntry)return;
+      items.push({name:item.brandName||item.product||'—',amount:item.amount||'',nGrams:nEntry.g});
+    });
+  });
+  return items;
+}
+
+/* 특정 날짜까지의 GP 7일 이동평균값 — 차트에 그려지는 이동평균선과 같은 계산(트레일링, 앞부분은
+   있는 만큼만 평균) 방식을 그대로 재사용해, 산출근거 팝업에서도 그 시점 이동평균선상의 값을 그대로 보여줌 */
+function getGpMovingAvgAt(iso,window){
+  window=window||7;
+  const gpMap=getDailyGPMap();
+  const dates=Object.keys(gpMap).sort().filter(d=>d<=iso);
+  if(!dates.length)return null;
+  const vals=dates.map(d=>gpMap[d]);
+  const windowVals=vals.slice(Math.max(0,vals.length-window));
+  return windowVals.reduce((a,b)=>a+b,0)/windowVals.length;
+}
+
 /* 특정 날짜의 GP 산출근거 팝업 */
 function showGpCalcModal(iso){
   const body=document.getElementById('gp-calc-modal-body');
@@ -7397,6 +7435,21 @@ function showGpCalcModal(iso){
     body.innerHTML=`<div>${iso} 날짜는 기온 데이터가 없어 GP를 계산할 수 없습니다.</div>`;
   } else {
     const diff=(tavg-GP_TOPT);
+    const maVal=getGpMovingAvgAt(iso);
+    const area=document.getElementById('gp-area-sel')?.value||'';
+    const fertItems=area?getFertItemsForDateArea(iso,area):[];
+    const fertNSum=fertItems.reduce((s,x)=>s+x.nGrams,0);
+    const fertHtml=fertItems.length?`
+      <div style="font-size:12px;font-weight:700;color:#185FA5;margin:12px 0 5px;">🌾 이 날짜 질소 시비 내역</div>
+      ${fertItems.map(x=>`
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #f0f0f0;font-size:12px;">
+          <span style="color:#333;">${x.name}</span>
+          <span style="color:#888;">${x.amount}</span>
+          <span style="color:#185FA5;font-weight:700;">N ${x.nGrams.toFixed(2)}g</span>
+        </div>`).join('')}
+      <div style="display:flex;justify-content:space-between;padding:5px 0;font-size:12px;font-weight:700;">
+        <span>합계 순질소(N)</span><span style="color:#185FA5;">${fertNSum.toFixed(2)}g</span>
+      </div>` : '';
     body.innerHTML=`
       <div style="font-weight:700;font-size:14px;margin-bottom:8px;">${iso}</div>
       <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f0f0f0;"><span>일평균기온</span><b>${tavg.toFixed(1)}°C</b></div>
@@ -7405,10 +7458,13 @@ function showGpCalcModal(iso){
       <div style="margin:10px 0;padding:9px 11px;background:#f5f8f5;border-radius:8px;font-size:12px;color:#555;">
         GP = EXP( -0.5 × ((${tavg.toFixed(1)} - ${GP_TOPT}) / ${GP_SIGMA})² )
       </div>
-      <div style="font-size:20px;font-weight:800;color:#3B6D11;text-align:center;">GP = ${(gp*100).toFixed(1)}%</div>`;
+      <div style="font-size:20px;font-weight:800;color:#3B6D11;text-align:center;">GP = ${(gp*100).toFixed(1)}%</div>
+      ${maVal!==null?`<div style="font-size:12px;color:#B45309;text-align:center;margin-top:4px;">GP 7일 이동평균선상 값: <b>${(maVal*100).toFixed(1)}%</b></div>`:''}
+      ${fertHtml}`;
   }
   modal.style.display='flex';
 }
+
 
 /* ── 인쇄 ── */
 function printCurrentTab(){
