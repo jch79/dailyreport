@@ -3994,6 +3994,7 @@ function renderIrrBarChart(page){
      항목을 덮어쓰거나(기존 기록이 있으면) 새로 끼워넣는다(기존 기록이 없으면).
      기온추이·GP 차트와 같은 맥락 — "저장 후 다시 열어야만" 반영되던 불편 해소. */
   const pickerISO=getPickerISO();
+  let liveOverlayISO=null; /* 실제 저장된 값과 다른(=아직 저장 안 한) 미리보기가 적용된 날짜 — 있으면 배지로 표시 */
   if(pickerISO && document.getElementById(`irr-${getIrrZones()[0]?.key}-auto`)){
     const zones=getIrrZones();
     const liveIrr={};
@@ -4007,6 +4008,9 @@ function renderIrrBarChart(page){
     if(anyVal){
       const pickerLabel=document.getElementById('inp-date')?.value;
       const idx=all.findIndex(r=>toISO2(r.date)===pickerISO);
+      const liveTotal=zones.reduce((s,z)=>s+getZoneTotal(liveIrr,z.key),0);
+      const savedTotal=idx>=0?zones.reduce((s,z)=>s+getZoneTotal(all[idx].irrigation||{},z.key),0):0;
+      if(liveTotal!==savedTotal)liveOverlayISO=pickerISO; /* 화면 입력값이 실제 저장값과 달라 "미리보기" 상태임 */
       if(idx>=0) all[idx]={...all[idx],irrigation:liveIrr};
       else if(pickerLabel) all.push({date:pickerLabel,irrigation:liveIrr});
     }
@@ -4057,7 +4061,8 @@ function renderIrrBarChart(page){
     const vals=IRR_ZONES.map(z=>getZoneTotal(irr,z.key));
     const total=vals.reduce((a,b)=>a+b,0);
     const dm=r.date.match(/(\d+)년\s*(\d+)월\s*(\d+)일.*?([월화수목금토일])/);
-    return{label:dm?`${parseInt(dm[2])}/${parseInt(dm[3])}`:'',dow:dm?dm[4]:'',total,vals,irr,_r:r};
+    const isLivePreview=liveOverlayISO!==null && toISO2(r.date)===liveOverlayISO;
+    return{label:dm?`${parseInt(dm[2])}/${parseInt(dm[3])}`:'',dow:dm?dm[4]:'',total,vals,irr,_r:r,isLivePreview};
   });
   const maxTotal=Math.max(...days.map(d=>d.total),1);
   days.forEach(d=>{
@@ -4091,11 +4096,12 @@ function renderIrrBarChart(page){
         </div>`;
       });
       const barEl=`<div style="width:100%;display:flex;flex-direction:column;justify-content:flex-end;height:${colH}px;overflow:hidden;">${segments}</div>`;
-      return`<div onclick="openIrrModal('${(d._r.date||'').replace(/'/g,"\\'")}')" title="${d.label} 클릭하여 관수·TDR 수정"
+      return`<div onclick="openIrrModal('${(d._r.date||'').replace(/'/g,"\\'")}')" title="${d.label} 클릭하여 관수·TDR 수정${d.isLivePreview?' (⚠ 아직 저장 안 한 작성 탭 입력값 미리보기 — 실제 저장하려면 \'저장하기\' 클릭 필요)':''}"
         style="flex:1;display:flex;flex-direction:column;align-items:center;min-width:${COL_MIN}px;max-width:${COL_MAX}px;cursor:pointer;transition:opacity .15s;box-sizing:border-box;"
         onmouseover="this.style.opacity='0.82'" onmouseout="this.style.opacity='1'">
         <div style="font-size:10px;font-weight:700;color:#185FA5;margin-bottom:3px;height:14px;line-height:14px;">${d.total}</div>
-        <div style="width:100%;height:${BAR_H}px;display:flex;flex-direction:column;justify-content:flex-end;background:${isWeekend?'#fdf5f5':'#f2f7fd'};border-radius:5px 5px 0 0;border:1px solid ${isWeekend?'#f0d0d0':'#d8e8f8'};overflow:hidden;">
+        <div style="width:100%;height:${BAR_H}px;display:flex;flex-direction:column;justify-content:flex-end;background:${isWeekend?'#fdf5f5':'#f2f7fd'};border-radius:5px 5px 0 0;border:${d.isLivePreview?'2px dashed #E67E22':`1px solid ${isWeekend?'#f0d0d0':'#d8e8f8'}`};overflow:hidden;position:relative;">
+          ${d.isLivePreview?`<div style="position:absolute;top:2px;left:0;right:0;text-align:center;font-size:7.5px;font-weight:800;color:#fff;background:#E67E22;line-height:1.4;">미저장 미리보기</div>`:''}
           ${barEl}
         </div>
         <div style="margin-top:4px;text-align:center;line-height:1.2;">
