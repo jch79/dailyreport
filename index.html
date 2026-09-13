@@ -7585,53 +7585,67 @@ async function runWeatherBackfillPreview(){
   const resultEl=document.getElementById('backfill-result');
   if(!resultEl)return;
   if(!start||!end||start>end){ resultEl.innerHTML='<div style="color:#c0392b;">시작일/종료일을 확인해주세요</div>'; return; }
-  resultEl.innerHTML='조회 중...';
-  const tm1=start.replace(/-/g,''), tm2=end.replace(/-/g,'');
-  try{
-    const fetchOne=(obs)=>{
-      const ctrl=new AbortController();
-      const tid=setTimeout(()=>ctrl.abort(),15000);
-      return fetch(`https://empty-morning-c054.loveinch2000.workers.dev/?path=sfc_aws_day.php&tm1=${tm1}&tm2=${tm2}&obs=${obs}&stn=460`,{signal:ctrl.signal})
-        .then(r=>r.text()).finally(()=>clearTimeout(tid));
-    };
-    const [taMaxTxt,taMinTxt,rnDayTxt]=await Promise.all([fetchOne('ta_max'),fetchOne('ta_min'),fetchOne('rn_day')]);
-    const maxMap=parseKmaDayCsv(taMaxTxt), minMap=parseKmaDayCsv(taMinTxt), rainMap=parseKmaDayCsv(rnDayTxt);
 
-    const dates=[];
-    for(let d=new Date(start);d<=new Date(end);d.setDate(d.getDate()+1)){
-      dates.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);
-    }
-    const all=gd();
-    const existingISOs=new Set(all.map(r=>{
-      const m=r.date?.match(/(\d+)년\s*(\d+)월\s*(\d+)일/);
-      if(!m)return null;
-      const yy=parseInt(m[1]);const yyyy=yy<50?2000+yy:1900+yy;
-      return `${yyyy}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
-    }).filter(Boolean));
-
-    const rows=dates.map(iso=>{
-      const tmax=maxMap[iso], tmin=minMap[iso], rain=rainMap[iso];
-      return {iso, tmax, tmin, rain, hasTemp:(tmax!==undefined&&tmin!==undefined), already:existingISOs.has(iso)};
-    });
-    _backfillPreviewData=rows;
-
-    const okCount=rows.filter(r=>r.hasTemp&&!r.already).length;
-    const alreadyCount=rows.filter(r=>r.already).length;
-    const missingCount=rows.filter(r=>!r.hasTemp&&!r.already).length;
-
-    resultEl.innerHTML=`
-      <div style="margin-bottom:8px;">총 ${rows.length}일 중 · 신규 생성 가능 <b style="color:#185FA5;">${okCount}일</b> · 이미 기록 있음 ${alreadyCount}일 · 기상청 자료 없음 <b style="color:#c0392b;">${missingCount}일</b></div>
-      <div style="max-height:150px;overflow-y:auto;border:1px solid #eee;border-radius:6px;padding:6px 8px;margin-bottom:8px;">
-        ${rows.map(r=>`<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid #f5f5f5;">
-          <span>${r.iso}</span>
-          <span style="color:${r.already?'#aaa':r.hasTemp?'#333':'#c0392b'};">${r.already?'기존 기록 있음':r.hasTemp?`${r.tmin}~${r.tmax}°C · ${r.rain!==undefined?r.rain+'mm':'-'}`:'자료 없음'}</span>
-        </div>`).join('')}
-      </div>
-      ${okCount>0?`<button onclick="applyWeatherBackfill()" style="width:100%;padding:9px;border:none;border-radius:8px;background:#3B6D11;color:#fff;font-size:12px;font-weight:700;cursor:pointer;">✅ ${okCount}일 자동백필 기록 생성</button>`:''}`;
-  }catch(e){
-    resultEl.innerHTML=`<div style="color:#c0392b;">조회 실패: ${e.message||e}</div>`;
-    console.warn('[백필] 조회 실패',e);
+  const dates=[];
+  for(let d=new Date(start);d<=new Date(end);d.setDate(d.getDate()+1)){
+    dates.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);
   }
+  const all=gd();
+  const existingISOs=new Set(all.map(r=>{
+    const m=r.date?.match(/(\d+)년\s*(\d+)월\s*(\d+)일/);
+    if(!m)return null;
+    const yy=parseInt(m[1]);const yyyy=yy<50?2000+yy:1900+yy;
+    return `${yyyy}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+  }).filter(Boolean));
+
+  /* v1(범위조회 tm1~tm2)는 강수량 누적계산에서만 검증된 방식이었고, 기온
+     최고/최저(ta_max/ta_min)는 원래 하루씩(tm2만) 조회하는 방식만 실제 동작이
+     확인돼 있었음 — 범위로 걸었더니 전부 "자료 없음"으로 나온 원인으로 보여,
+     기존에 검증된 하루 단위(tm2만) 방식으로 날짜별 순회 조회하도록 변경 */
+  const parseDayVal=(txt)=>{
+    const l=(txt||'').split('\n').map(s=>s.trim()).find(s=>s&&!s.startsWith('#'));
+    if(!l)return null;
+    const cols=l.split(',');
+    const v=parseFloat(cols[5]);
+    return isNaN(v)?null:v;
+  };
+  const fetchDay=(dISO,obs)=>{
+    const ctrl=new AbortController();
+    const tid=setTimeout(()=>ctrl.abort(),10000);
+    return fetch(`https://empty-morning-c054.loveinch2000.workers.dev/?path=sfc_aws_day.php&tm2=${dISO}&obs=${obs}&stn=460`,{signal:ctrl.signal})
+      .then(r=>r.text()).finally(()=>clearTimeout(tid));
+  };
+
+  const rows=[];
+  for(let i=0;i<dates.length;i++){
+    const iso=dates[i];
+    resultEl.innerHTML=`조회 중... (${i+1}/${dates.length}) ${iso}`;
+    if(existingISOs.has(iso)){ rows.push({iso,tmax:null,tmin:null,rain:null,hasTemp:false,already:true}); continue; }
+    const dISO=iso.replace(/-/g,'');
+    try{
+      const [maxTxt,minTxt,rainTxt]=await Promise.all([fetchDay(dISO,'ta_max'),fetchDay(dISO,'ta_min'),fetchDay(dISO,'rn_day')]);
+      const tmax=parseDayVal(maxTxt), tmin=parseDayVal(minTxt), rain=parseDayVal(rainTxt);
+      rows.push({iso,tmax,tmin,rain,hasTemp:(tmax!=null&&tmin!=null),already:false});
+    }catch(e){
+      rows.push({iso,tmax:null,tmin:null,rain:null,hasTemp:false,already:false});
+    }
+    await new Promise(res=>setTimeout(res,120)); /* 서버 부담 완화용 짧은 텀 */
+  }
+  _backfillPreviewData=rows;
+
+  const okCount=rows.filter(r=>r.hasTemp&&!r.already).length;
+  const alreadyCount=rows.filter(r=>r.already).length;
+  const missingCount=rows.filter(r=>!r.hasTemp&&!r.already).length;
+
+  resultEl.innerHTML=`
+    <div style="margin-bottom:8px;">총 ${rows.length}일 중 · 신규 생성 가능 <b style="color:#185FA5;">${okCount}일</b> · 이미 기록 있음 ${alreadyCount}일 · 기상청 자료 없음 <b style="color:#c0392b;">${missingCount}일</b></div>
+    <div style="max-height:150px;overflow-y:auto;border:1px solid #eee;border-radius:6px;padding:6px 8px;margin-bottom:8px;">
+      ${rows.map(r=>`<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid #f5f5f5;">
+        <span>${r.iso}</span>
+        <span style="color:${r.already?'#aaa':r.hasTemp?'#333':'#c0392b'};">${r.already?'기존 기록 있음':r.hasTemp?`${r.tmin}~${r.tmax}°C · ${r.rain!=null?r.rain+'mm':'-'}`:'자료 없음'}</span>
+      </div>`).join('')}
+    </div>
+    ${okCount>0?`<button onclick="applyWeatherBackfill()" style="width:100%;padding:9px;border:none;border-radius:8px;background:#3B6D11;color:#fff;font-size:12px;font-weight:700;cursor:pointer;">✅ ${okCount}일 자동백필 기록 생성</button>`:''}`;
 }
 
 function applyWeatherBackfill(){
@@ -7652,7 +7666,7 @@ function applyWeatherBackfill(){
       backfilled:true,
       weather:{temp:'--',feel:'--',humid:'--',wind:'--',sky:'--',avg:avg.toFixed(1),avgh:'--',minmaxh:'--',
         monthRain:'--',yearRain:'--',minmax:`${Math.round(r.tmin)} / ${Math.round(r.tmax)}`,
-        rain:(r.rain!==undefined?r.rain:0).toString(),snow:'0',wdir:'',note:'(기상청 실측 자동백필)',
+        rain:(r.rain!=null?r.rain:0).toString(),snow:'0',wdir:'',note:'(기상청 실측 자동백필)',
         fetchedAt:new Date().toISOString(),badges:{}}
     };
     all.push(rec);
