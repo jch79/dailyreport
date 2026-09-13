@@ -676,8 +676,8 @@ body{font-family:'맑은 고딕','Apple SD Gothic Neo',sans-serif;font-size:14px
    원래도 overflow-x:auto라 폭을 줄여도 문제없이 그대로 스크롤됨.
    (처음엔 1000px로 좁혔더니, 원래 스크롤 없이 한 줄로 다 보이던 "운영/날씨" 4카드
    같은 구간까지 억지로 스크롤이 걸려버려 오히려 더 불편해짐 → 1300px로 넉넉하게 상향) */
-@media (min-width:1340px){
-  .panel{max-width:1300px;margin-left:auto;margin-right:auto;}
+@media (min-width:1560px){
+  .panel{max-width:1500px;margin-left:auto;margin-right:auto;}
 }
 
 /* ── CARD ── */
@@ -1245,8 +1245,8 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
     <div style="font-size:9px;color:#999;text-align:right;margin-bottom:2px;">◀ 좌우로 스크롤 가능 ▶</div>
     <div style="display:flex;gap:10px;align-items:start;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px;">
 
-      <!-- ★ 좌: 관수 4구역 -->
-      <div style="flex:0 0 360px;min-width:360px;">
+      <!-- ★ 좌: 관수 4구역 (요청으로 폭 20% 확대: 360px → 432px) -->
+      <div style="flex:0 0 432px;min-width:432px;">
         <div style="font-size:10px;font-weight:700;color:#185FA5;display:flex;align-items:center;justify-content:space-between;gap:5px;margin-bottom:6px;">
           <span style="display:flex;align-items:center;gap:5px;">
             <span style="display:inline-block;width:3px;height:12px;border-radius:2px;background:#378ADD;"></span>
@@ -7013,7 +7013,7 @@ function renderTempChart(){
   const range=maxV-minV||1;
 
   const H=130,PL=32,PR=12,PT=20,PB=28; /* GP 차트와 동일한 크기감으로 통일 */
-  const W=Math.max(220,PL+PR+n*16); /* 하루당 16px 고정폭 — 100% 폭에 욱여넣던 기존 방식은 항상 다 들어가버려 스크롤이 안 됐음. 고정폭이라 데이터가 많아지면 자연스럽게 좌우 스크롤됨(GP 차트와 동일 원리) */
+  const W=Math.max(220,PL+PR+n*28); /* 하루당 16→28px로 확대(요청) — 기온차트는 30일 창으로만 보여줘서 GP차트(수백일 표시)보다 늘 좁아 보였음. 한 칸당 폭을 넓혀 GP차트에 가까운 크기감을 줌. 100% 폭에 욱여넣던 기존 방식은 항상 다 들어가버려 스크롤이 안 됐었음 */
   const cW=W-PL-PR,cH=H-PT-PB;
   const xPos=i=>PL+(n<=1?cW/2:i/(n-1)*cW);
   const yPos=v=>PT+cH-(v-minV)/range*cH;
