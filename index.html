@@ -667,6 +667,17 @@ body{font-family:'맑은 고딕','Apple SD Gothic Neo',sans-serif;font-size:14px
 .panel{display:none;padding:14px;}
 .panel.active{display:block;}
 
+/* ── 데스크톱 폭 대응 ──
+   모바일 기준으로 만든 화면이라 카드마다 내부 요소(관수 구역 카드, 작업자 표 등)의
+   "자연스러운" 너비가 제각각인데, 좁은 화면에선 다 한 줄로 눌려서 티가 안 나다가
+   PC의 넓은 창(1300px+)에서는 카드마다 다르게 늘어나 들쭉날쭉해 보였음.
+   내용 자체를 다 뜯어고치는 대신, 패널 전체를 적당한 최대폭으로 가운데 정렬해서
+   "웹앱 패널" 느낌으로 통일감을 줌 — 각 카드 내부의 스크롤형 차트(관수·기온·GP 등)는
+   원래도 overflow-x:auto라 폭을 줄여도 문제없이 그대로 스크롤됨. */
+@media (min-width:1060px){
+  .panel{max-width:1000px;margin-left:auto;margin-right:auto;}
+}
+
 /* ── CARD ── */
 .card{background:#fff;border:2px solid #c8c8c8;border-radius:10px;padding:16px;margin-bottom:14px;min-width:0;overflow:hidden;}
 .card-title{font-size:12px;font-weight:700;color:#444;margin-bottom:12px;letter-spacing:.05em;text-transform:uppercase;border-bottom:2px solid #e0e0e0;padding-bottom:6px;}
