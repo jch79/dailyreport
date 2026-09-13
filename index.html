@@ -3155,6 +3155,7 @@ function applyWeatherToUI(w){
     _rainManualNav=false;
     renderRainChart();
     _tempManualNav=false;
+    _gpManualNav=false;
     _tempOffset=calcTempOffset();
     renderTempChart();
     /* 캐시 복원 시 "금일 강우량" 입력칸도 차트(오늘 항목)와 항상 같은 값으로 동기화
@@ -4395,6 +4396,7 @@ async function fetchWeather(){
       _rainManualNav=false;
       renderRainChart();
       _tempManualNav=false;
+      _gpManualNav=false;
       _tempOffset=calcTempOffset();
       renderTempChart();
 
@@ -4520,6 +4522,7 @@ async function fetchWeather(){
         _rainManualNav=false;
         renderRainChart();
         _tempManualNav=false;
+        _gpManualNav=false;
         _tempOffset=calcTempOffset();
         renderTempChart();
 
@@ -4725,6 +4728,7 @@ async function fetchWeather(){
     _rainManualNav=false;
     renderRainChart();
     _tempManualNav=false;
+    _gpManualNav=false;
     _tempOffset=calcTempOffset();
     renderTempChart();
 
@@ -5709,6 +5713,7 @@ function loadForEdit(idx,silent){
     document.getElementById('inp-date-picker').value=_isoVal;
     /* 기온 추이/볼스피드 차트: 수동 이동 리셋 → renderTempChart에서 picker 기준 자동 설정 */
     _tempManualNav=false;
+    _gpManualNav=false;
     _rainManualNav=false;
     _irrManualNav=false;
     window._bsManualNav={};
@@ -7013,7 +7018,13 @@ function renderTempChart(){
   const range=maxV-minV||1;
 
   const H=175,PL=34,PR=14,PT=24,PB=32; /* 요청으로 세로 확대(130→175) */
-  const W=Math.max(220,PL+PR+n*36); /* 요청으로 좌우 폭도 추가 확대(28→36px/일) */
+  /* 요청: 데이터가 적어 컨테이너보다 좁을 땐 남는 공간 없이 우측 끝까지 채우기 —
+     하루당 폭을 컨테이너 실제 폭에 맞춰 늘리고, 그래도 최소폭(36px/일)보다
+     넓어질 뿐 좁아지진 않게 해서 데이터 많을 땐 기존처럼 스크롤됨 */
+  const availW=el.clientWidth||0;
+  const minDayW=42;
+  const dayW=availW>PL+PR ? Math.max(minDayW,(availW-PL-PR)/n) : minDayW;
+  const W=Math.max(220,PL+PR+n*dayW);
   const cW=W-PL-PR,cH=H-PT-PB;
   const xPos=i=>PL+(n<=1?cW/2:i/(n-1)*cW);
   const yPos=v=>PT+cH-(v-minV)/range*cH;
@@ -7025,7 +7036,7 @@ function renderTempChart(){
     const gv=minV+(maxV-minV)/gCnt*g;
     const gy=yPos(gv);
     grid+=`<line x1="${PL}" y1="${gy.toFixed(1)}" x2="${W-PR}" y2="${gy.toFixed(1)}" stroke="${g===0?'#ddd':'#f2f2f2'}" stroke-width="${g===0?0.7:0.35}"/>`;
-    grid+=`<text x="${PL-3}" y="${(gy+2.4).toFixed(1)}" font-size="8" fill="#ccc" text-anchor="end">${Math.round(gv)}°</text>`;
+    grid+=`<text x="${PL-3}" y="${(gy+2.4).toFixed(1)}" font-size="10" fill="#ccc" text-anchor="end">${Math.round(gv)}°</text>`;
   }
 
   /* 라인 빌더 */
@@ -7036,10 +7047,10 @@ function renderTempChart(){
       if(v==null){prev=null;return;}
       const px=xPos(i),py=yPos(v);
       path+=(prev?`L${px.toFixed(1)},${py.toFixed(1)}`:`M${px.toFixed(1)},${py.toFixed(1)}`);
-      dots+=`<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="2.3" fill="${color}" stroke="#fff" stroke-width="0.9"><title>${p.date} ${key==='tmax'?'최고':key==='tmin'?'최저':'평균'}: ${v.toFixed(1)}°C</title></circle>`;
+      dots+=`<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="2.7" fill="${color}" stroke="#fff" stroke-width="0.9"><title>${p.date} ${key==='tmax'?'최고':key==='tmin'?'최저':'평균'}: ${v.toFixed(1)}°C</title></circle>`;
       /* 값 라벨: 5개 간격 */
       if(i%Math.max(1,Math.ceil(n/8))===0||i===n-1)
-        dots+=`<text x="${px.toFixed(1)}" y="${(py-5.5).toFixed(1)}" font-size="7.8" fill="${color}" text-anchor="middle">${v.toFixed(1)}</text>`;
+        dots+=`<text x="${px.toFixed(1)}" y="${(py-5.5).toFixed(1)}" font-size="9.5" fill="${color}" text-anchor="middle">${v.toFixed(1)}</text>`;
       prev={x:px,y:py};
     });
     return `<path d="${path}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"${dash?` stroke-dasharray="${dash}"`:''}/>${dots}`;
@@ -7070,7 +7081,7 @@ function renderTempChart(){
   pts.forEach((p,i)=>{
     if(i%step!==0&&i!==n-1)return;
     const [,mm,dd]=p.date.split('-');
-    xLabels+=`<text x="${xPos(i).toFixed(1)}" y="${H-5}" font-size="8" fill="#aaa" text-anchor="middle">${parseInt(mm)}/${parseInt(dd)}</text>`;
+    xLabels+=`<text x="${xPos(i).toFixed(1)}" y="${H-5}" font-size="10" fill="#aaa" text-anchor="middle">${parseInt(mm)}/${parseInt(dd)}</text>`;
   });
 
   /* 날짜 클릭 영역(직접 수정) — 각 날짜 열 전체 높이를 덮는 투명 사각형 */
@@ -7088,7 +7099,7 @@ function renderTempChart(){
 
   el.innerHTML=`
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px;gap:4px;flex-wrap:wrap;">
-      <div style="display:flex;gap:10px;font-size:9px;color:#555;align-items:center;flex-wrap:wrap;">
+      <div style="display:flex;gap:10px;font-size:10.5px;color:#555;align-items:center;flex-wrap:wrap;">
         <span style="display:flex;align-items:center;gap:2px;"><span style="width:12px;height:2.5px;background:#E74C3C;border-radius:1px;display:inline-block;"></span>최고</span>
         <span style="display:flex;align-items:center;gap:2px;"><span style="width:12px;height:2.5px;background:#2980B9;border-radius:1px;display:inline-block;"></span>최저</span>
         <span style="display:flex;align-items:center;gap:2px;"><span style="width:12px;height:2.5px;background:#27AE60;border-radius:1px;display:inline-block;border-bottom:2px dashed #27AE60;background:none;"></span>평균</span>
@@ -7429,25 +7440,49 @@ function toggleGpCompareYear(y){
   else _gpCompareYears.add(y);
   renderGpWriteBox();
 }
+/* 요청: 표시 날짜수를 줄여서 하루 간격을 더 넓게 — 원래는 기록 시작일부터 전체 기간을
+   다 보여줘서(600일 이상) 날짜당 폭이 좁을 수밖에 없었음. 기온추이 차트처럼 최근 N일
+   창 + 좌우 페이지 이동(◀/▶)으로 바꿔 하루 간격을 넉넉하게 확보 */
+const GP_WIN=40;
+let _gpOffset=0;
+let _gpManualNav=false;
+function gpNav(dir){
+  const area=document.getElementById('gp-area-sel')?.value||'';
+  const iso=getPickerISO()||(()=>{const t=new Date();return`${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`;})();
+  let dates=Object.keys(getDailyGPMap()).sort();
+  if(iso)dates=dates.filter(d=>d<=iso);
+  const total=dates.length;
+  const win=Math.min(GP_WIN,total);
+  _gpOffset=Math.max(0,Math.min(total-win,_gpOffset+dir*win));
+  _gpManualNav=true;
+  renderGpWriteBox();
+}
 function renderGpWriteChart(area,iso,gpMap,nMap){
   const el=document.getElementById('gp-write-chart');
   if(!el)return;
   gpMap=gpMap||getDailyGPMap();
   nMap=nMap||getDailyNByArea(area);
-  let dates=Object.keys(gpMap).sort();
-  if(iso)dates=dates.filter(d=>d<=iso);
-  if(!dates.length){
+  let allDates=Object.keys(gpMap).sort();
+  if(iso)allDates=allDates.filter(d=>d<=iso);
+  if(!allDates.length){
     el.innerHTML='<div style="font-size:11px;color:#aaa;padding:8px 0;">기온 데이터 없음 (운영/날씨 섹션에서 기온 입력 후 표시)</div>';
     return;
   }
-  el.innerHTML=buildGpNChartSVG(dates,gpMap,nMap);
+  const total=allDates.length;
+  const win=Math.min(GP_WIN,total);
+  if(!_gpManualNav) _gpOffset=Math.max(0,total-win);
+  if(_gpOffset>total-win)_gpOffset=Math.max(0,total-win);
+  if(_gpOffset<0)_gpOffset=0;
+  const dates=allDates.slice(_gpOffset,_gpOffset+win);
+  el.innerHTML=buildGpNChartSVG(dates,gpMap,nMap,{offset:_gpOffset,total,win});
   const sc=el.querySelector('.gp-chart-scroll');
   if(sc)sc.scrollLeft=sc.scrollWidth;
 }
 
 
 /* GP 라인 + 일일 질소시비량 막대 결합 SVG 차트 (좌우 스크롤 가능, 날짜 클릭 시 산출근거 팝업) */
-function buildGpNChartSVG(dates,gpMap,nMap){
+function buildGpNChartSVG(dates,gpMap,nMap,navInfo){
+  navInfo=navInfo||{offset:0,total:dates.length,win:dates.length};
   const n=dates.length;
   const nVals=dates.map(d=>nMap[d]||0);
   const maxN=Math.max(...nVals,0.001);
@@ -7494,7 +7529,7 @@ function buildGpNChartSVG(dates,gpMap,nMap){
   [0,0.5,1].forEach(gv=>{
     const gy=yPosGp(gv);
     grid+=`<line x1="${PL}" y1="${gy.toFixed(1)}" x2="${W-PR}" y2="${gy.toFixed(1)}" stroke="${gv===0?'#ddd':'#f2f2f2'}" stroke-width="${gv===0?0.7:0.35}"/>`;
-    grid+=`<text x="${PL-3}" y="${(gy+2.4).toFixed(1)}" font-size="8" fill="#3B6D11" text-anchor="end">${(gv*100).toFixed(0)}%</text>`;
+    grid+=`<text x="${PL-3}" y="${(gy+2.4).toFixed(1)}" font-size="9" fill="#3B6D11" text-anchor="end">${(gv*100).toFixed(0)}%</text>`;
   });
 
   /* N 막대 + 시비량(g) 라벨 */
@@ -7506,7 +7541,7 @@ function buildGpNChartSVG(dates,gpMap,nMap){
     const x=xPos(i)-barW/2;
     const y=yPosN(v);
     bars+=`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${(PT+cH-y).toFixed(1)}" fill="#185FA5" opacity="0.55"/>`;
-    bars+=`<text x="${xPos(i).toFixed(1)}" y="${(y-2.8).toFixed(1)}" font-size="7.4" fill="#185FA5" text-anchor="middle" font-weight="700">${v.toFixed(1)}g</text>`;
+    bars+=`<text x="${xPos(i).toFixed(1)}" y="${(y-2.8).toFixed(1)}" font-size="8.4" fill="#185FA5" text-anchor="middle" font-weight="700">${v.toFixed(1)}g</text>`;
   });
 
   /* GP 라인 + 점 */
@@ -7571,7 +7606,7 @@ function buildGpNChartSVG(dates,gpMap,nMap){
     if(t===undefined) return;
     const px=xPos(i), py=yPosGp(curV);
     const ty = isPeak ? py-6 : py+14;
-    tempLabels+=`<text x="${px.toFixed(1)}" y="${ty.toFixed(1)}" font-size="8" fill="#B45309" text-anchor="middle" font-weight="700">${t.toFixed(1)}°</text>`;
+    tempLabels+=`<text x="${px.toFixed(1)}" y="${ty.toFixed(1)}" font-size="9" fill="#B45309" text-anchor="middle" font-weight="700">${t.toFixed(1)}°</text>`;
   });
   /* 날짜별 클릭 영역 (투명, 탭하면 그 날짜의 GP 산출근거 팝업) */
   let clickAreas='';
@@ -7586,8 +7621,13 @@ function buildGpNChartSVG(dates,gpMap,nMap){
   dates.forEach((d,i)=>{
     if(i%labelStep!==0&&i!==n-1)return;
     const[,mm,dd]=d.split('-');
-    xLabels+=`<text x="${xPos(i).toFixed(1)}" y="${H-5}" font-size="8" fill="#aaa" text-anchor="middle">${parseInt(mm)}/${parseInt(dd)}</text>`;
+    xLabels+=`<text x="${xPos(i).toFixed(1)}" y="${H-5}" font-size="9" fill="#aaa" text-anchor="middle">${parseInt(mm)}/${parseInt(dd)}</text>`;
   });
+
+  const canGpLeft=navInfo.offset>0;
+  const canGpRight=navInfo.offset+navInfo.win<navInfo.total;
+  const gpP0=dates[0]?dates[0].slice(5).replace('-','/'):'';
+  const gpPN=dates[dates.length-1]?dates[dates.length-1].slice(5).replace('-','/'):'';
 
   return `
     <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#555;margin-bottom:3px;flex-wrap:wrap;gap:4px;">
@@ -7599,7 +7639,11 @@ function buildGpNChartSVG(dates,gpMap,nMap){
         <button onclick="toggleGpCompareYear(${curYear-2})" style="font-size:9.5px;padding:3px 8px;border-radius:100px;cursor:pointer;border:1.3px solid ${_gpCompareYears.has(curYear-2)?'#7F8C8D':'#ccc'};background:${_gpCompareYears.has(curYear-2)?'#7F8C8D':'#fff'};color:${_gpCompareYears.has(curYear-2)?'#fff':'#888'};font-weight:700;">${String(curYear-2).slice(2)}년 이동평균</button>
         <span id="gp-compare-status" style="color:#B45309;font-size:9.5px;"></span>
       </div>
-      <span style="color:#999;">◀ 스크롤 · 탭하여 산출근거 ▶</span>
+      <div style="display:flex;align-items:center;gap:4px;">
+        <button onclick="gpNav(-1)" ${!canGpLeft?'disabled':''} style="width:20px;height:20px;border-radius:50%;border:1px solid #c8c8c8;background:${canGpLeft?'#fff':'#f5f5f5'};color:${canGpLeft?'#444':'#ccc'};font-size:10px;cursor:${canGpLeft?'pointer':'not-allowed'};display:flex;align-items:center;justify-content:center;padding:0;">◀</button>
+        <span style="font-size:9px;color:#888;min-width:60px;text-align:center;">${gpP0} ~ ${gpPN}</span>
+        <button onclick="gpNav(1)" ${!canGpRight?'disabled':''} style="width:20px;height:20px;border-radius:50%;border:1px solid #c8c8c8;background:${canGpRight?'#fff':'#f5f5f5'};color:${canGpRight?'#444':'#ccc'};font-size:10px;cursor:${canGpRight?'pointer':'not-allowed'};display:flex;align-items:center;justify-content:center;padding:0;">▶</button>
+      </div>
     </div>
     <div class="gp-chart-scroll" style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
       <svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="display:block;">
@@ -7614,7 +7658,8 @@ function buildGpNChartSVG(dates,gpMap,nMap){
         ${xLabels}
         ${clickAreas}
       </svg>
-    </div>`;
+    </div>
+    <div style="font-size:9px;color:#999;text-align:right;margin-top:2px;">◀ 좌우 이동 · 탭하여 산출근거 보기</div>`;
 }
 
 /* 특정 날짜 · 특정 그린기준(area)의 비료 시비 내역 — 상표명/사용량/질소 순성분량(g).
@@ -9575,6 +9620,7 @@ function applyDatePicker(val){
   document.getElementById('inp-date').value=formatDateStr(yyyy,mm,dd);
   /* 날짜가 바뀌면 수동 이동 리셋 후 해당 날짜 기준으로 자동 설정 */
   _tempManualNav=false;
+  _gpManualNav=false;
   _rainManualNav=false;
   _irrManualNav=false;
   window._bsManualNav={}; /* 볼스피드 수동이동 리셋 */
@@ -9604,6 +9650,7 @@ function setToday(){
   document.getElementById('inp-date-picker').value=pickerVal;
   document.getElementById('inp-date').value=formatDateStr(yyyy,mm,dd);
   _tempManualNav=false;
+  _gpManualNav=false;
   _rainManualNav=false;
   _irrManualNav=false;
   window._bsManualNav={};
