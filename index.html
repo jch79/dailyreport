@@ -7435,13 +7435,21 @@ function buildGpNChartSVG(dates,gpMap,nMap){
 
   /* 전년/전전년 이동평균 비교선 — 같은 날짜(x축) 위에 그 해 같은 월/일의 기온으로
      계산한 GP를 구해, 지금 GP선과 같은 방식(최근 최대 7개 값 트레일링 평균)으로 겹쳐 그림 */
+  /* 전년/전전년 이동평균 비교선 — 같은 날짜(x축) 위에 그 해 같은 월/일의 기온으로
+     계산한 GP를 구해, 지금 GP선과 같은 방식(최근 최대 7개 값 트레일링 평균)으로 겹쳐 그림.
+     GP 차트는 기록 시작일부터 전체 기간을 다 보여주는 차트라(관수 차트처럼 30일로 안 끊음),
+     전체 날짜를 대상으로 비교선을 계산하면 날짜가 늘어날수록(지금 600일 이상) 기상청에
+     하루씩 조회해야 할 대상이 계속 쌓여 "불러오는 중" 카운트가 끝없이 도는 것처럼 보였음
+     → 비교선은 실제로 의미 있는 최근 구간(최근 90일)만 계산하도록 제한 */
+  const COMPARE_WINDOW=90;
+  const compareDates=dates.slice(-COMPARE_WINDOW);
   const compareGpMaps={};
   let missingAllGp=[];
   _gpCompareYears.forEach(y=>{
-    const {map,missing}=getSyncHistMap(dates,curYear-y);
+    const {map,missing}=getSyncHistMap(compareDates,curYear-y);
     missingAllGp=missingAllGp.concat(missing);
     const gpCompare={};
-    dates.forEach(d=>{ if(map[d]) gpCompare[d]=calcGP(map[d].tavg); });
+    compareDates.forEach(d=>{ if(map[d]) gpCompare[d]=calcGP(map[d].tavg); });
     compareGpMaps[y]=gpCompare;
   });
   if(missingAllGp.length && !_histFetchBusy){
