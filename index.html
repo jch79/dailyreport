@@ -6942,6 +6942,12 @@ function calcTempOffset(){
   return Math.max(0,_raw.length-TEMP_WIN);
 }
 
+let _tempCompareYears=new Set();
+function toggleTempCompareYear(y){
+  if(_tempCompareYears.has(y)) _tempCompareYears.delete(y);
+  else _tempCompareYears.add(y);
+  renderTempChart();
+}
 function renderTempChart(){
   const el=document.getElementById('temp-trend-chart');
   if(!el)return;
@@ -6966,10 +6972,29 @@ function renderTempChart(){
   if(_tempOffset<0)_tempOffset=0;
   const pts=raw.slice(_tempOffset,_tempOffset+win);
   const n=pts.length;
+  const curYear=new Date().getFullYear();
+  const ptIsos=pts.map(p=>p.date);
+
+  /* 전년/전전년 비교선 — 로컬(백필 포함)·캐시에 있는 값만 즉시 쓰고,
+     빠진 날짜는 기상청에서 백그라운드로 채운 뒤 다시 그린다 */
+  const compareMaps={};
+  let missingAll=[];
+  _tempCompareYears.forEach(y=>{
+    const {map,missing}=getSyncHistMap(ptIsos,curYear-y);
+    compareMaps[y]=map;
+    missingAll=missingAll.concat(missing);
+  });
+  if(missingAll.length && !_histFetchBusy){
+    fetchMissingHistAndRerender(missingAll, renderTempChart, (done,total)=>{
+      const st=document.getElementById('temp-compare-status');
+      if(st) st.textContent=`⏳ 과거 기온 불러오는 중 (${done}/${total})`;
+    });
+  }
 
   const allVals=[...pts.map(p=>p.tmax).filter(v=>v!=null),
                  ...pts.map(p=>p.tmin).filter(v=>v!=null),
-                 ...pts.map(p=>p.tavg).filter(v=>v!=null)];
+                 ...pts.map(p=>p.tavg).filter(v=>v!=null),
+                 ...Object.values(compareMaps).flatMap(m=>Object.values(m).map(v=>v.tavg))];
   const minV=Math.floor(Math.min(...allVals))-2;
   const maxV=Math.ceil(Math.max(...allVals))+2;
   const range=maxV-minV||1;
@@ -7011,6 +7036,21 @@ function renderTempChart(){
   const tminLine=buildLine('tmin','#2980B9','');
   const tavgLine=buildLine('tavg','#27AE60','4 2');
 
+  /* 전년/전전년 비교선 — 같은 x축(이번해 날짜) 위에 해당 연도 같은 월/일의 평균기온을 겹쳐 그림 */
+  const COMPARE_COLORS={[curYear-1]:'#8E44AD',[curYear-2]:'#7F8C8D'};
+  function buildCompareLine(mapObj,color){
+    let path='',prev=null;
+    pts.forEach((p,i)=>{
+      const v=mapObj[p.date]?.tavg;
+      if(v==null){prev=null;return;}
+      const px=xPos(i),py=yPos(v);
+      path+=(prev?`L${px.toFixed(1)},${py.toFixed(1)}`:`M${px.toFixed(1)},${py.toFixed(1)}`);
+      prev={x:px,y:py};
+    });
+    return path?`<path d="${path}" fill="none" stroke="${color}" stroke-width="1.2" stroke-dasharray="2 2" stroke-linejoin="round" stroke-linecap="round" opacity="0.85"/>`:'';
+  }
+  const compareLines=[..._tempCompareYears].map(y=>buildCompareLine(compareMaps[y]||{},COMPARE_COLORS[y]||'#999')).join('');
+
   /* X축 라벨 */
   let xLabels='';
   const step=Math.max(1,Math.ceil(n/8));
@@ -7034,11 +7074,14 @@ function renderTempChart(){
   const pN=pts[n-1].date.slice(5).replace('-','/');
 
   el.innerHTML=`
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px;gap:4px;">
-      <div style="display:flex;gap:10px;font-size:6.5px;color:#555;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px;gap:4px;flex-wrap:wrap;">
+      <div style="display:flex;gap:10px;font-size:6.5px;color:#555;align-items:center;flex-wrap:wrap;">
         <span style="display:flex;align-items:center;gap:2px;"><span style="width:12px;height:2.5px;background:#E74C3C;border-radius:1px;display:inline-block;"></span>최고</span>
         <span style="display:flex;align-items:center;gap:2px;"><span style="width:12px;height:2.5px;background:#2980B9;border-radius:1px;display:inline-block;"></span>최저</span>
         <span style="display:flex;align-items:center;gap:2px;"><span style="width:12px;height:2.5px;background:#27AE60;border-radius:1px;display:inline-block;border-bottom:2px dashed #27AE60;background:none;"></span>평균</span>
+        <button onclick="toggleTempCompareYear(${curYear-1})" style="font-size:6.5px;padding:2px 6px;border-radius:100px;cursor:pointer;border:1.3px solid ${_tempCompareYears.has(curYear-1)?'#8E44AD':'#ccc'};background:${_tempCompareYears.has(curYear-1)?'#8E44AD':'#fff'};color:${_tempCompareYears.has(curYear-1)?'#fff':'#888'};font-weight:700;">${String(curYear-1).slice(2)}년</button>
+        <button onclick="toggleTempCompareYear(${curYear-2})" style="font-size:6.5px;padding:2px 6px;border-radius:100px;cursor:pointer;border:1.3px solid ${_tempCompareYears.has(curYear-2)?'#7F8C8D':'#ccc'};background:${_tempCompareYears.has(curYear-2)?'#7F8C8D':'#fff'};color:${_tempCompareYears.has(curYear-2)?'#fff':'#888'};font-weight:700;">${String(curYear-2).slice(2)}년</button>
+        <span id="temp-compare-status" style="color:#B45309;"></span>
       </div>
       <div style="display:flex;align-items:center;gap:4px;">
         <button onclick="tempNav(-1)" ${!canLeft?'disabled':''} style="width:16px;height:16px;border-radius:50%;border:1px solid #c8c8c8;background:${canLeft?'#fff':'#f5f5f5'};color:${canLeft?'#444':'#ccc'};font-size:8px;cursor:${canLeft?'pointer':'not-allowed'};display:flex;align-items:center;justify-content:center;padding:0;">◀</button>
@@ -7051,6 +7094,7 @@ function renderTempChart(){
         ${grid}
         <line x1="${PL}" y1="${PT}" x2="${PL}" y2="${PT+cH}" stroke="#ddd" stroke-width="0.8"/>
         <line x1="${PL}" y1="${PT+cH}" x2="${W-PR}" y2="${PT+cH}" stroke="#ddd" stroke-width="0.8"/>
+        ${compareLines}
         ${tminLine}${tavgLine}${tmaxLine}
         ${xLabels}
         ${clickOverlays}
@@ -7102,6 +7146,93 @@ function getDailyTempMap(){
     if(d.tavg!==null&&d.tavg!==undefined)map[d.date]=d.tavg;
   });
   return map;
+}
+
+/* ── 전년/전전년 비교(기온추이·GP 이동평균선용) ──
+   현재 보고 있는 날짜(들)와 같은 월/일을 다른 해에서 찾아 기온을 비교해 보여준다.
+   1) 이미 로컬에 기록(백필 포함)이 있으면 그 값을 그대로 쓰고,
+   2) 없으면 기상청 실측(지점460, 하루 단위 tm2 조회 — 과거 날씨 백필 도구와 동일 방식)을
+      요청 시점에 가져와 로컬 캐시(hist_temp_cache_v1)에 저장해 다음부턴 재요청하지 않는다. */
+function toCompareISO(iso,deltaYears){
+  const [y,m,d]=iso.split('-').map(Number);
+  const dt=new Date(y-deltaYears,m-1,d);
+  if(dt.getMonth()!==m-1) dt.setDate(0); /* 2/29처럼 대상 해에 없는 날짜면 전달 말일(2/28)로 보정 */
+  return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+}
+function getLocalTempMapAll(){
+  const map={};
+  gd().forEach(r=>{
+    const m=r.date?.match(/(\d+)년\s*(\d+)월\s*(\d+)일/);
+    if(!m)return;
+    const yy=parseInt(m[1]);const yyyy=yy<50?2000+yy:1900+yy;
+    const iso=`${yyyy}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+    const w=r.weather;
+    if(w&&typeof w.minmax==='string'&&w.minmax.includes('/')){
+      const parts=w.minmax.split('/').map(s=>parseFloat(s.trim()));
+      const mn=parts[0],mx=parts[1];
+      if(!isNaN(mn)&&!isNaN(mx)){
+        const avgV=(w.avg!=null&&w.avg!=='--'&&!isNaN(parseFloat(w.avg)))?parseFloat(w.avg):(mn+mx)/2;
+        map[iso]={tmin:mn,tmax:mx,tavg:avgV};
+      }
+    }
+  });
+  return map;
+}
+const HIST_TEMP_CACHE_KEY='hist_temp_cache_v1';
+function getHistCache(){try{return JSON.parse(localStorage.getItem(HIST_TEMP_CACHE_KEY)||'{}');}catch(e){return{};}}
+function setHistCache(c){try{localStorage.setItem(HIST_TEMP_CACHE_KEY,JSON.stringify(c));}catch(e){}}
+function _histParseDayVal(txt){
+  const l=(txt||'').split('\n').map(s=>s.trim()).find(s=>s&&!s.startsWith('#'));
+  if(!l)return null;
+  const cols=l.split(',');
+  const v=parseFloat(cols[5]);
+  return isNaN(v)?null:v;
+}
+function fetchHistDayTemp(dISO){
+  const fetchOne=(obs)=>{
+    const ctrl=new AbortController();const tid=setTimeout(()=>ctrl.abort(),8000);
+    return fetch(`https://empty-morning-c054.loveinch2000.workers.dev/?path=sfc_aws_day.php&tm2=${dISO}&obs=${obs}&stn=460`,{signal:ctrl.signal}).then(r=>r.text()).finally(()=>clearTimeout(tid));
+  };
+  return Promise.all([fetchOne('ta_max'),fetchOne('ta_min')]).then(([maxTxt,minTxt])=>{
+    const tmax=_histParseDayVal(maxTxt),tmin=_histParseDayVal(minTxt);
+    if(tmax==null||tmin==null)return null;
+    return {tmin,tmax,tavg:(tmin+tmax)/2};
+  });
+}
+/* isos: 현재 차트에 표시 중인 이번해 날짜(YYYY-MM-DD) 배열, deltaYears: 몇 해 전인지(1=작년).
+   로컬·캐시에 있는 것만 즉시 반환하고, 없는 날짜 목록도 같이 돌려줘 백그라운드로 채우게 한다. */
+function getSyncHistMap(isos,deltaYears){
+  const localMap=getLocalTempMapAll();
+  const cache=getHistCache();
+  const map={};
+  const missing=[];
+  isos.forEach(srcIso=>{
+    const tgt=toCompareISO(srcIso,deltaYears);
+    if(localMap[tgt]) map[srcIso]=localMap[tgt];
+    else if(cache[tgt]) map[srcIso]=cache[tgt];
+    else missing.push(tgt);
+  });
+  return {map,missing};
+}
+let _histFetchBusy=false;
+async function fetchMissingHistAndRerender(missingTargets,rerenderFn,progressFn){
+  if(_histFetchBusy||!missingTargets.length)return;
+  _histFetchBusy=true;
+  const cache=getHistCache();
+  const uniq=[...new Set(missingTargets)].filter(t=>!cache[t]);
+  let changed=false;
+  for(let i=0;i<uniq.length;i++){
+    const tgt=uniq[i];
+    try{
+      const v=await fetchHistDayTemp(tgt.replace(/-/g,''));
+      if(v){ cache[tgt]=v; changed=true; }
+    }catch(e){}
+    if(progressFn)progressFn(i+1,uniq.length);
+    await new Promise(res=>setTimeout(res,90));
+  }
+  if(changed) setHistCache(cache);
+  _histFetchBusy=false;
+  if(typeof rerenderFn==='function') rerenderFn();
 }
 
 /* GP=1.0 기준 처리지역별 주간 목표 질소량(g) 저장 */
@@ -7271,6 +7402,12 @@ function renderGpWriteBox(){
 }
 
 /* 작성 탭: GP·일일 시비 N 추이 차트 (선택 날짜 기준 최근 30일) */
+let _gpCompareYears=new Set();
+function toggleGpCompareYear(y){
+  if(_gpCompareYears.has(y)) _gpCompareYears.delete(y);
+  else _gpCompareYears.add(y);
+  renderGpWriteBox();
+}
 function renderGpWriteChart(area,iso,gpMap,nMap){
   const el=document.getElementById('gp-write-chart');
   if(!el)return;
@@ -7294,6 +7431,25 @@ function buildGpNChartSVG(dates,gpMap,nMap){
   const nVals=dates.map(d=>nMap[d]||0);
   const maxN=Math.max(...nVals,0.001);
   const tempMap=getDailyTempMap();
+  const curYear=new Date().getFullYear();
+
+  /* 전년/전전년 이동평균 비교선 — 같은 날짜(x축) 위에 그 해 같은 월/일의 기온으로
+     계산한 GP를 구해, 지금 GP선과 같은 방식(최근 최대 7개 값 트레일링 평균)으로 겹쳐 그림 */
+  const compareGpMaps={};
+  let missingAllGp=[];
+  _gpCompareYears.forEach(y=>{
+    const {map,missing}=getSyncHistMap(dates,curYear-y);
+    missingAllGp=missingAllGp.concat(missing);
+    const gpCompare={};
+    dates.forEach(d=>{ if(map[d]) gpCompare[d]=calcGP(map[d].tavg); });
+    compareGpMaps[y]=gpCompare;
+  });
+  if(missingAllGp.length && !_histFetchBusy){
+    fetchMissingHistAndRerender(missingAllGp, renderGpWriteBox, (done,total)=>{
+      const st=document.getElementById('gp-compare-status');
+      if(st) st.textContent=`⏳ 과거 기온 불러오는 중 (${done}/${total})`;
+    });
+  }
 
   const DAY_W=16; /* 하루당 실제 픽셀 폭 — 데이터가 많아지면 SVG 자체가 넓어져서 좌우 스크롤이 가능해짐 */
   const H=130,PL=32,PR=12,PT=20,PB=28;  /* 기온추이(너비 100%로 화면폭만큼 늘어나 세로도 같이 커짐)와 비슷한 크기감을 내기 위해 고정 높이 자체를 더 키움 */
@@ -7354,6 +7510,26 @@ function buildGpNChartSVG(dates,gpMap,nMap){
   }
   const gpMaLine=maPath?`<path d="${maPath}" fill="none" stroke="#E67E22" stroke-width="1.15" stroke-dasharray="3,2" stroke-linejoin="round" stroke-linecap="round" opacity="0.9"/>`:'';
 
+  /* 전년/전전년 이동평균 비교선 그리기 — 위에서 계산한 compareGpMaps를 같은 트레일링 평균 방식으로 */
+  const COMPARE_COLORS_GP={[curYear-1]:'#8E44AD',[curYear-2]:'#7F8C8D'};
+  function buildCompareMaLine(gpCompareMap,color){
+    const validIdx2=[];
+    dates.forEach((d,i)=>{ if(gpCompareMap[d]!==undefined) validIdx2.push(i); });
+    if(validIdx2.length<2) return '';
+    const maVals2=validIdx2.map((iCur,k)=>{
+      const start=Math.max(0,k-MA_WINDOW+1);
+      const windowVals=validIdx2.slice(start,k+1).map(ii=>gpCompareMap[dates[ii]]);
+      return windowVals.reduce((a,b)=>a+b,0)/windowVals.length;
+    });
+    let path2='';
+    validIdx2.forEach((i,k)=>{
+      const px=xPos(i),py=yPosGp(maVals2[k]);
+      path2+=(k===0?`M${px.toFixed(1)},${py.toFixed(1)}`:`L${px.toFixed(1)},${py.toFixed(1)}`);
+    });
+    return `<path d="${path2}" fill="none" stroke="${color}" stroke-width="1.15" stroke-dasharray="2 2" stroke-linejoin="round" stroke-linecap="round" opacity="0.85"/>`;
+  }
+  const compareMaSvg=[..._gpCompareYears].map(y=>buildCompareMaLine(compareGpMaps[y]||{},COMPARE_COLORS_GP[y]||'#999')).join('');
+
   /* 위/아래 꼭지점(극댓값·극솟값)에 산출근거인 일평균기온 라벨 표시 */
   let tempLabels='';
   validIdx.forEach((i,k)=>{
@@ -7385,11 +7561,14 @@ function buildGpNChartSVG(dates,gpMap,nMap){
   });
 
   return `
-    <div style="display:flex;justify-content:space-between;align-items:center;font-size:10px;color:#555;margin-bottom:3px;">
-      <div style="display:flex;gap:8px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;font-size:10px;color:#555;margin-bottom:3px;flex-wrap:wrap;gap:4px;">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
         <span style="display:flex;align-items:center;gap:2px;"><span style="width:10px;height:2px;background:#3B6D11;border-radius:1px;display:inline-block;"></span>GP(생육잠재력)</span>
         <span style="display:flex;align-items:center;gap:2px;"><span style="width:10px;height:0;border-top:1.5px dashed #E67E22;display:inline-block;"></span>GP 7일 이동평균</span>
         <span style="display:flex;align-items:center;gap:2px;"><span style="width:7px;height:7px;background:#185FA5;opacity:0.55;display:inline-block;"></span>일일 시비 N(g)</span>
+        <button onclick="toggleGpCompareYear(${curYear-1})" style="font-size:9px;padding:2px 7px;border-radius:100px;cursor:pointer;border:1.3px solid ${_gpCompareYears.has(curYear-1)?'#8E44AD':'#ccc'};background:${_gpCompareYears.has(curYear-1)?'#8E44AD':'#fff'};color:${_gpCompareYears.has(curYear-1)?'#fff':'#888'};font-weight:700;">${String(curYear-1).slice(2)}년 이동평균</button>
+        <button onclick="toggleGpCompareYear(${curYear-2})" style="font-size:9px;padding:2px 7px;border-radius:100px;cursor:pointer;border:1.3px solid ${_gpCompareYears.has(curYear-2)?'#7F8C8D':'#ccc'};background:${_gpCompareYears.has(curYear-2)?'#7F8C8D':'#fff'};color:${_gpCompareYears.has(curYear-2)?'#fff':'#888'};font-weight:700;">${String(curYear-2).slice(2)}년 이동평균</button>
+        <span id="gp-compare-status" style="color:#B45309;font-size:9px;"></span>
       </div>
       <span style="color:#999;">◀ 스크롤 · 탭하여 산출근거 ▶</span>
     </div>
@@ -7401,6 +7580,7 @@ function buildGpNChartSVG(dates,gpMap,nMap){
         ${bars}
         ${gpLine}
         ${gpMaLine}
+        ${compareMaSvg}
         ${tempLabels}
         ${xLabels}
         ${clickAreas}
