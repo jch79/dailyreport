@@ -6960,7 +6960,8 @@ function renderTempChart(){
   const maxV=Math.ceil(Math.max(...allVals))+2;
   const range=maxV-minV||1;
 
-  const W=500,H=55,PL=24,PR=8,PT=5,PB=10; /* H: 46 → 55 (다시 +20% 확대, 위아래 폭 넓힘) */
+  const H=130,PL=32,PR=12,PT=20,PB=28; /* GP 차트와 동일한 크기감으로 통일 */
+  const W=Math.max(220,PL+PR+n*16); /* 하루당 16px 고정폭 — 100% 폭에 욱여넣던 기존 방식은 항상 다 들어가버려 스크롤이 안 됐음. 고정폭이라 데이터가 많아지면 자연스럽게 좌우 스크롤됨(GP 차트와 동일 원리) */
   const cW=W-PL-PR,cH=H-PT-PB;
   const xPos=i=>PL+(n<=1?cW/2:i/(n-1)*cW);
   const yPos=v=>PT+cH-(v-minV)/range*cH;
@@ -6971,8 +6972,8 @@ function renderTempChart(){
   for(let g=0;g<=gCnt;g++){
     const gv=minV+(maxV-minV)/gCnt*g;
     const gy=yPos(gv);
-    grid+=`<line x1="${PL}" y1="${gy.toFixed(1)}" x2="${W-PR}" y2="${gy.toFixed(1)}" stroke="${g===0?'#ddd':'#f2f2f2'}" stroke-width="${g===0?0.4:0.2}"/>`;
-    grid+=`<text x="${PL-3}" y="${(gy+3.5).toFixed(1)}" font-size="4" fill="#ccc" text-anchor="end">${Math.round(gv)}°</text>`;
+    grid+=`<line x1="${PL}" y1="${gy.toFixed(1)}" x2="${W-PR}" y2="${gy.toFixed(1)}" stroke="${g===0?'#ddd':'#f2f2f2'}" stroke-width="${g===0?0.7:0.35}"/>`;
+    grid+=`<text x="${PL-3}" y="${(gy+2.4).toFixed(1)}" font-size="6.2" fill="#ccc" text-anchor="end">${Math.round(gv)}°</text>`;
   }
 
   /* 라인 빌더 */
@@ -6983,13 +6984,13 @@ function renderTempChart(){
       if(v==null){prev=null;return;}
       const px=xPos(i),py=yPos(v);
       path+=(prev?`L${px.toFixed(1)},${py.toFixed(1)}`:`M${px.toFixed(1)},${py.toFixed(1)}`);
-      dots+=`<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="0.84" fill="${color}" stroke="#fff" stroke-width="0.42"><title>${p.date} ${key==='tmax'?'최고':key==='tmin'?'최저':'평균'}: ${v.toFixed(1)}°C</title></circle>`;
+      dots+=`<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="1.8" fill="${color}" stroke="#fff" stroke-width="0.75"><title>${p.date} ${key==='tmax'?'최고':key==='tmin'?'최저':'평균'}: ${v.toFixed(1)}°C</title></circle>`;
       /* 값 라벨: 5개 간격 */
       if(i%Math.max(1,Math.ceil(n/8))===0||i===n-1)
-        dots+=`<text x="${px.toFixed(1)}" y="${(py-2.4).toFixed(1)}" font-size="4" fill="${color}" text-anchor="middle">${v.toFixed(1)}</text>`;
+        dots+=`<text x="${px.toFixed(1)}" y="${(py-4).toFixed(1)}" font-size="6" fill="${color}" text-anchor="middle">${v.toFixed(1)}</text>`;
       prev={x:px,y:py};
     });
-    return `<path d="${path}" fill="none" stroke="${color}" stroke-width="0.56" stroke-linejoin="round" stroke-linecap="round"${dash?` stroke-dasharray="${dash}"`:''}/>${dots}`;
+    return `<path d="${path}" fill="none" stroke="${color}" stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round"${dash?` stroke-dasharray="${dash}"`:''}/>${dots}`;
   }
 
   const tmaxLine=buildLine('tmax','#E74C3C','');
@@ -7002,7 +7003,7 @@ function renderTempChart(){
   pts.forEach((p,i)=>{
     if(i%step!==0&&i!==n-1)return;
     const [,mm,dd]=p.date.split('-');
-    xLabels+=`<text x="${xPos(i).toFixed(1)}" y="${H-3}" font-size="4" fill="#aaa" text-anchor="middle">${parseInt(mm)}/${parseInt(dd)}</text>`;
+    xLabels+=`<text x="${xPos(i).toFixed(1)}" y="${H-4}" font-size="6.2" fill="#aaa" text-anchor="middle">${parseInt(mm)}/${parseInt(dd)}</text>`;
   });
 
   /* 날짜 클릭 영역(직접 수정) — 각 날짜 열 전체 높이를 덮는 투명 사각형 */
@@ -7031,8 +7032,8 @@ function renderTempChart(){
         <button onclick="tempNav(1)" ${!canRight?'disabled':''} style="width:16px;height:16px;border-radius:50%;border:1px solid #c8c8c8;background:${canRight?'#fff':'#f5f5f5'};color:${canRight?'#444':'#ccc'};font-size:8px;cursor:${canRight?'pointer':'not-allowed'};display:flex;align-items:center;justify-content:center;padding:0;">▶</button>
       </div>
     </div>
-    <div style="overflow-x:auto;">
-      <svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;min-width:220px;">
+    <div class="temp-chart-scroll" style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
+      <svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="display:block;">
         ${grid}
         <line x1="${PL}" y1="${PT}" x2="${PL}" y2="${PT+cH}" stroke="#ddd" stroke-width="0.8"/>
         <line x1="${PL}" y1="${PT+cH}" x2="${W-PR}" y2="${PT+cH}" stroke="#ddd" stroke-width="0.8"/>
@@ -7042,6 +7043,8 @@ function renderTempChart(){
       </svg>
     </div>`;
   renderGpWriteBox();
+  const _tsc=el.querySelector('.temp-chart-scroll');
+  if(_tsc)_tsc.scrollLeft=_tsc.scrollWidth;
 }
 
 function tempNav(dir){
