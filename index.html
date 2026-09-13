@@ -117,9 +117,11 @@ async function fbFullSyncFromCloud(){
   if(!_fbUser) return;
   console.log('[FB] 완전 동기화 시작...');
   try{
-    // 1. 일보 데이터
+    // 1. 일보 데이터 (예전엔 500건 제한이 있어, 과거 기록 백필 등으로 전체 건수가
+    //    500건을 넘으면 오래된 기록이 통째로 로컬에서 사라져 보이는 문제가 있었음 —
+    //    한 골프장이 매일 하루 1건씩 기록해도 5000건이면 13년치라 충분히 넉넉하게 상향)
     const repSnap = await _fbDb.collection(FB_COL_REPORTS)
-                                .orderBy('date','desc').limit(500).get();
+                                .orderBy('date','desc').limit(5000).get();
     if(!repSnap.empty){
       const reports = repSnap.docs.map(d=>{
         const r={...d.data()};
@@ -252,7 +254,7 @@ async function fbGetReports(){
   if(!_fbUser) return null;
   try{
     const snap = await _fbDb.collection(FB_COL_REPORTS)
-                             .orderBy('date','desc').limit(500).get();
+                             .orderBy('date','desc').limit(5000).get();
     return snap.docs.map(d=>{ const r={...d.data()}; if(!r.id) r.id=d.id; delete r._savedBy; delete r._savedByUid; delete r._updatedAt; return r; });
   }catch(e){ return null; }
 }
