@@ -673,9 +673,11 @@ body{font-family:'맑은 고딕','Apple SD Gothic Neo',sans-serif;font-size:14px
    PC의 넓은 창(1300px+)에서는 카드마다 다르게 늘어나 들쭉날쭉해 보였음.
    내용 자체를 다 뜯어고치는 대신, 패널 전체를 적당한 최대폭으로 가운데 정렬해서
    "웹앱 패널" 느낌으로 통일감을 줌 — 각 카드 내부의 스크롤형 차트(관수·기온·GP 등)는
-   원래도 overflow-x:auto라 폭을 줄여도 문제없이 그대로 스크롤됨. */
-@media (min-width:1060px){
-  .panel{max-width:1000px;margin-left:auto;margin-right:auto;}
+   원래도 overflow-x:auto라 폭을 줄여도 문제없이 그대로 스크롤됨.
+   (처음엔 1000px로 좁혔더니, 원래 스크롤 없이 한 줄로 다 보이던 "운영/날씨" 4카드
+   같은 구간까지 억지로 스크롤이 걸려버려 오히려 더 불편해짐 → 1300px로 넉넉하게 상향) */
+@media (min-width:1340px){
+  .panel{max-width:1300px;margin-left:auto;margin-right:auto;}
 }
 
 /* ── CARD ── */
