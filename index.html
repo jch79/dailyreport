@@ -7515,7 +7515,10 @@ function buildGpNChartSVG(dates,gpMap,nMap,navInfo){
     });
   }
 
-  const DAY_W=16; /* 하루당 실제 픽셀 폭 — 데이터가 많아지면 SVG 자체가 넓어져서 좌우 스크롤이 가능해짐 */
+  const el=document.getElementById('gp-write-chart');
+  const availW=(navInfo.availW)||(el?el.clientWidth:0)||0;
+  const minDayW=16;
+  const DAY_W=availW>0 ? Math.max(minDayW,(availW-34-14)/n) : minDayW; /* 요청: 데이터가 적을 땐 컨테이너 우측 끝까지 채우도록, 많을 땐 최소폭 유지하며 스크롤 */
   const H=175,PL=34,PR=14,PT=24,PB=32;  /* 요청으로 세로 확대(130→175, 기온추이 차트와 동일) */
   const W=Math.max(220,PL+PR+n*DAY_W);
   const cW=W-PL-PR,cH=H-PT-PB;
