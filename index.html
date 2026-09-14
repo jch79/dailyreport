@@ -893,8 +893,17 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
    차트의 24년/25년 비교선 토글 버튼과 좌우 이동 화살표 — 두 차트 모두 그 안에 데이터를
    바꾸는 입력칸은 없고 조회용 버튼/스크롤만 있어서 통째로 풀어도 안전함. */
 .write-sec-wrap.sec-locked button[onclick="fetchWeather()"]{pointer-events:auto!important;opacity:1!important;}
-.write-sec-wrap.sec-locked #temp-trend-chart,
-.write-sec-wrap.sec-locked #temp-trend-chart *,
+/* ⚠ 주의: 기온추이 차트는 데이터 위를 클릭하면 openTempDayEdit()로 실제 기온
+   "수정" 팝업이 열리고, 그 팝업의 저장 버튼(saveTempDayEdit)은 별도 권한 체크 없이
+   바로 저장까지 해버림 — 그래서 차트 전체를 열어주면 열람자가 그 경로로 실제
+   기록을 바꿔 저장할 수 있게 되는 구멍이 생김. 그래서 토글/이동 버튼만 콕 집어
+   풀어주고, 데이터 위 클릭 오버레이(수정 팝업 여는 부분)는 계속 막아둠 —
+   차트 자체의 좌우 스크롤은 위쪽의 [style*="overflow-x:auto"] 규칙으로 이미
+   허용되어 있어서 보는 데는 지장 없음.
+   GP 차트는 날짜를 클릭해도 읽기 전용 "산출근거" 팝업만 뜨고 저장 기능이 아예
+   없어 차트 전체를 열어줘도 안전함. */
+.write-sec-wrap.sec-locked #temp-trend-chart button[onclick^="toggleTempCompareYear"],
+.write-sec-wrap.sec-locked #temp-trend-chart button[onclick^="tempNav"]{pointer-events:auto!important;opacity:1!important;}
 .write-sec-wrap.sec-locked #gp-write-chart,
 .write-sec-wrap.sec-locked #gp-write-chart *{pointer-events:auto!important;}
 .write-sec-wrap.sec-locked #temp-trend-chart,
