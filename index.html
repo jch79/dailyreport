@@ -1981,6 +1981,16 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
       <div id="backfill-result" style="font-size:11px;color:#555;"></div>
     </div>
 
+    <div id="settings-raincheck-section" style="display:none;padding:16px 18px;border-bottom:1px solid #f0f0f0;">
+      <div style="font-size:11px;font-weight:700;color:#888;margin-bottom:10px;letter-spacing:.5px;">🔍 강우량 정합성 검사 (관리자)</div>
+      <div style="font-size:11px;color:#888;margin-bottom:8px;line-height:1.6;">저장된 기록의 날짜별 강우량(mm)을, 기상청 실측(지점460)과 하나씩 대조해서 값이 다른 날짜만 찾아줍니다. "연 누적강우량"이 화면마다 다르게 보일 때, 어느 날짜가 원인인지 확인하는 용도입니다.</div>
+      <div style="display:flex;gap:6px;margin-bottom:8px;align-items:center;">
+        <select id="raincheck-year" style="flex:1;font-size:12px;padding:6px 8px;border:1.5px solid #ccc;border-radius:6px;"></select>
+      </div>
+      <button onclick="runRainConsistencyCheck()" style="width:100%;padding:9px;border:1.5px solid #185FA5;border-radius:8px;background:#f0f6ff;color:#185FA5;font-size:12px;font-weight:700;cursor:pointer;margin-bottom:6px;">🔍 대조 실행</button>
+      <div id="raincheck-result" style="font-size:11px;color:#555;"></div>
+    </div>
+
     <!-- 앱 정보 -->
     <div style="padding:14px 18px;display:flex;align-items:center;justify-content:space-between;">
       <div style="font-size:11px;color:#aaa;">코스관리 작업일보 v78</div>
@@ -4833,6 +4843,53 @@ async function fetchYearRainRange(year){
   return map;
 }
 let _yearRainFetchBusy={};
+
+/* ── 강우량 정합성 검사 (관리자 · 설정) ──
+   저장된 각 날짜의 weather.rain 값과, 기상청 실측(같은 endpoint/기준)을
+   날짜별로 대조해서 다른 값이 있는 날짜만 찾아 보여준다. "연 누적강우량"이
+   화면마다 다르게 보이는 원인(어느 날짜가 실측과 다른 값으로 저장돼 있는지)을
+   실제로 찾아내기 위한 도구. */
+async function runRainConsistencyCheck(){
+  if(_fbRole!=='admin'){showToast('관리자만 사용할 수 있습니다');return;}
+  const yearSel=document.getElementById('raincheck-year');
+  const year=parseInt(yearSel?.value,10)||new Date().getFullYear();
+  const resultEl=document.getElementById('raincheck-result');
+  if(!resultEl)return;
+  resultEl.innerHTML='기상청 실측 조회 중...';
+  try{
+    const liveMap=await fetchYearRainRange(year);
+    const localMap=getYearlyRainFromRecords(year);
+    const allISOs=[...new Set([...Object.keys(localMap),...Object.keys(liveMap)])].sort();
+    const diffs=[];
+    let localSum=0, liveSum=0;
+    allISOs.forEach(iso=>{
+      const lv=localMap[iso], kv=liveMap[iso];
+      if(lv!=null) localSum+=lv;
+      if(kv!=null) liveSum+=kv;
+      const lvN=lv!=null?lv:0, kvN=kv!=null?kv:0;
+      if(Math.abs(lvN-kvN)>0.05){
+        diffs.push({iso, local:lv, kma:kv});
+      }
+    });
+    if(!diffs.length){
+      resultEl.innerHTML=`<div style="color:#3B6D11;font-weight:700;">✅ ${year}년 전체 ${allISOs.length}일 중 다른 날짜 없음 — 저장된 값과 기상청 실측이 모두 일치합니다.<br>저장된 값 합계 ${localSum.toFixed(1)}mm · 기상청 합계 ${liveSum.toFixed(1)}mm</div>`;
+      return;
+    }
+    resultEl.innerHTML=`
+      <div style="margin-bottom:8px;">
+        저장된 값 합계 <b>${localSum.toFixed(1)}mm</b> · 기상청 합계 <b>${liveSum.toFixed(1)}mm</b> · 차이 <b style="color:#c0392b;">${(localSum-liveSum).toFixed(1)}mm</b><br>
+        값이 다른 날짜 <b style="color:#c0392b;">${diffs.length}일</b> 발견
+      </div>
+      <div style="max-height:220px;overflow-y:auto;border:1px solid #eee;border-radius:6px;padding:6px 8px;">
+        ${diffs.map(d=>`<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid #f5f5f5;">
+          <span>${d.iso}</span>
+          <span>저장값 <b style="color:#185FA5;">${d.local!=null?d.local.toFixed(1):'—'}</b> vs 실측 <b style="color:#c0392b;">${d.kma!=null?d.kma.toFixed(1):'—'}</b></span>
+        </div>`).join('')}
+      </div>`;
+  }catch(e){
+    resultEl.innerHTML=`<div style="color:#c0392b;">조회 실패: ${e.message||e}</div>`;
+  }
+}
 let _rainYearOffset=0;
 let _rainYearManualNav=false;
 let _rainYearHidden=new Set();
@@ -8136,6 +8193,16 @@ function openSettingsModal(){
   document.getElementById('settings-modal').style.display='flex';
   const bf=document.getElementById('settings-backfill-section');
   if(bf) bf.style.display=(_fbRole==='admin')?'block':'none';
+  const rc=document.getElementById('settings-raincheck-section');
+  if(rc){
+    rc.style.display=(_fbRole==='admin')?'block':'none';
+    const sel=document.getElementById('raincheck-year');
+    if(sel && !sel.dataset.filled){
+      const cy=new Date().getFullYear();
+      sel.innerHTML=[cy,cy-1,cy-2].map(y=>`<option value="${y}">${y}년</option>`).join('');
+      sel.dataset.filled='1';
+    }
+  }
 }
 function closeSettingsModal(e){
   const m=document.getElementById('settings-modal');
