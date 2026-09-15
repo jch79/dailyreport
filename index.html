@@ -3183,6 +3183,7 @@ function applyWeatherToUI(w){
     renderRainChart();
     _tempManualNav=false;
     _gpManualNav=false;
+    _rainYearManualNav=false;
     _tempOffset=calcTempOffset();
     renderTempChart();
     /* 캐시 복원 시 "금일 강우량" 입력칸도 차트(오늘 항목)와 항상 같은 값으로 동기화
@@ -4424,6 +4425,7 @@ async function fetchWeather(){
       renderRainChart();
       _tempManualNav=false;
       _gpManualNav=false;
+      _rainYearManualNav=false;
       _tempOffset=calcTempOffset();
       renderTempChart();
 
@@ -4550,6 +4552,7 @@ async function fetchWeather(){
         renderRainChart();
         _tempManualNav=false;
         _gpManualNav=false;
+        _rainYearManualNav=false;
         _tempOffset=calcTempOffset();
         renderTempChart();
 
@@ -4756,6 +4759,7 @@ async function fetchWeather(){
     renderRainChart();
     _tempManualNav=false;
     _gpManualNav=false;
+    _rainYearManualNav=false;
     _tempOffset=calcTempOffset();
     renderTempChart();
 
@@ -4826,6 +4830,20 @@ async function fetchYearRainRange(year){
   return map;
 }
 let _yearRainFetchBusy={};
+let _rainYearOffset=0;
+let _rainYearManualNav=false;
+let _rainYearHidden=new Set();
+const RAIN_YEAR_WIN=30;
+function rainYearNav(dir){
+  _rainYearOffset=Math.max(0,Math.min(366-RAIN_YEAR_WIN,_rainYearOffset+dir*RAIN_YEAR_WIN));
+  _rainYearManualNav=true;
+  renderRainYearlyChart();
+}
+function toggleRainYearVisible(y){
+  if(_rainYearHidden.has(y)) _rainYearHidden.delete(y);
+  else _rainYearHidden.add(y);
+  renderRainYearlyChart();
+}
 function renderRainYearlyChart(){
   const el=document.getElementById('rain-yearly-chart');
   if(!el)return;
@@ -4854,10 +4872,11 @@ function buildRainYearlyChartSVG(dataByYear,years,loadingYears){
   const isLeap=y=>(y%4===0&&y%100!==0)||y%400===0;
   const curYear=new Date().getFullYear();
   const today=new Date();
+  const dayOfYear=d=>Math.floor((d-new Date(d.getFullYear(),0,1))/86400000)+1;
   function cumulativeArr(year){
     const map=dataByYear[year]||{};
     const totalDays=isLeap(year)?366:365;
-    const endDay=year===curYear ? (Math.floor((today-new Date(year,0,1))/86400000)+1) : totalDays;
+    const endDay=year===curYear ? dayOfYear(today) : totalDays;
     const arr=[];
     let sum=0;
     for(let d=1;d<=endDay;d++){
@@ -4869,17 +4888,32 @@ function buildRainYearlyChartSVG(dataByYear,years,loadingYears){
     return arr;
   }
   const series=years.map(y=>({year:y,vals:cumulativeArr(y)}));
-  const maxDay=Math.max(...series.map(s=>s.vals.length));
-  const maxV=Math.max(...series.flatMap(s=>s.vals),10);
+
+  /* 요청: 1년치를 다 보여주면 알아보기 어려워서, 작성 탭 날짜 기준 최근 30일
+     구간만 보여주고 ◀/▶로 앞뒤 이동 가능하게 함(기온추이 차트와 동일한 방식).
+     날짜별 절대 누적치는 그대로 유지한 채(0부터 다시 시작 안 함) x축 구간만 자름 */
+  const TOTAL_DAYS=366;
+  const pickerISO=getPickerISO();
+  const todayDN = pickerISO ? dayOfYear(new Date(pickerISO+'T00:00:00')) : dayOfYear(today);
+  if(!_rainYearManualNav) _rainYearOffset=Math.max(0,todayDN-RAIN_YEAR_WIN);
+  _rainYearOffset=Math.max(0,Math.min(TOTAL_DAYS-RAIN_YEAR_WIN,_rainYearOffset));
+  const winStart=_rainYearOffset+1, winEnd=winStart+RAIN_YEAR_WIN-1;
+  const canLeft=_rainYearOffset>0;
+  const canRight=_rainYearOffset+RAIN_YEAR_WIN<TOTAL_DAYS;
+
+  /* y축 최대값은 창 안에 실제로 그려질 값들 기준으로 잡아야 확대해서 보는 의미가 있음 */
+  const visYears=years.filter(y=>!_rainYearHidden.has(y));
+  const winVals=series.filter(s=>!_rainYearHidden.has(s.year)).flatMap(s=>s.vals.slice(winStart-1,winEnd));
+  const maxV=Math.max(...winVals,10);
 
   const H=175,PL=44,PR=14,PT=20,PB=30;
   const el0=document.getElementById('rain-yearly-chart');
   const availW=(el0&&el0.clientWidth)||0;
-  const minDayW=1.6;
-  const dayW=availW>PL+PR ? Math.max(minDayW,(availW-PL-PR)/maxDay) : minDayW;
-  const W=Math.max(260,PL+PR+maxDay*dayW);
+  const minDayW=18;
+  const dayW=availW>PL+PR ? Math.max(minDayW,(availW-PL-PR)/RAIN_YEAR_WIN) : minDayW;
+  const W=Math.max(260,PL+PR+RAIN_YEAR_WIN*dayW);
   const cW=W-PL-PR,cH=H-PT-PB;
-  const xPos=d=>PL+(d-1)/(maxDay-1||1)*cW;
+  const xPos=d=>PL+(d-winStart)/(RAIN_YEAR_WIN-1)*cW;
   const yPos=v=>PT+cH-(v/maxV)*cH;
 
   let grid='';
@@ -4889,27 +4923,29 @@ function buildRainYearlyChartSVG(dataByYear,years,loadingYears){
     grid+=`<line x1="${PL}" y1="${gy.toFixed(1)}" x2="${W-PR}" y2="${gy.toFixed(1)}" stroke="${g===0?'#ddd':'#f2f2f2'}" stroke-width="${g===0?0.7:0.35}"/>`;
     grid+=`<text x="${PL-4}" y="${(gy+3).toFixed(1)}" font-size="9" fill="#aaa" text-anchor="end">${Math.round(gv)}</text>`;
   }
-  /* 월 경계선(1일)마다 세로 눈금 */
-  let monthLines='';
-  for(let mo=0;mo<12;mo++){
-    const d=Math.floor((new Date(curYear,mo,1)-new Date(curYear,0,1))/86400000)+1;
-    if(d>maxDay)break;
+  /* 창 구간 안의 날짜 라벨(월/일), 5일 간격 */
+  let xLabels='';
+  for(let d=winStart;d<=winEnd;d++){
+    if((d-winStart)%5!==0 && d!==winEnd)continue;
+    const dt=new Date(curYear,0,d);
     const px=xPos(d);
-    monthLines+=`<line x1="${px.toFixed(1)}" y1="${PT}" x2="${px.toFixed(1)}" y2="${PT+cH}" stroke="#f0f0f0" stroke-width="0.5"/>`;
-    monthLines+=`<text x="${px.toFixed(1)}" y="${H-8}" font-size="9" fill="#aaa" text-anchor="middle">${mo+1}월</text>`;
+    xLabels+=`<text x="${px.toFixed(1)}" y="${H-8}" font-size="9" fill="#aaa" text-anchor="middle">${dt.getMonth()+1}/${dt.getDate()}</text>`;
   }
 
   const COLORS={[curYear]:'#185FA5',[curYear-1]:'#8E44AD',[curYear-2]:'#7F8C8D'};
   const lines=series.map(s=>{
-    if(!s.vals.length)return'';
+    if(_rainYearHidden.has(s.year))return'';
+    const sliceEndIdx=Math.min(s.vals.length,winEnd);
+    if(sliceEndIdx<winStart)return''; /* 이 창 구간엔 그 해 데이터가 아직 없음(예: 올해가 그 날짜까지 안 옴) */
     let path='';
-    s.vals.forEach((v,i)=>{
-      const px=xPos(i+1),py=yPos(v);
-      path+=(i===0?`M${px.toFixed(1)},${py.toFixed(1)}`:`L${px.toFixed(1)},${py.toFixed(1)}`);
-    });
+    for(let d=winStart;d<=sliceEndIdx;d++){
+      const v=s.vals[d-1];
+      const px=xPos(d),py=yPos(v);
+      path+=(d===winStart?`M${px.toFixed(1)},${py.toFixed(1)}`:`L${px.toFixed(1)},${py.toFixed(1)}`);
+    }
     const isCur=s.year===curYear;
-    const lastV=s.vals[s.vals.length-1];
-    const lastPx=xPos(s.vals.length),lastPy=yPos(lastV);
+    const lastV=s.vals[sliceEndIdx-1];
+    const lastPx=xPos(sliceEndIdx),lastPy=yPos(lastV);
     const label=`<text x="${(lastPx+4).toFixed(1)}" y="${(lastPy+3).toFixed(1)}" font-size="9.5" fill="${COLORS[s.year]}" font-weight="700">${lastV.toFixed(0)}mm</text>`;
     return `<path d="${path}" fill="none" stroke="${COLORS[s.year]}" stroke-width="${isCur?2:1.4}" stroke-dasharray="${isCur?'none':'4 3'}" stroke-linejoin="round" stroke-linecap="round"/>${label}`;
   }).join('');
@@ -4917,24 +4953,32 @@ function buildRainYearlyChartSVG(dataByYear,years,loadingYears){
   const legend=years.map(y=>{
     const isCur=y===curYear;
     const isLoading=loadingYears.includes(y);
-    return `<span style="display:flex;align-items:center;gap:3px;">
+    const isHidden=_rainYearHidden.has(y);
+    return `<span onclick="toggleRainYearVisible(${y})" title="클릭하여 켜기/끄기" style="display:flex;align-items:center;gap:3px;cursor:pointer;opacity:${isHidden?0.35:1};user-select:none;">
       <span style="width:12px;height:${isCur?2.5:0}px;background:${isCur?COLORS[y]:'none'};border-top:${isCur?'none':`2px dashed ${COLORS[y]}`};display:inline-block;"></span>
-      ${y}년${isLoading?' <span style="color:#B45309;">(불러오는 중…)</span>':''}
+      <span style="text-decoration:${isHidden?'line-through':'none'};">${y}년</span>${isLoading?' <span style="color:#B45309;">(불러오는 중…)</span>':''}
     </span>`;
   }).join('');
 
   return `
-    <div style="display:flex;gap:12px;font-size:10.5px;color:#555;margin-bottom:3px;flex-wrap:wrap;">${legend}</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px;margin-bottom:3px;">
+      <div style="display:flex;gap:12px;font-size:10.5px;color:#555;flex-wrap:wrap;">${legend}</div>
+      <div style="display:flex;align-items:center;gap:4px;">
+        <button onclick="rainYearNav(-1)" ${!canLeft?'disabled':''} style="width:20px;height:20px;border-radius:50%;border:1px solid #c8c8c8;background:${canLeft?'#fff':'#f5f5f5'};color:${canLeft?'#444':'#ccc'};font-size:10px;cursor:${canLeft?'pointer':'not-allowed'};display:flex;align-items:center;justify-content:center;padding:0;">◀</button>
+        <span style="font-size:9px;color:#888;min-width:60px;text-align:center;">${(()=>{const a=new Date(curYear,0,winStart),b=new Date(curYear,0,winEnd);return`${a.getMonth()+1}/${a.getDate()} ~ ${b.getMonth()+1}/${b.getDate()}`;})()}</span>
+        <button onclick="rainYearNav(1)" ${!canRight?'disabled':''} style="width:20px;height:20px;border-radius:50%;border:1px solid #c8c8c8;background:${canRight?'#fff':'#f5f5f5'};color:${canRight?'#444':'#ccc'};font-size:10px;cursor:${canRight?'pointer':'not-allowed'};display:flex;align-items:center;justify-content:center;padding:0;">▶</button>
+      </div>
+    </div>
     <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
       <svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="display:block;">
         ${grid}
-        ${monthLines}
         <line x1="${PL}" y1="${PT}" x2="${PL}" y2="${PT+cH}" stroke="#ddd" stroke-width="0.8"/>
         <line x1="${PL}" y1="${PT+cH}" x2="${W-PR}" y2="${PT+cH}" stroke="#ddd" stroke-width="0.8"/>
         ${lines}
+        ${xLabels}
       </svg>
     </div>
-    <div style="font-size:9px;color:#999;text-align:right;margin-top:2px;">누적 강우량(mm) · 같은 날짜(월/일) 기준 연도 비교</div>`;
+    <div style="font-size:9px;color:#999;text-align:right;margin-top:2px;">누적 강우량(mm) · 같은 날짜(월/일) 기준 연도 비교 · 범례 클릭으로 켜기/끄기</div>`;
 }
 
 function rainNav(page){
@@ -5905,6 +5949,7 @@ function loadForEdit(idx,silent){
     /* 기온 추이/볼스피드 차트: 수동 이동 리셋 → renderTempChart에서 picker 기준 자동 설정 */
     _tempManualNav=false;
     _gpManualNav=false;
+    _rainYearManualNav=false;
     _rainManualNav=false;
     _irrManualNav=false;
     window._bsManualNav={};
@@ -9815,6 +9860,7 @@ function applyDatePicker(val){
   /* 날짜가 바뀌면 수동 이동 리셋 후 해당 날짜 기준으로 자동 설정 */
   _tempManualNav=false;
   _gpManualNav=false;
+  _rainYearManualNav=false;
   _rainManualNav=false;
   _irrManualNav=false;
   window._bsManualNav={}; /* 볼스피드 수동이동 리셋 */
@@ -9845,6 +9891,7 @@ function setToday(){
   document.getElementById('inp-date').value=formatDateStr(yyyy,mm,dd);
   _tempManualNav=false;
   _gpManualNav=false;
+  _rainYearManualNav=false;
   _rainManualNav=false;
   _irrManualNav=false;
   window._bsManualNav={};
