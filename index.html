@@ -1424,6 +1424,12 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
     <div id="rain-chart-container"></div>
     <div style="font-size:10px;color:#888;margin-top:5px;text-align:right;">자동 불러오기 시 갱신 · mm 단위</div>
 
+    <div class="sec-divider"></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:4px;">
+      <div class="rain-chart-title" style="margin:0;">연도별 누적강우량 비교</div>
+    </div>
+    <div id="rain-yearly-chart"></div>
+
     <!-- 최근 30일 관수 현황 (먼저) -->
     <div class="sec-divider"></div>
     <div style="font-size:11px;font-weight:700;color:#444;margin-bottom:8px;display:flex;align-items:center;gap:6px;">
@@ -4768,6 +4774,169 @@ async function fetchWeather(){
     }
   }catch(e){console.error(e);showToast('날씨 불러오기 실패');}
 }
+
+/* ── 연도별 누적강우량 비교 (24년/25년/26년) ──
+   올해·작년은 이미 저장된 기록(weather.rain)에서 바로 계산 가능. 재작년(24년)은
+   로컬에 기록이 없어 기상청에서 새로 가져와야 하는데, 강수량(rn_day)은 기온
+   (ta_max/ta_min)과 달리 날짜범위(tm1~tm2) 조회가 잘 되는 것으로 이미 확인돼
+   있어서(월/연 누적강우량 계산 로직에서 검증됨) 하루씩 조회할 필요 없이 그 해
+   전체를 한 번의 요청으로 가져올 수 있음. 가져온 결과는 캐시에 저장해 다음부턴
+   재조회하지 않음. */
+const YEAR_RAIN_CACHE_KEY='hist_rain_year_cache_v1';
+function getYearRainCache(){try{return JSON.parse(localStorage.getItem(YEAR_RAIN_CACHE_KEY)||'{}');}catch(e){return{};}}
+function setYearRainCache(c){try{localStorage.setItem(YEAR_RAIN_CACHE_KEY,JSON.stringify(c));}catch(e){}}
+function getYearlyRainFromRecords(year){
+  const map={};
+  gd().forEach(r=>{
+    const m=r.date?.match(/(\d+)년\s*(\d+)월\s*(\d+)일/);
+    if(!m)return;
+    const yy=parseInt(m[1]);const yyyy=yy<50?2000+yy:1900+yy;
+    if(yyyy!==year)return;
+    const iso=`${yyyy}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+    const w=r.weather;
+    if(w && w.rain!=null && w.rain!==''){
+      const v=parseFloat(w.rain);
+      if(!isNaN(v)) map[iso]=v;
+    }
+  });
+  return map;
+}
+async function fetchYearRainRange(year){
+  const now=new Date();
+  const isCurYear=year===now.getFullYear();
+  const endD=isCurYear?now:new Date(year,11,31);
+  const tm1=`${year}0101`;
+  const tm2=`${endD.getFullYear()}${String(endD.getMonth()+1).padStart(2,'0')}${String(endD.getDate()).padStart(2,'0')}`;
+  const ctrl=new AbortController();const tid=setTimeout(()=>ctrl.abort(),15000);
+  const txt=await fetch(`https://empty-morning-c054.loveinch2000.workers.dev/?path=sfc_aws_day.php&tm1=${tm1}&tm2=${tm2}&obs=rn_day&stn=460`,{signal:ctrl.signal}).then(r=>r.text()).finally(()=>clearTimeout(tid));
+  const map={};
+  txt.split('\n').forEach(line=>{
+    line=line.trim();
+    if(!line||line.startsWith('#'))return;
+    const cols=line.split(',').map(s=>s.trim());
+    if(cols.length<6)return;
+    const ymd=cols[0];
+    if(!/^\d{6}$/.test(ymd))return;
+    const yy=parseInt(ymd.slice(0,2),10);
+    const yyyy=yy<50?2000+yy:1900+yy;
+    const iso=`${yyyy}-${ymd.slice(2,4)}-${ymd.slice(4,6)}`;
+    const v=parseFloat(cols[5]);
+    if(!isNaN(v)&&v>=0) map[iso]=v; /* 음수는 결측 코드로 보고 제외 (월/연 누적계산 로직과 동일 기준) */
+  });
+  return map;
+}
+let _yearRainFetchBusy={};
+function renderRainYearlyChart(){
+  const el=document.getElementById('rain-yearly-chart');
+  if(!el)return;
+  const curYear=new Date().getFullYear();
+  const years=[curYear-2,curYear-1,curYear];
+  const cache=getYearRainCache();
+  const dataByYear={};
+  const needFetch=[];
+  years.forEach(y=>{
+    const local=getYearlyRainFromRecords(y);
+    const cached=cache[y];
+    dataByYear[y]=cached?{...cached,...local}:local; /* 로컬 기록이 더 정확·최신이므로 캐시보다 우선 덮어씀 */
+    if(!cached && Object.keys(local).length===0) needFetch.push(y);
+  });
+  el.innerHTML=buildRainYearlyChartSVG(dataByYear,years,needFetch);
+  needFetch.forEach(y=>{
+    if(_yearRainFetchBusy[y])return;
+    _yearRainFetchBusy[y]=true;
+    fetchYearRainRange(y)
+      .then(map=>{ const c=getYearRainCache(); c[y]=map; setYearRainCache(c); })
+      .catch(()=>{ const c=getYearRainCache(); c[y]={}; setYearRainCache(c); }) /* 실패해도 빈 값으로 캐시해 무한 재조회 방지 */
+      .finally(()=>{ _yearRainFetchBusy[y]=false; renderRainYearlyChart(); });
+  });
+}
+function buildRainYearlyChartSVG(dataByYear,years,loadingYears){
+  const isLeap=y=>(y%4===0&&y%100!==0)||y%400===0;
+  const curYear=new Date().getFullYear();
+  const today=new Date();
+  function cumulativeArr(year){
+    const map=dataByYear[year]||{};
+    const totalDays=isLeap(year)?366:365;
+    const endDay=year===curYear ? (Math.floor((today-new Date(year,0,1))/86400000)+1) : totalDays;
+    const arr=[];
+    let sum=0;
+    for(let d=1;d<=endDay;d++){
+      const dt=new Date(year,0,d);
+      const iso=`${year}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+      if(map[iso]!=null) sum+=map[iso];
+      arr.push(sum);
+    }
+    return arr;
+  }
+  const series=years.map(y=>({year:y,vals:cumulativeArr(y)}));
+  const maxDay=Math.max(...series.map(s=>s.vals.length));
+  const maxV=Math.max(...series.flatMap(s=>s.vals),10);
+
+  const H=175,PL=44,PR=14,PT=20,PB=30;
+  const el0=document.getElementById('rain-yearly-chart');
+  const availW=(el0&&el0.clientWidth)||0;
+  const minDayW=1.6;
+  const dayW=availW>PL+PR ? Math.max(minDayW,(availW-PL-PR)/maxDay) : minDayW;
+  const W=Math.max(260,PL+PR+maxDay*dayW);
+  const cW=W-PL-PR,cH=H-PT-PB;
+  const xPos=d=>PL+(d-1)/(maxDay-1||1)*cW;
+  const yPos=v=>PT+cH-(v/maxV)*cH;
+
+  let grid='';
+  for(let g=0;g<=4;g++){
+    const gv=maxV/4*g;
+    const gy=yPos(gv);
+    grid+=`<line x1="${PL}" y1="${gy.toFixed(1)}" x2="${W-PR}" y2="${gy.toFixed(1)}" stroke="${g===0?'#ddd':'#f2f2f2'}" stroke-width="${g===0?0.7:0.35}"/>`;
+    grid+=`<text x="${PL-4}" y="${(gy+3).toFixed(1)}" font-size="9" fill="#aaa" text-anchor="end">${Math.round(gv)}</text>`;
+  }
+  /* 월 경계선(1일)마다 세로 눈금 */
+  let monthLines='';
+  for(let mo=0;mo<12;mo++){
+    const d=Math.floor((new Date(curYear,mo,1)-new Date(curYear,0,1))/86400000)+1;
+    if(d>maxDay)break;
+    const px=xPos(d);
+    monthLines+=`<line x1="${px.toFixed(1)}" y1="${PT}" x2="${px.toFixed(1)}" y2="${PT+cH}" stroke="#f0f0f0" stroke-width="0.5"/>`;
+    monthLines+=`<text x="${px.toFixed(1)}" y="${H-8}" font-size="9" fill="#aaa" text-anchor="middle">${mo+1}월</text>`;
+  }
+
+  const COLORS={[curYear]:'#185FA5',[curYear-1]:'#8E44AD',[curYear-2]:'#7F8C8D'};
+  const lines=series.map(s=>{
+    if(!s.vals.length)return'';
+    let path='';
+    s.vals.forEach((v,i)=>{
+      const px=xPos(i+1),py=yPos(v);
+      path+=(i===0?`M${px.toFixed(1)},${py.toFixed(1)}`:`L${px.toFixed(1)},${py.toFixed(1)}`);
+    });
+    const isCur=s.year===curYear;
+    const lastV=s.vals[s.vals.length-1];
+    const lastPx=xPos(s.vals.length),lastPy=yPos(lastV);
+    const label=`<text x="${(lastPx+4).toFixed(1)}" y="${(lastPy+3).toFixed(1)}" font-size="9.5" fill="${COLORS[s.year]}" font-weight="700">${lastV.toFixed(0)}mm</text>`;
+    return `<path d="${path}" fill="none" stroke="${COLORS[s.year]}" stroke-width="${isCur?2:1.4}" stroke-dasharray="${isCur?'none':'4 3'}" stroke-linejoin="round" stroke-linecap="round"/>${label}`;
+  }).join('');
+
+  const legend=years.map(y=>{
+    const isCur=y===curYear;
+    const isLoading=loadingYears.includes(y);
+    return `<span style="display:flex;align-items:center;gap:3px;">
+      <span style="width:12px;height:${isCur?2.5:0}px;background:${isCur?COLORS[y]:'none'};border-top:${isCur?'none':`2px dashed ${COLORS[y]}`};display:inline-block;"></span>
+      ${y}년${isLoading?' <span style="color:#B45309;">(불러오는 중…)</span>':''}
+    </span>`;
+  }).join('');
+
+  return `
+    <div style="display:flex;gap:12px;font-size:10.5px;color:#555;margin-bottom:3px;flex-wrap:wrap;">${legend}</div>
+    <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
+      <svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="display:block;">
+        ${grid}
+        ${monthLines}
+        <line x1="${PL}" y1="${PT}" x2="${PL}" y2="${PT+cH}" stroke="#ddd" stroke-width="0.8"/>
+        <line x1="${PL}" y1="${PT+cH}" x2="${W-PR}" y2="${PT+cH}" stroke="#ddd" stroke-width="0.8"/>
+        ${lines}
+      </svg>
+    </div>
+    <div style="font-size:9px;color:#999;text-align:right;margin-top:2px;">누적 강우량(mm) · 같은 날짜(월/일) 기준 연도 비교</div>`;
+}
+
 function rainNav(page){
   _rainManualNav=true;
   renderRainChart(page);
@@ -4777,6 +4946,7 @@ function renderRainChart(page){
   const wrap=document.getElementById('rain-chart-container');
   if(!wrap) return;
   if(typeof page==='number') _rainPage=page;
+  renderRainYearlyChart(); /* 연도별 누적강우량 비교 차트도 함께 갱신 (강우 현황과 별개 데이터 소스라 독립적으로 그림) */
 
   if(!rainData30.length){
     wrap.innerHTML='<div style="font-size:11px;color:#aaa;padding:10px;">자동 불러오기 후 표시됩니다</div>';
