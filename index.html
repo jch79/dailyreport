@@ -4956,6 +4956,16 @@ function buildRainYearlyChartSVG(dataByYear,years,loadingYears){
     xLabels+=`<text x="${px.toFixed(1)}" y="${H-8}" font-size="9" fill="#aaa" text-anchor="middle">${dt.getMonth()+1}/${dt.getDate()}</text>`;
   }
 
+  /* 요청: 선 위(그 날짜 열)를 클릭하면 그날의 실제 강우량(누적 아님)을 연도별로
+     비교해서 보여주는 팝업 — 하루치 폭만큼 투명한 클릭 영역을 깔아둠 */
+  let clickAreas='';
+  const dayHitW=Math.max(4,cW/RAIN_YEAR_WIN);
+  for(let d=winStart;d<=winEnd;d++){
+    const dt=new Date(curYear,0,d);
+    const px=xPos(d);
+    clickAreas+=`<rect x="${(px-dayHitW/2).toFixed(1)}" y="${PT}" width="${dayHitW.toFixed(1)}" height="${cH}" fill="transparent" style="cursor:pointer;" onclick="showRainYearDayDetail(${dt.getMonth()+1},${dt.getDate()})"><title>${dt.getMonth()+1}/${dt.getDate()} 탭하여 그날 강우량 보기</title></rect>`;
+  }
+
   const COLORS={[curYear]:'#185FA5',[curYear-1]:'#8E44AD',[curYear-2]:'#7F8C8D'};
   const lines=series.map(s=>{
     if(_rainYearHidden.has(s.year))return'';
@@ -5005,9 +5015,53 @@ function buildRainYearlyChartSVG(dataByYear,years,loadingYears){
         <line x1="${PL}" y1="${PT+cH}" x2="${W-PR}" y2="${PT+cH}" stroke="#ddd" stroke-width="0.8"/>
         ${lines}
         ${xLabels}
+        ${clickAreas}
       </svg>
     </div>
-    <div style="font-size:9px;color:#999;text-align:right;margin-top:2px;">누적 강우량(mm) · 같은 날짜(월/일) 기준 연도 비교 · 범례 클릭으로 켜기/끄기</div>`;
+    <div style="font-size:9px;color:#999;text-align:right;margin-top:2px;">누적 강우량(mm) · 같은 날짜(월/일) 기준 연도 비교 · 범례 클릭으로 켜기/끄기 · 그래프 탭하여 그날 강우량 보기</div>`;
+}
+
+function showRainYearDayDetail(mm,dd){
+  const modal=document.getElementById('rain-year-day-modal');
+  const body=document.getElementById('rain-year-day-modal-body');
+  const titleEl=modal?modal.querySelector('.modal-ttl'):null;
+  if(!modal||!body)return;
+  const curYear=new Date().getFullYear();
+  const years=[curYear-2,curYear-1,curYear];
+  const cache=getYearRainCache();
+  const COLORS={[curYear]:'#185FA5',[curYear-1]:'#8E44AD',[curYear-2]:'#7F8C8D'};
+  if(titleEl)titleEl.textContent=`🌧️ ${mm}월 ${dd}일 강우량 비교`;
+  const today=new Date();
+  const rowsHtml=years.map(y=>{
+    const dt=new Date(y,mm-1,dd);
+    if(dt.getMonth()!==mm-1){
+      return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #f0f0f0;">
+        <span style="font-weight:700;color:${COLORS[y]};">${y}년</span><span style="color:#bbb;">해당 날짜 없음(윤년)</span></div>`;
+    }
+    if(dt>today){
+      return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #f0f0f0;">
+        <span style="font-weight:700;color:${COLORS[y]};">${y}년</span><span style="color:#bbb;">아직 지나지 않음</span></div>`;
+    }
+    const local=getYearlyRainFromRecords(y);
+    const cachedY=cache[y]||{};
+    const map={...cachedY,...local};
+    const iso=`${y}-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}`;
+    const dayVal=map[iso];
+    let cum=0;
+    const endDay=Math.floor((dt-new Date(y,0,1))/86400000)+1;
+    for(let d=1;d<=endDay;d++){
+      const dt2=new Date(y,0,d);
+      const iso2=`${y}-${String(dt2.getMonth()+1).padStart(2,'0')}-${String(dt2.getDate()).padStart(2,'0')}`;
+      if(map[iso2]!=null) cum+=map[iso2];
+    }
+    const dayStr = dayVal!=null ? `${dayVal.toFixed(1)}mm` : '자료없음';
+    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #f0f0f0;">
+      <span style="font-weight:700;color:${COLORS[y]};">${y}년</span>
+      <span style="text-align:right;"><b style="font-size:14px;">${dayStr}</b><br><span style="font-size:11px;color:#999;">누적 ${cum.toFixed(1)}mm</span></span>
+    </div>`;
+  }).join('');
+  body.innerHTML=rowsHtml;
+  modal.style.display='flex';
 }
 
 function rainNav(page){
@@ -5105,6 +5159,19 @@ function renderRainChart(page){
     </div>`;
   }).join('');
 
+  /* 연/월 누적강우량 — 지금 보고 있는(작성 탭 날짜 기준) 연도·월 기준으로 계산.
+     연도별 누적강우량 비교 차트에서 쓰는 것과 같은 데이터(로컬 기록 우선, 없으면
+     기상청 캐시)를 재사용 */
+  const pickerISO2=getPickerISO()||(()=>{const t=new Date();return`${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`;})();
+  const [pY,pM]=pickerISO2.split('-').map(Number);
+  const yearMap=(()=>{const cache=getYearRainCache();const local=getYearlyRainFromRecords(pY);const cachedY=cache[pY]||{};return{...cachedY,...local};})();
+  let yearCum=0,monthCum=0;
+  Object.keys(yearMap).forEach(iso=>{
+    if(iso>pickerISO2)return;
+    yearCum+=yearMap[iso];
+    if(parseInt(iso.slice(5,7),10)===pM) monthCum+=yearMap[iso];
+  });
+
   wrap.innerHTML=`
     <div style="display:flex;gap:5px;align-items:stretch;">
       ${navBtn(isOldest,'rainNav('+sliceStart+')','◀','과거 날짜로')}
@@ -5118,6 +5185,8 @@ function renderRainChart(page){
       <span style="color:#888;">📅 ${rangeText}</span>
       <span>강우일수 <b style="color:#185FA5;">${rainDays}일</b></span>
       <span>누적강우 <b style="color:#185FA5;">${totalRain.toFixed(1)}mm</b></span>
+      <span>월누적 강우량(${pM}월) <b style="color:#185FA5;">${monthCum.toFixed(1)}mm</b></span>
+      <span>연누적 강우량(${pY}년) <b style="color:#185FA5;">${yearCum.toFixed(1)}mm</b></span>
     </div>`;
 }
 function wmo(c){if(c===0)return'맑음';if(c<=3)return'구름';if(c<=49)return'안개';if(c<=67)return'비';if(c<=77)return'눈';if(c<=82)return'소나기';if(c<=86)return'눈 소나기';return'뇌우';}
@@ -14299,6 +14368,16 @@ function showPdfGuide(ri){
       <button class="btn btn-sm" onclick="document.getElementById('gp-calc-modal').style.display='none'">✕ 닫기</button>
     </div>
     <div id="gp-calc-modal-body" style="padding:8px 2px 4px;font-size:13px;line-height:1.7;"></div>
+  </div>
+</div>
+
+<div id="rain-year-day-modal" class="modal-wrap" onclick="if(event.target===this)this.style.display='none'" style="display:none;">
+  <div class="modal" style="max-width:340px;width:92%;">
+    <div class="modal-hdr">
+      <div class="modal-ttl">🌧️ 그날의 강우량</div>
+      <button class="btn btn-sm" onclick="document.getElementById('rain-year-day-modal').style.display='none'">✕ 닫기</button>
+    </div>
+    <div id="rain-year-day-modal-body" style="padding:8px 2px 4px;font-size:13px;line-height:1.7;"></div>
   </div>
 </div>
 
