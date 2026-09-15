@@ -4833,9 +4833,17 @@ let _yearRainFetchBusy={};
 let _rainYearOffset=0;
 let _rainYearManualNav=false;
 let _rainYearHidden=new Set();
-const RAIN_YEAR_WIN=30;
+const RAIN_YEAR_WIN_OPTIONS={1:30,3:90,6:180,12:366}; /* 요청으로 1/3/6/12개월 선택 가능하게 함(12개월=1년 전체, 페이지 이동 불필요) */
+let _rainYearWinKey=1;
+function setRainYearWindow(key){
+  _rainYearWinKey=key;
+  _rainYearManualNav=false; /* 기간을 바꾸면 다시 "오늘" 기준으로 재중심 */
+  _rainYearOffset=0;
+  renderRainYearlyChart();
+}
 function rainYearNav(dir){
-  _rainYearOffset=Math.max(0,Math.min(366-RAIN_YEAR_WIN,_rainYearOffset+dir*RAIN_YEAR_WIN));
+  const win=RAIN_YEAR_WIN_OPTIONS[_rainYearWinKey];
+  _rainYearOffset=Math.max(0,Math.min(366-win,_rainYearOffset+dir*win));
   _rainYearManualNav=true;
   renderRainYearlyChart();
 }
@@ -4891,7 +4899,9 @@ function buildRainYearlyChartSVG(dataByYear,years,loadingYears){
 
   /* 요청: 1년치를 다 보여주면 알아보기 어려워서, 작성 탭 날짜 기준 최근 30일
      구간만 보여주고 ◀/▶로 앞뒤 이동 가능하게 함(기온추이 차트와 동일한 방식).
-     날짜별 절대 누적치는 그대로 유지한 채(0부터 다시 시작 안 함) x축 구간만 자름 */
+     날짜별 절대 누적치는 그대로 유지한 채(0부터 다시 시작 안 함) x축 구간만 자름.
+     기간(1/3/6/12개월)은 setRainYearWindow()로 선택 가능 */
+  const RAIN_YEAR_WIN=RAIN_YEAR_WIN_OPTIONS[_rainYearWinKey];
   const TOTAL_DAYS=366;
   const pickerISO=getPickerISO();
   const todayDN = pickerISO ? dayOfYear(new Date(pickerISO+'T00:00:00')) : dayOfYear(today);
@@ -4901,27 +4911,41 @@ function buildRainYearlyChartSVG(dataByYear,years,loadingYears){
   const canLeft=_rainYearOffset>0;
   const canRight=_rainYearOffset+RAIN_YEAR_WIN<TOTAL_DAYS;
 
-  /* y축 최대값은 창 안에 실제로 그려질 값들 기준으로 잡아야 확대해서 보는 의미가 있음 */
+  /* y축 최대값은 창 안에 실제로 그려질 값들 기준으로 잡아야 확대해서 보는 의미가 있음.
+     요청: 수치가 더 정확히 보이도록 — (1) 눈금을 1116/837처럼 어중간한 값이 아니라
+     "깔끔한 값"(50/100/250/500 단위)으로 반올림, (2) 끝에 잘려 보이던 값 라벨을
+     소수 첫째자리까지 표시하고 오른쪽 여백을 넉넉히 줘서 안 잘리게 함 */
   const visYears=years.filter(y=>!_rainYearHidden.has(y));
   const winVals=series.filter(s=>!_rainYearHidden.has(s.year)).flatMap(s=>s.vals.slice(winStart-1,winEnd));
-  const maxV=Math.max(...winVals,10);
+  const rawMaxV=Math.max(...winVals,10);
+  function niceStep(max,ticks){
+    const raw=max/ticks;
+    const mag=Math.pow(10,Math.floor(Math.log10(raw)));
+    const norm=raw/mag;
+    let niceNorm;
+    if(norm<1.5)niceNorm=1; else if(norm<3)niceNorm=2; else if(norm<7)niceNorm=5; else niceNorm=10;
+    return niceNorm*mag;
+  }
+  const GRID_TICKS=5;
+  const step=niceStep(rawMaxV,GRID_TICKS)||10;
+  const maxV=step*GRID_TICKS;
 
-  const H=175,PL=44,PR=14,PT=20,PB=30;
+  const H=175,PL=48,PR=54,PT=20,PB=30; /* 끝 값 라벨(예: "1116.4mm")이 안 잘리게 PR 확대 */
   const el0=document.getElementById('rain-yearly-chart');
   const availW=(el0&&el0.clientWidth)||0;
   const minDayW=18;
   const dayW=availW>PL+PR ? Math.max(minDayW,(availW-PL-PR)/RAIN_YEAR_WIN) : minDayW;
-  const W=Math.max(260,PL+PR+RAIN_YEAR_WIN*dayW);
+  const W=Math.max(300,PL+PR+RAIN_YEAR_WIN*dayW);
   const cW=W-PL-PR,cH=H-PT-PB;
   const xPos=d=>PL+(d-winStart)/(RAIN_YEAR_WIN-1)*cW;
   const yPos=v=>PT+cH-(v/maxV)*cH;
 
   let grid='';
-  for(let g=0;g<=4;g++){
-    const gv=maxV/4*g;
+  for(let g=0;g<=GRID_TICKS;g++){
+    const gv=step*g;
     const gy=yPos(gv);
     grid+=`<line x1="${PL}" y1="${gy.toFixed(1)}" x2="${W-PR}" y2="${gy.toFixed(1)}" stroke="${g===0?'#ddd':'#f2f2f2'}" stroke-width="${g===0?0.7:0.35}"/>`;
-    grid+=`<text x="${PL-4}" y="${(gy+3).toFixed(1)}" font-size="9" fill="#aaa" text-anchor="end">${Math.round(gv)}</text>`;
+    grid+=`<text x="${PL-4}" y="${(gy+3).toFixed(1)}" font-size="9" fill="#aaa" text-anchor="end">${gv.toFixed(0)}</text>`;
   }
   /* 창 구간 안의 날짜 라벨(월/일), 5일 간격 */
   let xLabels='';
@@ -4937,17 +4961,19 @@ function buildRainYearlyChartSVG(dataByYear,years,loadingYears){
     if(_rainYearHidden.has(s.year))return'';
     const sliceEndIdx=Math.min(s.vals.length,winEnd);
     if(sliceEndIdx<winStart)return''; /* 이 창 구간엔 그 해 데이터가 아직 없음(예: 올해가 그 날짜까지 안 옴) */
-    let path='';
+    let path='',dots='';
     for(let d=winStart;d<=sliceEndIdx;d++){
       const v=s.vals[d-1];
       const px=xPos(d),py=yPos(v);
       path+=(d===winStart?`M${px.toFixed(1)},${py.toFixed(1)}`:`L${px.toFixed(1)},${py.toFixed(1)}`);
+      const dt=new Date(curYear,0,d);
+      dots+=`<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="1.6" fill="${COLORS[s.year]}" stroke="#fff" stroke-width="0.6"><title>${s.year}년 ${dt.getMonth()+1}/${dt.getDate()} 누적 ${v.toFixed(1)}mm</title></circle>`;
     }
     const isCur=s.year===curYear;
     const lastV=s.vals[sliceEndIdx-1];
     const lastPx=xPos(sliceEndIdx),lastPy=yPos(lastV);
-    const label=`<text x="${(lastPx+4).toFixed(1)}" y="${(lastPy+3).toFixed(1)}" font-size="9.5" fill="${COLORS[s.year]}" font-weight="700">${lastV.toFixed(0)}mm</text>`;
-    return `<path d="${path}" fill="none" stroke="${COLORS[s.year]}" stroke-width="${isCur?2:1.4}" stroke-dasharray="${isCur?'none':'4 3'}" stroke-linejoin="round" stroke-linecap="round"/>${label}`;
+    const label=`<text x="${(lastPx+4).toFixed(1)}" y="${(lastPy+3).toFixed(1)}" font-size="9.5" fill="${COLORS[s.year]}" font-weight="700">${lastV.toFixed(1)}mm</text>`;
+    return `<path d="${path}" fill="none" stroke="${COLORS[s.year]}" stroke-width="${isCur?2:1.4}" stroke-dasharray="${isCur?'none':'4 3'}" stroke-linejoin="round" stroke-linecap="round"/>${dots}${label}`;
   }).join('');
 
   const legend=years.map(y=>{
@@ -4961,6 +4987,9 @@ function buildRainYearlyChartSVG(dataByYear,years,loadingYears){
   }).join('');
 
   return `
+    <div style="display:flex;align-items:center;gap:5px;margin-bottom:5px;">
+      ${[1,3,6,12].map(k=>`<button onclick="setRainYearWindow(${k})" style="font-size:9.5px;padding:3px 9px;border-radius:100px;cursor:pointer;border:1.3px solid ${_rainYearWinKey===k?'#185FA5':'#ccc'};background:${_rainYearWinKey===k?'#185FA5':'#fff'};color:${_rainYearWinKey===k?'#fff':'#888'};font-weight:700;">${k}개월</button>`).join('')}
+    </div>
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px;margin-bottom:3px;">
       <div style="display:flex;gap:12px;font-size:10.5px;color:#555;flex-wrap:wrap;">${legend}</div>
       <div style="display:flex;align-items:center;gap:4px;">
