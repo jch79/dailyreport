@@ -11566,18 +11566,24 @@ function parseSandAmt(str){
   return {value:v, unit:u};
 }
 
-/* ── 사용량 문자열에서 표시용 단위(g/ml) 추출 — parseGram과 같은 규칙(kg→g, l→ml) ── */
-function parseAmtUnitLabel(str){
-  if(!str) return 'g';
-  const s = String(str).trim().replace(/,/g,'').replace(/ℓ/g,'l');
-  const m = s.match(/([\d.]+)\s*(kg|g|ml|l)?/i);
-  if(m && m[2]){
-    const u = m[2].toLowerCase();
-    if(u==='l') return 'ml';
-    if(u==='kg') return 'g';
-    return u;
+/* ── 항목의 실제 규격값 조회 (목록 선택형이면 최신 목록값 우선, size 셀과 동일 로직) ── */
+function resolveItemSize(item){
+  if(item.type!=='manual' && item.brandName){
+    const list = getListByType(item.type);
+    const p = (list[item._listIdx]?.name===item.brandName) ? list[item._listIdx] : list.find(x=>x.name===item.brandName);
+    return p?.size ?? item.size;
   }
-  return 'g';
+  return item.size;
+}
+/* ── 규격 문자열에서 단위기호만 추출 (100ml→ml, 25kg→g, 11ℓ→ml, 100g→g) ──
+   부피 단위(ml/l/ℓ)는 ml로, 무게 단위(g/kg)는 g로 통일해서 제품량 표시에 사용 */
+function parseSizeUnitLabel(sizeStr){
+  if(!sizeStr) return null;
+  const s = String(sizeStr).trim().replace(/,/g,'').replace(/ℓ/gi,'l');
+  const m = s.match(/(kg|g|ml|l)/i);
+  if(!m) return null;
+  const u = m[1].toLowerCase();
+  return (u==='l'||u==='ml') ? 'ml' : 'g';
 }
 /* ── 수량(총 소요량) = 사용량(1㎡ 기준) × 처리지역 공통 처리면적(㎡)
    모래는 처리면적/탱크용량 개념이 없으므로 계산 대상에서 제외(— 표시) ── */
@@ -11605,7 +11611,7 @@ function renderQtyCell(item, block){
   if(item.type==='sand') return '<span style="color:#bbb;font-size:11px;padding:2px 4px;display:block;text-align:center;">—</span>';
   const q = calcMatQty(item, block);
   if(q===null) return '<span style="color:#ccc;font-size:11px;padding:2px 4px;display:block;text-align:center;">—</span>';
-  const unit = parseAmtUnitLabel(item.amount);
+  const unit = parseSizeUnitLabel(resolveItemSize(item)) || 'g';
   return `<span style="font-size:12px;font-weight:700;color:#1a5fa8;padding:2px 4px;display:block;text-align:center;">${fmtMatNum(q)}${unit}</span>`;
 }
 function renderDilutionCell(item, block){
@@ -11662,8 +11668,8 @@ const MAT_COLS = [
   { key:'form',    label:'제형',      width:'64px'  },
   { key:'product', label:'품목명',    width:'208px' },
   { key:'dilution',label:'희석배수',  width:'88px'  },
-  { key:'qty',     label:'수량',      width:'88px'  },
-  { key:'amount',  label:'사용량',    width:'72px'  },
+  { key:'qty',     label:'제품량',    width:'88px'  },
+  { key:'amount',  label:'㎡당 사용량',width:'84px'  },
   { key:'recUsage',label:'권장사용량',width:'96px'  },
   { key:'compInfo',label:'성분정보',  width:'180px' },
   { key:'nutr',    label:'순성분량',  width:'150px' },
