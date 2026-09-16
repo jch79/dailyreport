@@ -161,6 +161,7 @@ async function fbFullSyncFromCloud(){
       if(sh.areaPresets) localStorage.setItem('mat_area_custom_presets', JSON.stringify(sh.areaPresets));
       if(sh.treatAreaPresets) localStorage.setItem('mat_treatarea_custom_presets', JSON.stringify(sh.treatAreaPresets));
       if(sh.tankVolPresets) localStorage.setItem('mat_tankvol_custom_presets', JSON.stringify(sh.tankVolPresets));
+      if(sh.matColOrder) localStorage.setItem('mat_col_order_v1', JSON.stringify(sh.matColOrder));
       if(sh.regNameOrder) localStorage.setItem('reg_name_order_v1', JSON.stringify(sh.regNameOrder));
       if(sh.weatherManual) localStorage.setItem('golf_weather_stat_manual_v1', JSON.stringify(sh.weatherManual));
       console.log('[FB] 공유 설정 동기화 완료');
@@ -216,6 +217,7 @@ async function fbSaveSharedSettings(){
     const ap=localStorage.getItem('mat_area_custom_presets'); if(ap) settings.areaPresets=JSON.parse(ap);
     const tap=localStorage.getItem('mat_treatarea_custom_presets'); if(tap) settings.treatAreaPresets=JSON.parse(tap);
     const tvp=localStorage.getItem('mat_tankvol_custom_presets'); if(tvp) settings.tankVolPresets=JSON.parse(tvp);
+    const mco=localStorage.getItem('mat_col_order_v1'); if(mco) settings.matColOrder=JSON.parse(mco);
     const rno=localStorage.getItem('reg_name_order_v1'); if(rno) settings.regNameOrder=JSON.parse(rno);
     const wm=localStorage.getItem('golf_weather_stat_manual_v1'); if(wm) settings.weatherManual=JSON.parse(wm);
     settings._updatedAt = firebase.firestore.FieldValue.serverTimestamp();
@@ -8284,7 +8286,7 @@ function executeResetAll(){
   /* 모든 스토리지 키 삭제 */
   const keys=[SK,PK,RK,CNK,RATE_KEY,TPRESET_KEY,YEGO_KEY,DSK,WCK,LOC_KEY,
     STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_PEST_KEY,MAT_FERT_KEY,MAT_USE_KEY,
-    MAT_AREA_PRESET_KEY,TREATAREA_PRESET_KEY,TANKVOL_PRESET_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,'golf_irr_v7','golf_tdr_v1'];
+    MAT_AREA_PRESET_KEY,TREATAREA_PRESET_KEY,TANKVOL_PRESET_KEY,MAT_COL_ORDER_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,'golf_irr_v7','golf_tdr_v1'];
   keys.forEach(k=>{try{localStorage.removeItem(k);}catch(e){}});
   /* 화면 갱신 */
   closeResetModal(null);
@@ -9721,7 +9723,7 @@ function exportDataFile(){
   if(_isContentUriOrigin()){ _warnRestrictedOrigin('내보내기'); return; }
   /* 모든 localStorage 키 수집 */
   const allKeys=[SK,PK,RK,CNK,RATE_KEY,DSK,WCK,LOC_KEY,IRR_ZONES_KEY,MAT_PEST_KEY,MAT_FERT_KEY,MAT_SAND_KEY,MAT_AREA_PRESET_KEY,
-    TREATAREA_PRESET_KEY,TANKVOL_PRESET_KEY,
+    TREATAREA_PRESET_KEY,TANKVOL_PRESET_KEY,MAT_COL_ORDER_KEY,
     TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY,TDR_ZONE_LABEL_KEY,GP_TARGET_KEY,REG_NAME_ORDER_KEY,WSK];
   const exportObj={};
   allKeys.forEach(k=>{
@@ -9817,7 +9819,7 @@ function importDataFile(event){
 
       /* 기존 관련 키 지우기 */
       [SK,PK,RK,CNK,RATE_KEY,DSK,WCK,LOC_KEY,IRR_ZONES_KEY,MAT_PEST_KEY,MAT_FERT_KEY,MAT_SAND_KEY,MAT_AREA_PRESET_KEY,
-        TREATAREA_PRESET_KEY,TANKVOL_PRESET_KEY,
+        TREATAREA_PRESET_KEY,TANKVOL_PRESET_KEY,MAT_COL_ORDER_KEY,
         TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY,TDR_ZONE_LABEL_KEY,GP_TARGET_KEY,REG_NAME_ORDER_KEY,WSK].forEach(k=>localStorage.removeItem(k));
 
       /* 새 데이터 적재 */
@@ -11753,18 +11755,33 @@ const MAT_COLS = [
   { key:'nutr',    label:'순성분량',  width:'150px' },
 ];
 
-/* 블록별 컬럼 순서 상태: blockId → [0,1,2,...] (MAT_COLS 인덱스 배열) */
-const _matColOrder = {};
-function getColOrder(blockId){
-  if(!_matColOrder[blockId]) _matColOrder[blockId] = MAT_COLS.map((_,i)=>i);
-  return _matColOrder[blockId];
+/* 자재 사용 표의 컬럼 순서: 처리지역 블록마다 따로가 아니라 표 전체에 공통 적용되는
+   전역 설정으로 두고 localStorage에 저장한다. 예전에는 blockId별로 메모리에만
+   들고 있어서 새로고침(=저장 후 자동 새로고침)하면 매번 기본 순서로 되돌아갔음. */
+const MAT_COL_ORDER_KEY = 'mat_col_order_v1';
+let _matColOrder = null;
+function getColOrder(){
+  if(_matColOrder && _matColOrder.length===MAT_COLS.length) return _matColOrder;
+  let saved=null;
+  try{ saved = JSON.parse(localStorage.getItem(MAT_COL_ORDER_KEY)||'null'); }catch(e){}
+  if(Array.isArray(saved) && saved.length===MAT_COLS.length && saved.slice().sort((a,b)=>a-b).every((v,i)=>v===i)){
+    _matColOrder = saved;
+  } else {
+    _matColOrder = MAT_COLS.map((_,i)=>i);
+  }
+  return _matColOrder;
+}
+function saveColOrder(){
+  localStorage.setItem(MAT_COL_ORDER_KEY, JSON.stringify(_matColOrder));
+  if(typeof fbSaveSharedSettings==='function') setTimeout(fbSaveSharedSettings,300);
 }
 function moveCol(blockId, colIdx, dir){
-  const order = getColOrder(blockId);
+  const order = getColOrder();
   const pos = order.indexOf(colIdx);
   const newPos = pos + dir;
   if(newPos < 0 || newPos >= order.length) return;
   [order[pos], order[newPos]] = [order[newPos], order[pos]];
+  saveColOrder();
   renderAreaBlocks();
 }
 
@@ -14017,7 +14034,7 @@ function openMatInfoFromCalendar(type, idx){
 function buildAreaBlock(block){
   const bi = matAreaBlocks.findIndex(b=>b.id===block.id);
   const isFirst = bi===0, isLast = bi===matAreaBlocks.length-1;
-  const order = getColOrder(block.id);
+  const order = getColOrder();
 
   /* 컬럼 스펙 생성 */
   const colSpec = '56px ' + order.map(ci=>MAT_COLS[ci].width).join(' ') + ' 56px 28px';
@@ -14114,7 +14131,7 @@ function saveAreaMemo(blockId, val){
 
 /* ── 제품 행 (order 배열 순서대로 컬럼 렌더) ── */
 function buildItemRow(blockId, item, order){
-  if(!order) order = getColOrder(blockId);
+  if(!order) order = getColOrder();
   const isPest=item.type==='pest', isFert=item.type==='fert', isSand=item.type==='sand', isManual=item.type==='manual';
   const typeLabel=isPest?'농약':isFert?'비료':isSand?'모래':'직접';
   const typeColor=isPest?'#185FA5':isFert?'#3B6D11':isSand?'#B98A3D':'#6c757d';
