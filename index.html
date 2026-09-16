@@ -152,7 +152,7 @@ async function fbFullSyncFromCloud(){
       if(sh.statsOrder)  localStorage.setItem('golf_stats_order_v1', JSON.stringify(sh.statsOrder));
       if(sh.writeSec)    {localStorage.setItem('golf_write_sec_order_v1', JSON.stringify(sh.writeSec));if(typeof applyWriteSecOrder==='function')applyWriteSecOrder();}
       if(sh.weatherLoc)  localStorage.setItem('golf_weather_location', JSON.stringify(sh.weatherLoc));
-      if(sh.irrZones)    {localStorage.setItem('golf_irr_zones_v1', JSON.stringify(sh.irrZones));if(typeof renderIrrZoneCards==='function'){renderIrrZoneCards();calcIrrTotal();renderIrrBarChart();}}
+      if(sh.irrZones)    {localStorage.setItem('golf_irr_zones_v1', JSON.stringify(sh.irrZones));if(typeof renderIrrZoneCards==='function'){renderIrrZoneCards();if(typeof restoreIrrValuesForCurrentDate==='function')restoreIrrValuesForCurrentDate();calcIrrTotal();renderIrrBarChart();}}
       if(sh.npkCards)    localStorage.setItem('golf_matu_npk_cards_v1', JSON.stringify(sh.npkCards));
       if(sh.regLeaveMeta) localStorage.setItem('golf_reg_leave_meta_v1', JSON.stringify(sh.regLeaveMeta));
       if(sh.elapsedItems) {localStorage.setItem('golf_elapsed_items_v1', JSON.stringify(sh.elapsedItems));if(typeof renderElapsedItems==='function') renderElapsedItems();}
@@ -3466,6 +3466,38 @@ function resetTdrRecord(){
 }
 
 /* ── 관수 구역 카드 동적 렌더링 ── */
+/* ── 현재 작성 탭에 열려있는 날짜(inp-date)의 저장된 관수 값을 구역 카드 입력칸에
+   복원. loadForEdit()에서도 쓰고, renderIrrZoneCards()로 카드를 다시 그린 뒤에도
+   (예: 클라우드 동기화로 구역 목록이 바뀌어 카드가 재생성됐을 때) 다시 호출해서
+   빈 칸으로 리셋되지 않게 한다. r을 안 넘기면 현재 날짜로 기록을 직접 찾는다. ── */
+function restoreIrrValuesForCurrentDate(r){
+  if(!r){
+    const dateLabel=document.getElementById('inp-date')?.value;
+    if(!dateLabel) return;
+    r=gd().find(x=>x.date===dateLabel);
+  }
+  if(!r) return;
+  const irr=r.irrigation||{};
+  /* 모든 버전 키 호환 */
+  const glAuto=irr.gl_a||irr['green-left_auto']||irr.green_left_auto||irr.green_auto||irr['green-left_auto']||irr['green-left']||'';
+  const glMan =irr.gl_m||irr['green-left_man'] ||irr.green_left_man ||irr.green_man ||'';
+  const grAuto=irr.gr_a||irr['green-right_auto']||irr.green_right_auto||'';
+  const grMan =irr.gr_m||irr['green-right_man'] ||irr.green_right_man ||'';
+  const gla=document.getElementById('irr-green-left-auto');  if(gla)gla.value=glAuto;
+  const glm=document.getElementById('irr-green-left-man');   if(glm)glm.value=glMan;
+  const gra=document.getElementById('irr-green-right-auto'); if(gra)gra.value=grAuto;
+  const grm=document.getElementById('irr-green-right-man');  if(grm)grm.value=grMan;
+  /* 나머지 동적 구역 — key_auto / key_man 패턴 */
+  getIrrZones().forEach(z=>{
+    if(z.key==='green-left'||z.key==='green-right')return; // 위에서 처리
+    const a=document.getElementById(`irr-${z.key}-auto`);
+    const m=document.getElementById(`irr-${z.key}-man`);
+    if(a)a.value=irr[z.key+'_auto']||irr[z.key]||'';
+    if(m)m.value=irr[z.key+'_man']||'';
+  });
+  const noteEl=document.getElementById('irr-note'); if(noteEl) noteEl.value=irr.note||'';
+  calcIrrTotal();
+}
 function renderIrrZoneCards(){
   const container=document.getElementById('irr-zones-grid');
   if(!container)return;
@@ -3537,6 +3569,7 @@ function deleteIrrZone(key){
   const newZones=zones.filter(x=>x.key!==key);
   setIrrZones(newZones);
   renderIrrZoneCards();
+  restoreIrrValuesForCurrentDate();
   calcIrrTotal();
   renderIrrBarChart();
   showToast(`"${z.label}" 구역을 삭제했습니다`);
@@ -3624,6 +3657,7 @@ function saveIrrZoneFlow(){
   setIrrZones(zones);
   modal.style.display='none';
   renderIrrZoneCards();
+  restoreIrrValuesForCurrentDate();
   calcIrrTotal();
   showToast(`"${z.label}" 물량 설정을 저장했습니다`);
 }
@@ -3688,6 +3722,7 @@ function confirmAddIrrZone(){
   setIrrZones(zones);
   document.getElementById('add-zone-modal').style.display='none';
   renderIrrZoneCards();
+  restoreIrrValuesForCurrentDate();
   calcIrrTotal();
   renderIrrBarChart();
   showToast(`"${label}" 구역을 추가했습니다`);
@@ -6259,26 +6294,8 @@ function loadForEdit(idx,silent){
   /* 날씨 메모 */
   const wn=document.getElementById('inp-weather-note');if(wn)wn.value=r.weather?.note||'';
   /* 관수 */
-  const irr=r.irrigation||{};
-  /* 모든 버전 키 호환 */
-  const glAuto=irr.gl_a||irr['green-left_auto']||irr.green_left_auto||irr.green_auto||irr['green-left_auto']||irr['green-left']||'';
-  const glMan =irr.gl_m||irr['green-left_man'] ||irr.green_left_man ||irr.green_man ||'';
-  const grAuto=irr.gr_a||irr['green-right_auto']||irr.green_right_auto||'';
-  const grMan =irr.gr_m||irr['green-right_man'] ||irr.green_right_man ||'';
-  const gla=document.getElementById('irr-green-left-auto');  if(gla)gla.value=glAuto;
-  const glm=document.getElementById('irr-green-left-man');   if(glm)glm.value=glMan;
-  const gra=document.getElementById('irr-green-right-auto'); if(gra)gra.value=grAuto;
-  const grm=document.getElementById('irr-green-right-man');  if(grm)grm.value=grMan;
-  /* 나머지 동적 구역 — key_auto / key_man 패턴 */
-  getIrrZones().forEach(z=>{
-    if(z.key==='green-left'||z.key==='green-right')return; // 위에서 처리
-    const a=document.getElementById(`irr-${z.key}-auto`);
-    const m=document.getElementById(`irr-${z.key}-man`);
-    if(a)a.value=irr[z.key+'_auto']||irr[z.key]||'';
-    if(m)m.value=irr[z.key+'_man']||'';
-  });
-  document.getElementById('irr-note').value=irr.note||'';
-  calcIrrTotal();renderIrrChart();
+  restoreIrrValuesForCurrentDate(r);
+  renderIrrChart();
   /* TDR */
   applyTdrVals(r.tdr||{});
 
