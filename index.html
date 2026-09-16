@@ -4818,16 +4818,9 @@ function getYearlyRainFromRecords(year){
   });
   return map;
 }
-async function fetchYearRainRange(year){
-  const now=new Date();
-  const isCurYear=year===now.getFullYear();
-  const endD=isCurYear?now:new Date(year,11,31);
-  const tm1=`${year}0101`;
-  const tm2=`${endD.getFullYear()}${String(endD.getMonth()+1).padStart(2,'0')}${String(endD.getDate()).padStart(2,'0')}`;
-  const ctrl=new AbortController();const tid=setTimeout(()=>ctrl.abort(),15000);
-  const txt=await fetch(`https://empty-morning-c054.loveinch2000.workers.dev/?path=sfc_aws_day.php&tm1=${tm1}&tm2=${tm2}&obs=rn_day&stn=460`,{signal:ctrl.signal}).then(r=>r.text()).finally(()=>clearTimeout(tid));
+function parseKmaRnDayText(txt){
   const map={};
-  txt.split('\n').forEach(line=>{
+  (txt||'').split('\n').forEach(line=>{
     line=line.trim();
     if(!line||line.startsWith('#'))return;
     const cols=line.split(',').map(s=>s.trim());
@@ -4840,6 +4833,29 @@ async function fetchYearRainRange(year){
     const v=parseFloat(cols[5]);
     if(!isNaN(v)&&v>=0) map[iso]=v; /* 음수는 결측 코드로 보고 제외 (월/연 누적계산 로직과 동일 기준) */
   });
+  return map;
+}
+/* 1년치를 한 번에 요청하면(9개월 분량) 가끔 기상청/프록시 쪽에서 응답이 비거나
+   잘려서 오는 경우가 있어(강우량 정합성 검사에서 실제 발견됨: "기상청 합계 0.0mm"),
+   월 단위로 나눠서 여러 번 요청 — 한 달 분량은 훨씬 안정적으로 옴. 특정 달이
+   실패해도 그 달만 비고 나머지는 정상적으로 채워짐(전체가 통째로 실패하지 않음) */
+async function fetchYearRainRange(year){
+  const now=new Date();
+  const isCurYear=year===now.getFullYear();
+  const lastMonth=isCurYear?now.getMonth():11; /* 0-index */
+  const map={};
+  for(let mo=0;mo<=lastMonth;mo++){
+    const isLastMo=isCurYear&&mo===lastMonth;
+    const tm1=`${year}${String(mo+1).padStart(2,'0')}01`;
+    const endDay=isLastMo?now.getDate():new Date(year,mo+1,0).getDate();
+    const tm2=`${year}${String(mo+1).padStart(2,'0')}${String(endDay).padStart(2,'0')}`;
+    try{
+      const ctrl=new AbortController();const tid=setTimeout(()=>ctrl.abort(),10000);
+      const txt=await fetch(`https://empty-morning-c054.loveinch2000.workers.dev/?path=sfc_aws_day.php&tm1=${tm1}&tm2=${tm2}&obs=rn_day&stn=460`,{signal:ctrl.signal}).then(r=>r.text()).finally(()=>clearTimeout(tid));
+      Object.assign(map,parseKmaRnDayText(txt));
+    }catch(e){ console.warn(`[강우량] ${year}년 ${mo+1}월 조회 실패`,e); }
+    await new Promise(res=>setTimeout(res,120)); /* 연속 요청 부담 완화 */
+  }
   return map;
 }
 let _yearRainFetchBusy={};
@@ -4855,10 +4871,20 @@ async function runRainConsistencyCheck(){
   const year=parseInt(yearSel?.value,10)||new Date().getFullYear();
   const resultEl=document.getElementById('raincheck-result');
   if(!resultEl)return;
-  resultEl.innerHTML='기상청 실측 조회 중...';
+  resultEl.innerHTML='기상청 실측 조회 중... (월별로 나눠 요청해 다소 시간이 걸릴 수 있습니다)';
   try{
     const liveMap=await fetchYearRainRange(year);
     const localMap=getYearlyRainFromRecords(year);
+    const now=new Date();
+    const expectedDays=year===now.getFullYear()
+      ? Math.floor((now-new Date(year,0,1))/86400000)+1
+      : ((year%4===0&&year%100!==0)||year%400===0?366:365);
+    /* 기상청 응답이 비정상적으로 적게 왔으면(네트워크/프록시 문제로 보임) 잘못된
+       "다 다름" 결과를 보여주는 대신 재시도를 안내 */
+    if(Object.keys(liveMap).length < expectedDays*0.5){
+      resultEl.innerHTML=`<div style="color:#c0392b;">⚠️ 기상청 응답을 충분히 받지 못했습니다(${Object.keys(liveMap).length}/${expectedDays}일치만 수신 — 네트워크 문제로 보입니다). 잠시 후 "대조 실행"을 다시 눌러주세요.</div>`;
+      return;
+    }
     const allISOs=[...new Set([...Object.keys(localMap),...Object.keys(liveMap)])].sort();
     const diffs=[];
     let localSum=0, liveSum=0;
