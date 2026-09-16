@@ -5058,15 +5058,9 @@ function buildRainYearlyChartSVG(dataByYear,years,loadingYears){
     xLabels+=`<text x="${px.toFixed(1)}" y="${H-8}" font-size="9" fill="#aaa" text-anchor="middle">${dt.getMonth()+1}/${dt.getDate()}</text>`;
   }
 
-  /* 요청: 선 위(그 날짜 열)를 클릭하면 그날의 실제 강우량(누적 아님)을 연도별로
-     비교해서 보여주는 팝업 — 하루치 폭만큼 투명한 클릭 영역을 깔아둠 */
-  let clickAreas='';
-  const dayHitW=Math.max(4,cW/RAIN_YEAR_WIN);
-  for(let d=winStart;d<=winEnd;d++){
-    const dt=new Date(curYear,0,d);
-    const px=xPos(d);
-    clickAreas+=`<rect x="${(px-dayHitW/2).toFixed(1)}" y="${PT}" width="${dayHitW.toFixed(1)}" height="${cH}" fill="transparent" style="cursor:pointer;" onclick="showRainYearDayDetail(${dt.getMonth()+1},${dt.getDate()})"><title>${dt.getMonth()+1}/${dt.getDate()} 탭하여 그날 강우량 보기</title></rect>`;
-  }
+  /* 예전에는 그래프 선 위를 클릭하면 그 날짜 팝업이 떴지만, 헤더의 📅 버튼으로
+     기록 날짜 기준 팝업을 열 수 있게 되어 이 클릭 영역은 제거함 */
+  const clickAreas='';
 
   const COLORS={[curYear]:'#185FA5',[curYear-1]:'#8E44AD',[curYear-2]:'#7F8C8D'};
   const lines=series.map(s=>{
@@ -5108,6 +5102,7 @@ function buildRainYearlyChartSVG(dataByYear,years,loadingYears){
         <button onclick="rainYearNav(-1)" ${!canLeft?'disabled':''} style="width:20px;height:20px;border-radius:50%;border:1px solid #c8c8c8;background:${canLeft?'#fff':'#f5f5f5'};color:${canLeft?'#444':'#ccc'};font-size:10px;cursor:${canLeft?'pointer':'not-allowed'};display:flex;align-items:center;justify-content:center;padding:0;">◀</button>
         <span style="font-size:9px;color:#888;min-width:60px;text-align:center;">${(()=>{const a=new Date(curYear,0,winStart),b=new Date(curYear,0,winEnd);return`${a.getMonth()+1}/${a.getDate()} ~ ${b.getMonth()+1}/${b.getDate()}`;})()}</span>
         <button onclick="rainYearNav(1)" ${!canRight?'disabled':''} style="width:20px;height:20px;border-radius:50%;border:1px solid #c8c8c8;background:${canRight?'#fff':'#f5f5f5'};color:${canRight?'#444':'#ccc'};font-size:10px;cursor:${canRight?'pointer':'not-allowed'};display:flex;align-items:center;justify-content:center;padding:0;">▶</button>
+        <button onclick="openRainYearCalendarBtn()" title="달력으로 특정 날짜 강우량 비교해서 보기" style="width:24px;height:24px;border-radius:6px;border:1.3px solid #85B7EB;background:#eaf3fc;color:#185FA5;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;margin-left:2px;">📅</button>
       </div>
     </div>
     <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
@@ -5120,7 +5115,7 @@ function buildRainYearlyChartSVG(dataByYear,years,loadingYears){
         ${clickAreas}
       </svg>
     </div>
-    <div style="font-size:9px;color:#999;text-align:right;margin-top:2px;">누적 강우량(mm) · 같은 날짜(월/일) 기준 연도 비교 · 범례 클릭으로 켜기/끄기 · 그래프 탭하여 그날 강우량 보기</div>`;
+    <div style="font-size:9px;color:#999;text-align:right;margin-top:2px;">누적 강우량(mm) · 같은 날짜(월/일) 기준 연도 비교 · 범례 클릭으로 켜기/끄기 · 📅 버튼으로 날짜별 비교 보기</div>`;
 }
 
 /* 요청: 하루 단위 연도별 비교 목록은 한눈에 안 들어와서, 클릭한 날짜가 속한
@@ -5163,7 +5158,26 @@ function buildRainMonthCalendar(year,mm,highlightDd,color){
       <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;">${cells}</div>
     </div>`;
 }
+/* ── "연도별 누적강우량 비교" 헤더의 📅 버튼: 지금 보고 있는(작성 탭 날짜picker)
+   기록 날짜를 기준일로 삼아 월별 강우량 비교 캘린더를 연다 ── */
+function openRainYearCalendarBtn(){
+  const pickerISO = getPickerISO() || (()=>{const t=new Date();return`${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`;})();
+  const [,mmStr,ddStr] = pickerISO.split('-');
+  showRainYearDayDetail(parseInt(mmStr,10), parseInt(ddStr,10));
+}
+let _rainYearDayModalState = {mm:1, dd:1};
+/* 팝업 제목 옆 ◀/▶ 로 이전달/다음달 이동 (일자는 유지하되 그 달의 마지막 날을
+   넘지 않도록 보정) */
+function navRainYearDayModal(dir){
+  let {mm, dd} = _rainYearDayModalState;
+  mm += dir;
+  if(mm<1) mm=12; else if(mm>12) mm=1;
+  const daysInNewMonth = new Date(new Date().getFullYear(), mm, 0).getDate();
+  if(dd>daysInNewMonth) dd=daysInNewMonth;
+  showRainYearDayDetail(mm, dd);
+}
 function showRainYearDayDetail(mm,dd){
+  _rainYearDayModalState = {mm, dd};
   const modal=document.getElementById('rain-year-day-modal');
   const body=document.getElementById('rain-year-day-modal-body');
   const titleEl=modal?modal.querySelector('.modal-ttl'):null;
@@ -5171,7 +5185,14 @@ function showRainYearDayDetail(mm,dd){
   const curYear=new Date().getFullYear();
   const years=[curYear-2,curYear-1,curYear];
   const COLORS={[curYear]:'#185FA5',[curYear-1]:'#8E44AD',[curYear-2]:'#7F8C8D'};
-  if(titleEl)titleEl.textContent=`🌧️ ${mm}월 강우량 (${dd}일 기준)`;
+  if(titleEl){
+    titleEl.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
+        <button onclick="navRainYearDayModal(-1)" title="이전달" style="flex-shrink:0;width:22px;height:22px;border-radius:50%;border:1px solid #c8c8c8;background:#fff;color:#444;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;">◀</button>
+        <span style="flex:1;text-align:center;">🌧️ ${mm}월 강우량 (${dd}일 기준)</span>
+        <button onclick="navRainYearDayModal(1)" title="다음달" style="flex-shrink:0;width:22px;height:22px;border-radius:50%;border:1px solid #c8c8c8;background:#fff;color:#444;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;">▶</button>
+      </div>`;
+  }
   const today=new Date();
   const html=years.map(y=>{
     const dt=new Date(y,mm-1,dd);
