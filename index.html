@@ -11666,7 +11666,8 @@ const MAT_COLS = [
   { key:'kind',    label:'종류',      width:'110px' },
   { key:'size',    label:'규격',      width:'72px'  },
   { key:'form',    label:'제형',      width:'64px'  },
-  { key:'product', label:'품목명',    width:'208px' },
+  { key:'category',label:'분류',      width:'110px' },
+  { key:'series',  label:'계열',      width:'160px' },
   { key:'dilution',label:'희석배수',  width:'88px'  },
   { key:'qty',     label:'제품량',    width:'88px'  },
   { key:'amount',  label:'㎡당 사용량',width:'84px'  },
@@ -14088,11 +14089,22 @@ function buildItemRow(blockId, item, order){
     })(),
     brand: isManual
       ? `<div style="padding:2px 3px;">${inp('brandName',item.brandName,'상표명')}</div>`
-      : `<div style="padding:2px 4px;display:flex;align-items:flex-start;gap:3px;min-width:0;">
-          <button onclick="openMatSearch(${blockId},${item.id},'${item.type}')"
-            style="flex-shrink:0;padding:1px 5px;border:1.5px solid ${typeColor};color:${typeColor};background:#fff;border-radius:3px;font-size:12px;font-weight:700;cursor:pointer;margin-top:1px;">🔍</button>
-          <span style="font-size:12px;font-weight:700;color:${typeColor};flex:1;white-space:normal;word-break:break-all;line-height:1.3;" title="${(item.brandName||'').replace(/"/g,'&quot;')}">${item.brandName||'—'}</span>
-        </div>`,
+      : (()=>{
+          const _list=getListByType(item.type);
+          const _p=(_list[item._listIdx]?.name===item.brandName)?_list[item._listIdx]:_list.find(x=>x.name===item.brandName);
+          const productName = _p?.product ?? item.product;
+          const subtitle = (isPest && productName)
+            ? `<div style="font-size:10px;color:#999;line-height:1.3;white-space:normal;word-break:break-all;margin-top:1px;">${String(productName).replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>`
+            : '';
+          return `<div style="padding:2px 4px;display:flex;align-items:flex-start;gap:3px;min-width:0;">
+              <button onclick="openMatSearch(${blockId},${item.id},'${item.type}')"
+                style="flex-shrink:0;padding:1px 5px;border:1.5px solid ${typeColor};color:${typeColor};background:#fff;border-radius:3px;font-size:12px;font-weight:700;cursor:pointer;margin-top:1px;">🔍</button>
+              <div style="flex:1;min-width:0;">
+                <span style="font-size:12px;font-weight:700;color:${typeColor};white-space:normal;word-break:break-all;line-height:1.3;display:block;" title="${(item.brandName||'').replace(/"/g,'&quot;')}">${item.brandName||'—'}</span>
+                ${subtitle}
+              </div>
+            </div>`;
+        })(),
     size:     (()=>{
       /* 자재목록 실시간 조회 → 없으면 저장값 폴백 */
       if(!isManual && item.brandName){
@@ -14112,14 +14124,26 @@ function buildItemRow(blockId, item, order){
       }
       return `<div style="padding:2px 3px;">${inp('form',item.form,'제형')}</div>`;
     })(),
-    product:  (()=>{
+    category: (()=>{
+      /* '분류'는 농약(pest)에만 있는 고유 필드다. 비료·모래의 category는
+         '종류'를 뜻하므로(이미 '종류' 칼럼에 표시됨) 여기서는 목록 값을
+         끌어오지 않고, 사람이 직접 입력한 값만 그대로 보여준다. */
+      if(isPest && !isManual && item.brandName){
+        const _list=getListByType(item.type);
+        const _p=(_list[item._listIdx]?.name===item.brandName)?_list[item._listIdx]:_list.find(x=>x.name===item.brandName);
+        const _v=_p?.category??item.category;
+        return `<div style="padding:2px 3px;">${inp('category',_v,'분류')}</div>`;
+      }
+      return `<div style="padding:2px 3px;">${inp('category',item.category,'분류')}</div>`;
+    })(),
+    series:   (()=>{
       if(!isManual && item.brandName){
         const _list=getListByType(item.type);
         const _p=(_list[item._listIdx]?.name===item.brandName)?_list[item._listIdx]:_list.find(x=>x.name===item.brandName);
-        const _v=_p?.product??item.product;
-        return `<div style="padding:2px 3px;">${inpWrap('product',_v,'품목명')}</div>`;
+        const _v=_p?.series??item.series;
+        return `<div style="padding:2px 3px;">${inp('series',_v,'계열')}</div>`;
       }
-      return `<div style="padding:2px 3px;">${inpWrap('product',item.product,'품목명')}</div>`;
+      return `<div style="padding:2px 3px;">${inp('series',item.series,'계열')}</div>`;
     })(),
     dilution: `<div id="dilution-cell-${item.id}">${renderDilutionCell(item, matAreaBlocks.find(b=>b.id===blockId))}</div>`,
     qty:      `<div id="qty-cell-${item.id}">${renderQtyCell(item, matAreaBlocks.find(b=>b.id===blockId))}</div>`,
