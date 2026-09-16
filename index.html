@@ -11308,7 +11308,7 @@ function duplicateAreaBlock(blockId){
   saveAreaPreset(t);
   const newItems = block.items.map(it=>({...it, id:++matItemIdxCounter}));
   const id = ++matAreaIdxCounter;
-  matAreaBlocks.push({ id, areaName:t, items:newItems, memo: block.memo||'' });
+  matAreaBlocks.push({ id, areaName:t, items:newItems, memo: block.memo||'', treatArea: block.treatArea||'', tankVol: block.tankVol||'' });
   renderAreaBlocks();
   showToast(`"${block.areaName}" → "${t}" 로 자재 목록을 복사했습니다`);
 }
@@ -11333,7 +11333,7 @@ function moveAreaBlock(blockId, dir){
 function addItemToBlock(blockId, type){
   const block = matAreaBlocks.find(b=>b.id===blockId);
   if(!block) return;
-  block.items.push({ id:++matItemIdxCounter, type, brandName:'', size:'', form:'', product:'', series:'', category:'', frac:'', amount:'', treatArea:'', tankVol:'' });
+  block.items.push({ id:++matItemIdxCounter, type, brandName:'', size:'', form:'', product:'', series:'', category:'', frac:'', amount:'' });
   renderAreaBlocks();
 }
 function removeItemFromBlock(blockId, itemId){
@@ -11362,12 +11362,12 @@ function updateItemField(blockId, itemId, field, val){
       }
     }
   }
-  /* 처리면적·탱크용량·사용량 변경 시: 수량/희석배수 셀 즉시 재계산 갱신 */
-  if(it && (field==='amount' || field==='treatArea' || field==='tankVol')){
+  /* 사용량 변경 시: 수량/희석배수 셀 즉시 재계산 갱신 (처리면적·탱크용량은 처리지역 헤더의 값을 참조) */
+  if(it && field==='amount'){
     const qtyCell = document.getElementById('qty-cell-'+itemId);
-    if(qtyCell) qtyCell.innerHTML = renderQtyCell(it);
+    if(qtyCell) qtyCell.innerHTML = renderQtyCell(it, block);
     const dilCell = document.getElementById('dilution-cell-'+itemId);
-    if(dilCell) dilCell.innerHTML = renderDilutionCell(it);
+    if(dilCell) dilCell.innerHTML = renderDilutionCell(it, block);
   }
 }
 
@@ -11579,17 +11579,20 @@ function parseAmtUnitLabel(str){
   }
   return 'g';
 }
-/* ── 수량(총 소요량) = 사용량(1㎡ 기준) × 처리면적(㎡) ── */
-function calcMatQty(item){
+/* ── 수량(총 소요량) = 사용량(1㎡ 기준) × 처리지역 공통 처리면적(㎡)
+   모래는 처리면적/탱크용량 개념이 없으므로 계산 대상에서 제외(— 표시) ── */
+function calcMatQty(item, block){
+  if(!item || item.type==='sand') return null;
   const perM2 = parseGram(item.amount);
-  const area  = parseFloat(item.treatArea);
+  const area  = block && parseFloat(block.treatArea);
   if(!perM2 || !area) return null;
   return perM2 * area;
 }
 /* ── 희석배수 = 탱크용량(L)×1000 ÷ 수량(ml/g, 1ml≈1g 근사) ── */
-function calcMatDilution(item){
-  const qty  = calcMatQty(item);
-  const tank = parseFloat(item.tankVol);
+function calcMatDilution(item, block){
+  if(!item || item.type==='sand') return null;
+  const qty  = calcMatQty(item, block);
+  const tank = block && parseFloat(block.tankVol);
   if(!qty || !tank) return null;
   return (tank*1000)/qty;
 }
@@ -11598,16 +11601,33 @@ function fmtMatNum(n){
   if(n>=100) return (Math.round(n*10)/10).toString();
   return (Math.round(n*100)/100).toString();
 }
-function renderQtyCell(item){
-  const q = calcMatQty(item);
+function renderQtyCell(item, block){
+  if(item.type==='sand') return '<span style="color:#bbb;font-size:11px;padding:2px 4px;display:block;text-align:center;">—</span>';
+  const q = calcMatQty(item, block);
   if(q===null) return '<span style="color:#ccc;font-size:11px;padding:2px 4px;display:block;text-align:center;">—</span>';
   const unit = parseAmtUnitLabel(item.amount);
   return `<span style="font-size:12px;font-weight:700;color:#1a5fa8;padding:2px 4px;display:block;text-align:center;">${fmtMatNum(q)}${unit}</span>`;
 }
-function renderDilutionCell(item){
-  const d = calcMatDilution(item);
+function renderDilutionCell(item, block){
+  if(item.type==='sand') return '<span style="color:#bbb;font-size:11px;padding:2px 4px;display:block;text-align:center;">—</span>';
+  const d = calcMatDilution(item, block);
   if(d===null) return '<span style="color:#ccc;font-size:11px;padding:2px 4px;display:block;text-align:center;">—</span>';
   return `<span style="font-size:12px;font-weight:700;color:#7B4F00;padding:2px 4px;display:block;text-align:center;">${fmtMatNum(d)}배</span>`;
+}
+/* ── 처리지역 헤더의 처리면적/탱크용량 일괄 변경: 블록 안 모든(모래 제외) 항목의
+   수량·희석배수 셀을 한 번에 재계산 ── */
+function updateBlockAreaTank(blockId, field, val){
+  const block = matAreaBlocks.find(b=>b.id===blockId);
+  if(!block) return;
+  block[field]=val;
+  markDirty();
+  block.items.forEach(it=>{
+    if(it.type==='sand') return;
+    const qtyCell = document.getElementById('qty-cell-'+it.id);
+    if(qtyCell) qtyCell.innerHTML = renderQtyCell(it, block);
+    const dilCell = document.getElementById('dilution-cell-'+it.id);
+    if(dilCell) dilCell.innerHTML = renderDilutionCell(it, block);
+  });
 }
 
 /* ── 비료 순성분량 계산 (행 내 표시용) ── */
@@ -11641,8 +11661,6 @@ const MAT_COLS = [
   { key:'size',    label:'규격',      width:'72px'  },
   { key:'form',    label:'제형',      width:'64px'  },
   { key:'product', label:'품목명',    width:'208px' },
-  { key:'treatArea',label:'처리면적', width:'92px'  },
-  { key:'tankVol', label:'탱크용량',  width:'88px'  },
   { key:'dilution',label:'희석배수',  width:'88px'  },
   { key:'qty',     label:'수량',      width:'88px'  },
   { key:'amount',  label:'사용량',    width:'72px'  },
@@ -13960,6 +13978,21 @@ function buildAreaBlock(block){
         style="font-size:13px;color:#fff;font-weight:700;flex:1;min-width:60px;cursor:pointer;" title="클릭하면 자재 내용은 그대로 두고 처리지역만 바꿀 수 있습니다">
         📍 ${block.areaName} <span style="font-size:10px;opacity:.75;">✏️</span>
       </span>
+      <!-- 처리면적·탱크용량 일괄적용 (이 처리지역의 모든 자재에 공통 적용) -->
+      <div style="display:flex;align-items:center;gap:4px;background:rgba(255,255,255,.15);border-radius:6px;padding:2px 6px;flex-shrink:0;">
+        <span style="font-size:10px;color:#fff;opacity:.85;white-space:nowrap;">면적</span>
+        <select onchange="updateBlockAreaTank(${block.id},'treatArea',this.value)"
+          style="font-size:11px;padding:2px 4px;border-radius:4px;border:1px solid rgba(255,255,255,.6);background:#fff;color:#2d6a1e;">
+          <option value="">선택</option>
+          ${[2000,5000,10000].map(o=>`<option value="${o}" ${String(block.treatArea)===String(o)?'selected':''}>${o.toLocaleString()}㎡</option>`).join('')}
+        </select>
+        <span style="font-size:10px;color:#fff;opacity:.85;white-space:nowrap;">탱크</span>
+        <select onchange="updateBlockAreaTank(${block.id},'tankVol',this.value)"
+          style="font-size:11px;padding:2px 4px;border-radius:4px;border:1px solid rgba(255,255,255,.6);background:#fff;color:#2d6a1e;">
+          <option value="">선택</option>
+          ${[1000,500].map(o=>`<option value="${o}" ${String(block.tankVol)===String(o)?'selected':''}>${o.toLocaleString()}L</option>`).join('')}
+        </select>
+      </div>
       <!-- 복사 버튼 (지역명 오른쪽, 삭제 버튼 왼쪽) -->
       <button onclick="duplicateAreaBlock(${block.id})" title="이 처리지역에 입력한 자재 목록을 그대로 복사해서 새 처리지역을 만듭니다"
         style="padding:4px 9px;border-radius:6px;border:1.5px solid rgba(255,255,255,.6);background:rgba(255,255,255,.15);color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">⧉ 복사</button>
@@ -14082,22 +14115,8 @@ function buildItemRow(blockId, item, order){
       }
       return `<div style="padding:2px 3px;">${inpWrap('product',item.product,'품목명')}</div>`;
     })(),
-    treatArea: (()=>{
-      const v = item.treatArea||'';
-      const opts=[2000,5000,10000].map(o=>`<option value="${o}" ${String(v)===String(o)?'selected':''}>${o.toLocaleString()}</option>`).join('');
-      return `<div style="padding:2px 3px;"><select onchange="updateItemField(${blockId},${item.id},'treatArea',this.value);"
-        style="width:100%;padding:2px 3px;border:1px solid #d8d8d8;border-radius:3px;font-size:12px;background:#fff;">
-        <option value="">선택</option>${opts}</select></div>`;
-    })(),
-    tankVol:  (()=>{
-      const v = item.tankVol||'';
-      const opts=[1000,500].map(o=>`<option value="${o}" ${String(v)===String(o)?'selected':''}>${o.toLocaleString()}</option>`).join('');
-      return `<div style="padding:2px 3px;"><select onchange="updateItemField(${blockId},${item.id},'tankVol',this.value);"
-        style="width:100%;padding:2px 3px;border:1px solid #d8d8d8;border-radius:3px;font-size:12px;background:#fff;">
-        <option value="">선택</option>${opts}</select></div>`;
-    })(),
-    dilution: `<div id="dilution-cell-${item.id}">${renderDilutionCell(item)}</div>`,
-    qty:      `<div id="qty-cell-${item.id}">${renderQtyCell(item)}</div>`,
+    dilution: `<div id="dilution-cell-${item.id}">${renderDilutionCell(item, matAreaBlocks.find(b=>b.id===blockId))}</div>`,
+    qty:      `<div id="qty-cell-${item.id}">${renderQtyCell(item, matAreaBlocks.find(b=>b.id===blockId))}</div>`,
     amount:   `<div style="padding:2px 3px;">${inp('amount',item.amount,'00g/ml','font-weight:700;color:#c0392b;')}</div>`,
     recUsage: (()=>{
       if(isManual || !item.brandName) return `<span style="color:#ccc;font-size:12px;padding:2px 4px;display:block;text-align:center;">—</span>`;
