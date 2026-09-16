@@ -11333,7 +11333,7 @@ function moveAreaBlock(blockId, dir){
 function addItemToBlock(blockId, type){
   const block = matAreaBlocks.find(b=>b.id===blockId);
   if(!block) return;
-  block.items.push({ id:++matItemIdxCounter, type, brandName:'', size:'', form:'', product:'', series:'', category:'', frac:'', amount:'' });
+  block.items.push({ id:++matItemIdxCounter, type, brandName:'', size:'', form:'', product:'', series:'', category:'', frac:'', amount:'', treatArea:'', tankVol:'' });
   renderAreaBlocks();
 }
 function removeItemFromBlock(blockId, itemId){
@@ -11361,6 +11361,13 @@ function updateItemField(blockId, itemId, field, val){
         ).join('');
       }
     }
+  }
+  /* 처리면적·탱크용량·사용량 변경 시: 수량/희석배수 셀 즉시 재계산 갱신 */
+  if(it && (field==='amount' || field==='treatArea' || field==='tankVol')){
+    const qtyCell = document.getElementById('qty-cell-'+itemId);
+    if(qtyCell) qtyCell.innerHTML = renderQtyCell(it);
+    const dilCell = document.getElementById('dilution-cell-'+itemId);
+    if(dilCell) dilCell.innerHTML = renderDilutionCell(it);
   }
 }
 
@@ -11559,6 +11566,50 @@ function parseSandAmt(str){
   return {value:v, unit:u};
 }
 
+/* ── 사용량 문자열에서 표시용 단위(g/ml) 추출 — parseGram과 같은 규칙(kg→g, l→ml) ── */
+function parseAmtUnitLabel(str){
+  if(!str) return 'g';
+  const s = String(str).trim().replace(/,/g,'').replace(/ℓ/g,'l');
+  const m = s.match(/([\d.]+)\s*(kg|g|ml|l)?/i);
+  if(m && m[2]){
+    const u = m[2].toLowerCase();
+    if(u==='l') return 'ml';
+    if(u==='kg') return 'g';
+    return u;
+  }
+  return 'g';
+}
+/* ── 수량(총 소요량) = 사용량(1㎡ 기준) × 처리면적(㎡) ── */
+function calcMatQty(item){
+  const perM2 = parseGram(item.amount);
+  const area  = parseFloat(item.treatArea);
+  if(!perM2 || !area) return null;
+  return perM2 * area;
+}
+/* ── 희석배수 = 탱크용량(L)×1000 ÷ 수량(ml/g, 1ml≈1g 근사) ── */
+function calcMatDilution(item){
+  const qty  = calcMatQty(item);
+  const tank = parseFloat(item.tankVol);
+  if(!qty || !tank) return null;
+  return (tank*1000)/qty;
+}
+function fmtMatNum(n){
+  if(n>=1000) return Math.round(n).toLocaleString();
+  if(n>=100) return (Math.round(n*10)/10).toString();
+  return (Math.round(n*100)/100).toString();
+}
+function renderQtyCell(item){
+  const q = calcMatQty(item);
+  if(q===null) return '<span style="color:#ccc;font-size:11px;padding:2px 4px;display:block;text-align:center;">—</span>';
+  const unit = parseAmtUnitLabel(item.amount);
+  return `<span style="font-size:12px;font-weight:700;color:#1a5fa8;padding:2px 4px;display:block;text-align:center;">${fmtMatNum(q)}${unit}</span>`;
+}
+function renderDilutionCell(item){
+  const d = calcMatDilution(item);
+  if(d===null) return '<span style="color:#ccc;font-size:11px;padding:2px 4px;display:block;text-align:center;">—</span>';
+  return `<span style="font-size:12px;font-weight:700;color:#7B4F00;padding:2px 4px;display:block;text-align:center;">${fmtMatNum(d)}배</span>`;
+}
+
 /* ── 비료 순성분량 계산 (행 내 표시용) ── */
 function calcFertNutr(item){
   const amtG = parseGram(item.amount);
@@ -11590,9 +11641,10 @@ const MAT_COLS = [
   { key:'size',    label:'규격',      width:'72px'  },
   { key:'form',    label:'제형',      width:'64px'  },
   { key:'product', label:'품목명',    width:'208px' },
-  { key:'series',  label:'계열',      width:'200px' },
-  { key:'category',label:'분류',      width:'132px' },
-  { key:'frac',    label:'FRAC/IRAC', width:'112px' },
+  { key:'treatArea',label:'처리면적', width:'92px'  },
+  { key:'tankVol', label:'탱크용량',  width:'88px'  },
+  { key:'dilution',label:'희석배수',  width:'88px'  },
+  { key:'qty',     label:'수량',      width:'88px'  },
   { key:'amount',  label:'사용량',    width:'72px'  },
   { key:'recUsage',label:'권장사용량',width:'96px'  },
   { key:'compInfo',label:'성분정보',  width:'180px' },
@@ -14030,36 +14082,22 @@ function buildItemRow(blockId, item, order){
       }
       return `<div style="padding:2px 3px;">${inpWrap('product',item.product,'품목명')}</div>`;
     })(),
-    series:   (()=>{
-      if(!isManual && item.brandName){
-        const _list=getListByType(item.type);
-        const _p=(_list[item._listIdx]?.name===item.brandName)?_list[item._listIdx]:_list.find(x=>x.name===item.brandName);
-        const _v=_p?.series??item.series;
-        return `<div style="padding:2px 3px;">${inp('series',_v,'계열')}</div>`;
-      }
-      return `<div style="padding:2px 3px;">${inp('series',item.series,'계열')}</div>`;
+    treatArea: (()=>{
+      const v = item.treatArea||'';
+      const opts=[2000,5000,10000].map(o=>`<option value="${o}" ${String(v)===String(o)?'selected':''}>${o.toLocaleString()}</option>`).join('');
+      return `<div style="padding:2px 3px;"><select onchange="updateItemField(${blockId},${item.id},'treatArea',this.value);"
+        style="width:100%;padding:2px 3px;border:1px solid #d8d8d8;border-radius:3px;font-size:12px;background:#fff;">
+        <option value="">선택</option>${opts}</select></div>`;
     })(),
-    category: (()=>{
-      /* '분류'는 농약(pest)에만 있는 고유 필드다. 비료·모래의 category는
-         '종류'를 뜻하므로(이미 '종류' 칼럼에 표시됨) 여기서는 목록 값을
-         끌어오지 않고, 사람이 직접 입력한 값만 그대로 보여준다. */
-      if(isPest && !isManual && item.brandName){
-        const _list=getListByType(item.type);
-        const _p=(_list[item._listIdx]?.name===item.brandName)?_list[item._listIdx]:_list.find(x=>x.name===item.brandName);
-        const _v=_p?.category??item.category;
-        return `<div style="padding:2px 3px;">${inp('category',_v,'분류')}</div>`;
-      }
-      return `<div style="padding:2px 3px;">${inp('category',item.category,'분류')}</div>`;
+    tankVol:  (()=>{
+      const v = item.tankVol||'';
+      const opts=[1000,500].map(o=>`<option value="${o}" ${String(v)===String(o)?'selected':''}>${o.toLocaleString()}</option>`).join('');
+      return `<div style="padding:2px 3px;"><select onchange="updateItemField(${blockId},${item.id},'tankVol',this.value);"
+        style="width:100%;padding:2px 3px;border:1px solid #d8d8d8;border-radius:3px;font-size:12px;background:#fff;">
+        <option value="">선택</option>${opts}</select></div>`;
     })(),
-    frac:     (()=>{
-      if(!isManual && item.brandName){
-        const _list=getListByType(item.type);
-        const _p=(_list[item._listIdx]?.name===item.brandName)?_list[item._listIdx]:_list.find(x=>x.name===item.brandName);
-        const _v=_p?.frac??item.frac;
-        return `<div style="padding:2px 3px;">${inp('frac',_v,'FRAC/IRAC')}</div>`;
-      }
-      return `<div style="padding:2px 3px;">${inp('frac',item.frac,'FRAC/IRAC')}</div>`;
-    })(),
+    dilution: `<div id="dilution-cell-${item.id}">${renderDilutionCell(item)}</div>`,
+    qty:      `<div id="qty-cell-${item.id}">${renderQtyCell(item)}</div>`,
     amount:   `<div style="padding:2px 3px;">${inp('amount',item.amount,'00g/ml','font-weight:700;color:#c0392b;')}</div>`,
     recUsage: (()=>{
       if(isManual || !item.brandName) return `<span style="color:#ccc;font-size:12px;padding:2px 4px;display:block;text-align:center;">—</span>`;
