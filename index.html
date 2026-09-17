@@ -1208,6 +1208,17 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
 
     </div><!-- /4열 가로 -->
 
+    <div class="sec-divider"></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:4px;">
+      <div class="rain-chart-title" style="margin:0;">이번 주 예보</div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <span id="weekly-fcst-time" style="font-size:10px;color:#aaa;"></span>
+        <button class="btn btn-sm" onclick="fetchWeeklyForecast()">&#8635; 주간예보 불러오기</button>
+      </div>
+    </div>
+    <div id="weekly-fcst-container"><div style="font-size:11px;color:#aaa;padding:10px;">불러오기 버튼을 눌러 확인하세요</div></div>
+    <div style="font-size:9px;color:#999;margin-top:4px;text-align:right;">오늘~모레: 단기예보(상세) · 그 뒤: 중기예보(광역, 점선 구분) · 하루 최대 2회 갱신</div>
+
   </div><!-- /card -->
 
   </div><!-- /write-sec-wrap weather -->
@@ -4296,6 +4307,163 @@ function renderIrrBarChart(page){
 function renderIrrChart(){
   renderIrrBarChart();
   renderTdrHistory();
+}
+
+/* ══════════════════════════════════════════
+   🌤️ 주간예보 (단기예보 1~3일 + 중기예보 4~7일)
+   ══════════════════════════════════════════
+   기존 관측(AWS 실측) 데이터와는 다른 API 계열이라 별도 서비스키가 필요함.
+   - 단기예보: apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst
+   - 중기육상예보(하늘상태·강수확률): .../1360000/MidFcstInfoService/getMidLandFcst
+   - 중기기온: .../1360000/MidFcstInfoService/getMidTa
+   전부 CORS 때문에 브라우저에서 직접 호출 불가 → 기존 Cloudflare Worker
+   (empty-morning-c054...)에 kind=forecast_* 라우팅을 추가해서 그걸 통해 호출한다.
+   Worker 쪽 추가 코드와 서비스키 발급 안내는 별도로 전달함. */
+
+/* 위경도 → 기상청 5km 격자(nx,ny) 변환 (KMA 공식 LCC 투영 공식, 공개 알고리즘) */
+function kmaLatLonToGrid(lat, lon){
+  const RE=6371.00877, GRID=5.0, SLAT1=30.0, SLAT2=60.0, OLON=126.0, OLAT=38.0, XO=43, YO=136;
+  const DEGRAD=Math.PI/180.0;
+  const re=RE/GRID;
+  const slat1=SLAT1*DEGRAD, slat2=SLAT2*DEGRAD, olon=OLON*DEGRAD, olat=OLAT*DEGRAD;
+  let sn=Math.tan(Math.PI*0.25+slat2*0.5)/Math.tan(Math.PI*0.25+slat1*0.5);
+  sn=Math.log(Math.cos(slat1)/Math.cos(slat2))/Math.log(sn);
+  let sf=Math.tan(Math.PI*0.25+slat1*0.5);
+  sf=Math.pow(sf,sn)*Math.cos(slat1)/sn;
+  let ro=Math.tan(Math.PI*0.25+olat*0.5);
+  ro=re*sf/Math.pow(ro,sn);
+  const ra0=re*sf/Math.pow(Math.tan(Math.PI*0.25+lat*DEGRAD*0.5),sn);
+  let theta=lon*DEGRAD-olon;
+  if(theta>Math.PI) theta-=2*Math.PI;
+  if(theta<-Math.PI) theta+=2*Math.PI;
+  theta*=sn;
+  const nx=Math.floor(ra0*Math.sin(theta)+XO+0.5);
+  const ny=Math.floor(ro-ra0*Math.cos(theta)+YO+0.5);
+  return {nx,ny};
+}
+
+/* 중기예보 지역코드 — 정확한 코드는 "기상청_예보구역정보 조회서비스"로 재확인 권장.
+   광주시(경기)가 속한 값으로 일단 넣어둠. 다르면 이 두 줄만 고치면 됨. */
+const MID_REGID_LAND='11B00000'; /* 중기육상예보: 서울·인천·경기도 통합구역 */
+const MID_REGID_TA='11B20601';   /* 중기기온: 경기도 광주시 (추정값 — 확인 필요) */
+
+/* 단기예보 발표시각(02,05,08,11,14,17,20,23시, 발표 10분 후부터 제공) 계산 */
+function kmaVilageBaseTime(now){
+  const times=[2,5,8,11,14,17,20,23];
+  const h=now.getHours(), m=now.getMinutes();
+  let baseH=null;
+  for(let i=times.length-1;i>=0;i--){ if(h>times[i]||(h===times[i]&&m>=10)){baseH=times[i];break;} }
+  const baseDate=new Date(now);
+  if(baseH===null){ baseH=23; baseDate.setDate(baseDate.getDate()-1); }
+  const y=baseDate.getFullYear(), mo=String(baseDate.getMonth()+1).padStart(2,'0'), d=String(baseDate.getDate()).padStart(2,'0');
+  return {base_date:`${y}${mo}${d}`, base_time:String(baseH).padStart(2,'0')+'00'};
+}
+/* 중기예보 발표시각(06,18시, 여유있게 30분 버퍼) 계산 */
+function kmaMidTmFc(now){
+  const h=now.getHours(), m=now.getMinutes();
+  let baseH = (h>18||(h===18&&m>=30)) ? 18 : (h>6||(h===6&&m>=30)) ? 6 : null;
+  const baseDate=new Date(now);
+  if(baseH===null){ baseH=18; baseDate.setDate(baseDate.getDate()-1); }
+  const y=baseDate.getFullYear(), mo=String(baseDate.getMonth()+1).padStart(2,'0'), d=String(baseDate.getDate()).padStart(2,'0');
+  return `${y}${mo}${d}${String(baseH).padStart(2,'0')}00`;
+}
+
+const WFCST_ICON={sunny:'☀️',cloudy:'⛅',overcast:'☁️',rain:'🌧️',rainsnow:'🌨️',snow:'❄️'};
+function wfcstSkyIcon(sky,pty){
+  const p=parseInt(pty)||0;
+  if(p===1||p===4) return WFCST_ICON.rain;
+  if(p===2) return WFCST_ICON.rainsnow;
+  if(p===3) return WFCST_ICON.snow;
+  const s=parseInt(sky)||1;
+  if(s===1) return WFCST_ICON.sunny;
+  if(s===3) return WFCST_ICON.cloudy;
+  return WFCST_ICON.overcast;
+}
+function wfcstTextIcon(wf){
+  if(!wf) return WFCST_ICON.overcast;
+  if(/비|소나기/.test(wf)) return WFCST_ICON.rain;
+  if(/눈/.test(wf)) return WFCST_ICON.snow;
+  if(/구름많|흐림/.test(wf)) return WFCST_ICON.cloudy;
+  return WFCST_ICON.sunny;
+}
+
+async function fetchWeeklyForecast(){
+  const container=document.getElementById('weekly-fcst-container');
+  const timeEl=document.getElementById('weekly-fcst-time');
+  if(container) container.innerHTML='<div style="font-size:11px;color:#aaa;padding:10px;">불러오는 중...</div>';
+  const ctrl=new AbortController();
+  const tid=setTimeout(()=>ctrl.abort(),10000);
+  try{
+    const loc=getWeatherLoc();
+    const {nx,ny}=kmaLatLonToGrid(loc.lat,loc.lon);
+    const now=new Date();
+    const vt=kmaVilageBaseTime(now);
+    const tmFc=kmaMidTmFc(now);
+
+    const base='https://empty-morning-c054.loveinch2000.workers.dev/';
+    const [vilageRes,midLandRes,midTaRes]=await Promise.all([
+      fetch(`${base}?kind=forecast_vilage&nx=${nx}&ny=${ny}&base_date=${vt.base_date}&base_time=${vt.base_time}`,{signal:ctrl.signal}).then(r=>r.json()),
+      fetch(`${base}?kind=forecast_mid_land&regId=${MID_REGID_LAND}&tmFc=${tmFc}`,{signal:ctrl.signal}).then(r=>r.json()),
+      fetch(`${base}?kind=forecast_mid_ta&regId=${MID_REGID_TA}&tmFc=${tmFc}`,{signal:ctrl.signal}).then(r=>r.json()),
+    ]);
+    clearTimeout(tid);
+
+    const vItems=vilageRes?.response?.body?.items?.item||[];
+    const byDate={};
+    vItems.forEach(it=>{
+      byDate[it.fcstDate]=byDate[it.fcstDate]||{};
+      byDate[it.fcstDate][it.category]=byDate[it.fcstDate][it.category]||[];
+      byDate[it.fcstDate][it.category].push({time:it.fcstTime,value:it.fcstValue});
+    });
+
+    const landItem=midLandRes?.response?.body?.items?.item?.[0]||{};
+    const taItem=midTaRes?.response?.body?.items?.item?.[0]||{};
+
+    const days=[];
+    for(let i=0;i<7;i++){
+      const d=new Date(); d.setDate(d.getDate()+i);
+      const dateStr=`${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+      if(byDate[dateStr]){
+        const cat=byDate[dateStr];
+        const findAt=(arr,t)=>(arr||[]).find(x=>x.time===t)?.value ?? (arr||[])[0]?.value;
+        const tmx=findAt(cat.TMX,'1500'), tmn=findAt(cat.TMN,'0600');
+        const skyNoon=findAt(cat.SKY,'1200'), ptyNoon=findAt(cat.PTY,'1200'), popNoon=findAt(cat.POP,'1200');
+        days.push({date:d,tmx,tmn,icon:wfcstSkyIcon(skyNoon,ptyNoon),pop:popNoon,source:'short'});
+      } else {
+        const n=i;
+        const tmx=taItem[`taMax${n}`]??landItem[`taMax${n}`];
+        const tmn=taItem[`taMin${n}`]??landItem[`taMin${n}`];
+        const wf=landItem[`wf${n}Am`]||landItem[`wf${n}`]||landItem[`wf${n}Pm`]||'';
+        const pop=landItem[`rnSt${n}Am`]??landItem[`rnSt${n}`]??landItem[`rnSt${n}Pm`]??'';
+        days.push({date:d,tmx,tmn,icon:wfcstTextIcon(wf),pop,source:'mid'});
+      }
+    }
+    renderWeeklyForecast(days);
+    if(timeEl) timeEl.textContent=`단기 ${vt.base_date.slice(4,6)}/${vt.base_date.slice(6,8)} ${vt.base_time.slice(0,2)}시 · 중기 ${tmFc.slice(4,6)}/${tmFc.slice(6,8)} ${tmFc.slice(8,10)}시 발표`;
+  }catch(e){
+    clearTimeout(tid);
+    console.warn('[주간예보]',e);
+    if(container) container.innerHTML='<div style="font-size:11px;color:#c0392b;padding:10px;">불러오기 실패 — Worker의 forecast 라우팅·서비스키 설정을 확인하세요</div>';
+  }
+}
+
+function renderWeeklyForecast(days){
+  const container=document.getElementById('weekly-fcst-container');
+  if(!container) return;
+  const dow=['일','월','화','수','목','금','토'];
+  container.innerHTML=`<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;">${
+    days.map((d,i)=>{
+      const isToday=i===0, isMid=d.source==='mid';
+      return `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 2px;border-radius:8px;${isToday?'background:#eaf3fc;':''}${isMid?'border-left:1px dashed #ddd;':''}">
+        <span style="font-size:11px;font-weight:${isToday?'700':'600'};color:${isToday?'#185FA5':'#555'};">${isToday?'오늘':dow[d.date.getDay()]}</span>
+        <span style="font-size:9px;color:#aaa;">${d.date.getMonth()+1}/${d.date.getDate()}</span>
+        <span style="font-size:17px;">${d.icon}</span>
+        <span style="font-size:11px;font-weight:700;color:#c0392b;">${d.tmx!=null&&d.tmx!==''?Math.round(d.tmx)+'°':'--'}</span>
+        <span style="font-size:10px;color:#185FA5;">${d.tmn!=null&&d.tmn!==''?Math.round(d.tmn)+'°':'--'}</span>
+        <span style="font-size:9px;color:#378ADD;">${d.pop!==''&&d.pop!=null?d.pop+'%':''}</span>
+      </div>`;
+    }).join('')
+  }</div>`;
 }
 
 /* ── 날씨 + 30일 천우표 ── */
