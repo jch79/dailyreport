@@ -4426,8 +4426,16 @@ async function fetchWeeklyForecast(){
       if(byDate[dateStr]){
         const cat=byDate[dateStr];
         const findAt=(arr,t)=>(arr||[]).find(x=>x.time===t)?.value ?? (arr||[])[0]?.value;
-        const tmx=findAt(cat.TMX,'1500'), tmn=findAt(cat.TMN,'0600');
-        const skyNoon=findAt(cat.SKY,'1200'), ptyNoon=findAt(cat.PTY,'1200'), popNoon=findAt(cat.POP,'1200');
+        const numsOf=(arr)=>(arr||[]).map(x=>parseFloat(x.value)).filter(v=>!isNaN(v));
+        let tmx=findAt(cat.TMX,'1500'), tmn=findAt(cat.TMN,'0600');
+        /* 오늘(발표시각이 늦어 TMN 시점이 이미 지남)이나 글피/그글피 연장구간은
+           TMX/TMN 코드 자체가 없을 수 있음 — 그때는 시간대별 기온(TMP) 중
+           최고/최저값으로 대신 계산 */
+        if(tmx==null||tmx===''){ const t=numsOf(cat.TMP); if(t.length) tmx=Math.max(...t); }
+        if(tmn==null||tmn===''){ const t=numsOf(cat.TMP); if(t.length) tmn=Math.min(...t); }
+        let popNoon=findAt(cat.POP,'1200');
+        if(popNoon==null||popNoon===''){ const p=numsOf(cat.POP); if(p.length) popNoon=Math.max(...p); }
+        const skyNoon=findAt(cat.SKY,'1200'), ptyNoon=findAt(cat.PTY,'1200');
         days.push({date:d,tmx,tmn,icon:wfcstSkyIcon(skyNoon,ptyNoon),pop:popNoon,source:'short'});
       } else {
         const n=i;
