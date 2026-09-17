@@ -1436,6 +1436,14 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
     </div>
 
     <div class="sec-divider"></div>
+    <div style="font-size:11px;font-weight:700;color:#444;margin-bottom:8px;display:flex;align-items:center;gap:6px;">
+      <span style="display:inline-block;width:4px;height:14px;border-radius:2px;background:#378ADD;"></span>
+      최근 30일 관수 현황
+    </div>
+    <!-- (예전 "집계 기간 5/7/10/15일" 선택 버튼 — 사용물량 집계로 대체되며 더 이상 쓰이지 않아 제거) -->
+    <div id="irr-bar-chart" style="margin-bottom:4px;min-width:0;overflow:hidden;"></div>
+
+    <div class="sec-divider"></div>
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:4px;">
       <div class="rain-chart-title" style="margin:0;">강우 현황 (최근 90일 · 30일씩)</div>
       <span id="rain-cache-date" style="font-size:10px;color:#aaa;"></span>
@@ -1449,16 +1457,6 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
     </div>
     <div id="rain-yearly-chart"></div>
 
-    <!-- 최근 30일 관수 현황 (먼저) -->
-    <div class="sec-divider"></div>
-    <div style="font-size:11px;font-weight:700;color:#444;margin-bottom:8px;display:flex;align-items:center;gap:6px;">
-      <span style="display:inline-block;width:4px;height:14px;border-radius:2px;background:#378ADD;"></span>
-      최근 30일 관수 현황
-    </div>
-    <!-- (예전 "집계 기간 5/7/10/15일" 선택 버튼 — 사용물량 집계로 대체되며 더 이상 쓰이지 않아 제거) -->
-    <div id="irr-bar-chart" style="margin-bottom:4px;min-width:0;overflow:hidden;"></div>
-
-    <!-- 최근 10일 TDR350 측정값 (나중) -->
     <div class="sec-divider"></div>
     <div style="font-size:11px;font-weight:700;color:#444;margin-bottom:8px;display:flex;align-items:center;gap:6px;">
       <span style="display:inline-block;width:4px;height:14px;border-radius:2px;background:#16A085;"></span>
