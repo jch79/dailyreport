@@ -927,6 +927,11 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
 .write-sec-wrap.sec-locked #temp-trend-chart,
 .write-sec-wrap.sec-locked #gp-write-chart{opacity:1!important;}
 .write-sec-wrap.sec-locked #rain-yearly-chart{opacity:1!important;}
+/* 요청: 주간예보 불러오기도 열람자가 사용 가능하게 — fetchWeeklyForecast()는 조회만 하고
+   저장 기능이 전혀 없는 읽기 전용 기능이라 통째로 풀어도 안전함 */
+.write-sec-wrap.sec-locked button[onclick="fetchWeeklyForecast()"]{pointer-events:auto!important;opacity:1!important;}
+.write-sec-wrap.sec-locked #weekly-fcst-container,
+.write-sec-wrap.sec-locked #weekly-fcst-container *{pointer-events:auto!important;opacity:1!important;}
 .sec-lock-badge{position:relative;z-index:5;background:#fff3cd;border:1.5px solid #e8c766;border-radius:8px;padding:7px 11px;margin-bottom:10px;font-size:11.5px;font-weight:700;color:#8a6d1a;display:flex;align-items:center;gap:6px;}
 .write-sec-btns{position:absolute;top:10px;right:10px;display:flex;flex-direction:column;gap:2px;z-index:10;}
 .write-sec-btn{border:none;background:#e8e8e8;border-radius:4px;width:20px;height:18px;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#666;transition:background .15s;padding:0;line-height:1;}
@@ -1165,14 +1170,6 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
           <div class="wx-ei" style="margin:0;cursor:pointer;" onclick="editWeatherStat('w-minmax','최저 / 최고 (°C)','text')" title="클릭하여 수정">
             <div class="wx-ev" id="w-minmax" style="text-decoration:underline dotted;text-underline-offset:2px;">--</div>
             <div class="wx-el">최저 / 최고 (°C) ✎ <span id="w-minmax-source" style="display:none;font-size:9px;font-weight:800;color:#fff;white-space:nowrap;border-radius:100px;padding:1px 6px;margin-left:3px;"></span> <span id="w-minmax-badge" onclick="event.stopPropagation();revertStatToAuto('minmax','최저 / 최고 기온')" title="눌러서 자동값으로 되돌리기" style="display:none;cursor:pointer;font-size:9px;font-weight:800;color:#fff;background:#B8690A;white-space:nowrap;border-radius:100px;padding:1px 6px;margin-left:3px;">✏ 수동 ↺</span></div>
-          </div>
-          <div class="wx-ei" style="margin:0;cursor:pointer;" onclick="editWeatherStat('w-avgh','일 평균습도 (%)','number')" title="클릭하여 수정">
-            <div class="wx-ev" id="w-avgh" style="text-decoration:underline dotted;text-underline-offset:2px;">--</div>
-            <div class="wx-el">일 평균습도 (%) ✎ <span id="w-avgh-source" style="display:none;font-size:9px;font-weight:800;color:#fff;white-space:nowrap;border-radius:100px;padding:1px 6px;margin-left:3px;"></span> <span id="w-avgh-badge" onclick="event.stopPropagation();revertStatToAuto('avgh','일 평균습도')" title="눌러서 자동값으로 되돌리기" style="display:none;cursor:pointer;font-size:9px;font-weight:800;color:#fff;background:#B8690A;white-space:nowrap;border-radius:100px;padding:1px 6px;margin-left:3px;">✏ 수동 ↺</span></div>
-          </div>
-          <div class="wx-ei" style="margin:0;cursor:pointer;" onclick="editWeatherStat('w-minmaxh','습도 최저 / 최고 (%)','text')" title="클릭하여 수정">
-            <div class="wx-ev" id="w-minmaxh" style="text-decoration:underline dotted;text-underline-offset:2px;">--</div>
-            <div class="wx-el">습도 최저 / 최고 (%) ✎ <span id="w-minmaxh-source" style="display:none;font-size:9px;font-weight:800;color:#fff;white-space:nowrap;border-radius:100px;padding:1px 6px;margin-left:3px;"></span> <span id="w-minmaxh-badge" onclick="event.stopPropagation();revertStatToAuto('minmaxh','습도 최저 / 최고')" title="눌러서 자동값으로 되돌리기" style="display:none;cursor:pointer;font-size:9px;font-weight:800;color:#fff;background:#B8690A;white-space:nowrap;border-radius:100px;padding:1px 6px;margin-left:3px;">✏ 수동 ↺</span></div>
           </div>
           <div class="wx-ei" style="margin:0;cursor:pointer;" onclick="editWeatherStat('w-month-rain','월 누적강우량 (mm)','number')" title="클릭하여 수정">
             <div class="wx-ev" id="w-month-rain" style="text-decoration:underline dotted;text-underline-offset:2px;">--</div>
