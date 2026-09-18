@@ -4444,7 +4444,7 @@ async function fetchWeeklyForecast(){
       }
     }
     renderWeeklyForecast(days);
-    if(timeEl) timeEl.textContent=`단기 ${vt.base_date.slice(4,6)}/${vt.base_date.slice(6,8)} ${vt.base_time.slice(0,2)}시 · 중기 ${tmFc.slice(4,6)}/${tmFc.slice(6,8)} ${tmFc.slice(8,10)}시 발표`;
+    if(timeEl) timeEl.textContent=`${loc.name} · 단기 ${vt.base_date.slice(4,6)}/${vt.base_date.slice(6,8)} ${vt.base_time.slice(0,2)}시 · 중기 ${tmFc.slice(4,6)}/${tmFc.slice(6,8)} ${tmFc.slice(8,10)}시 발표`;
   }catch(e){
     clearTimeout(tid);
     console.warn('[주간예보]',e);
