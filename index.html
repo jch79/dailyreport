@@ -4444,7 +4444,7 @@ async function fetchWeeklyForecast(){
       }
     }
     renderWeeklyForecast(days);
-    if(timeEl) timeEl.textContent=`${loc.name} · 단기 ${vt.base_date.slice(4,6)}/${vt.base_date.slice(6,8)} ${vt.base_time.slice(0,2)}시 · 중기 ${tmFc.slice(4,6)}/${tmFc.slice(6,8)} ${tmFc.slice(8,10)}시 발표`;
+    if(timeEl) timeEl.textContent=`경기 광주시 곤지암읍 · 단기 ${vt.base_date.slice(4,6)}/${vt.base_date.slice(6,8)} ${vt.base_time.slice(0,2)}시 · 중기 ${tmFc.slice(4,6)}/${tmFc.slice(6,8)} ${tmFc.slice(8,10)}시 발표`;
   }catch(e){
     clearTimeout(tid);
     console.warn('[주간예보]',e);
@@ -10444,6 +10444,12 @@ function init(){
   },200);
   /* 백업 리마인더 (다른 초기 토스트와 겹치지 않도록 약간 늦게 확인) */
   setTimeout(()=>checkBackupReminder(),3000);
+
+  /* 주간예보 자동 불러오기 — 예전엔 작성 탭에서 "불러오기" 버튼을 직접 눌러야만
+     확인 가능했는데, 로그인 후 기록을 열어볼 때(=앱을 열 때) 미리 한 번 자동으로
+     불러와두면 이후 작성 탭으로 이동했을 때 바로 최신 예보가 보임.
+     버튼을 눌러 수동으로 다시 불러오는 기능은 그대로 유지(항상 최신값으로 갱신 가능). */
+  if(typeof fetchWeeklyForecast==='function') setTimeout(()=>fetchWeeklyForecast(),600);
 
   /* ── 작성 패널 내 모든 input/textarea/select 변경 시 markDirty 호출 (이벤트 위임) ── */
   const writePanel=document.getElementById('panel-write');
