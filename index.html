@@ -696,6 +696,27 @@ body{font-family:'맑은 고딕','Apple SD Gothic Neo',sans-serif;font-size:14px
   .panel{max-width:1500px;margin-left:auto;margin-right:auto;}
 }
 
+/* ── 자재정보 3열(농약|비료|모래) 레이아웃 ──
+   PC 화면은 그대로 3등분(grid 1fr 1fr 1fr)으로 유지.
+   모바일 세로 화면은 폭이 좁아 3등분하면 카드 내용이 심하게 눌려 보이지 않는
+   문제가 있어, 모바일에서만 가로 스크롤 되는 카드형 레이아웃으로 전환하여
+   각 컬럼이 원래 폭을 유지한 채로 좌우로 넘겨볼 수 있게 함. */
+@media (max-width:760px){
+  .mat-3col-grid{
+    display:flex !important;
+    overflow-x:auto;
+    -webkit-overflow-scrolling:touch;
+    padding-bottom:8px;
+    scroll-snap-type:x proximity;
+  }
+  .mat-3col-grid > div{
+    flex:0 0 82vw;
+    max-width:340px;
+    min-width:250px;
+    scroll-snap-align:start;
+  }
+}
+
 /* ── CARD ── */
 .card{background:#fff;border:2px solid #c8c8c8;border-radius:10px;padding:16px;margin-bottom:14px;min-width:0;overflow:hidden;}
 .card-title{font-size:12px;font-weight:700;color:#444;margin-bottom:12px;letter-spacing:.05em;text-transform:uppercase;border-bottom:2px solid #e0e0e0;padding-bottom:6px;}
@@ -14783,7 +14804,7 @@ function showPdfGuide(ri){
   </div>
 
   <!-- 3열 레이아웃: 농약 | 비료 | 모래 -->
-  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;align-items:start;">
+  <div class="mat-3col-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;align-items:start;">
     <!-- 농약 컬럼 -->
     <div>
       <div style="background:#185FA5;color:#fff;border-radius:8px 8px 0 0;padding:8px 14px;display:flex;align-items:center;justify-content:space-between;">
