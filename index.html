@@ -940,6 +940,7 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
    GP 차트는 날짜를 클릭해도 읽기 전용 "산출근거" 팝업만 뜨고 저장 기능이 아예
    없어 차트 전체를 열어줘도 안전함. */
 .write-sec-wrap.sec-locked #temp-trend-chart button[onclick^="toggleTempCompareYear"],
+.write-sec-wrap.sec-locked #temp-trend-chart button[onclick^="toggleTempCompareMinMax"],
 .write-sec-wrap.sec-locked #temp-trend-chart button[onclick^="tempNav"]{pointer-events:auto!important;opacity:1!important;}
 .write-sec-wrap.sec-locked #gp-write-chart,
 .write-sec-wrap.sec-locked #gp-write-chart *{pointer-events:auto!important;}
@@ -7672,6 +7673,13 @@ function toggleTempCompareYear(y){
   else _tempCompareYears.add(y);
   renderTempChart();
 }
+/* 요청: 24/25년 버튼 우측에 "최고최저" 토글 — 켜면 선택된 연도(들)의 평균선뿐 아니라
+   그 해 같은 날짜의 최고·최저 기온선도 함께 겹쳐 표시 */
+let _tempCompareMinMax=false;
+function toggleTempCompareMinMax(){
+  _tempCompareMinMax=!_tempCompareMinMax;
+  renderTempChart();
+}
 function renderTempChart(){
   const el=document.getElementById('temp-trend-chart');
   if(!el)return;
@@ -7719,7 +7727,8 @@ function renderTempChart(){
   const allVals=[...pts.map(p=>p.tmax).filter(v=>v!=null),
                  ...pts.map(p=>p.tmin).filter(v=>v!=null),
                  ...pts.map(p=>p.tavg).filter(v=>v!=null),
-                 ...Object.values(compareMaps).flatMap(m=>Object.values(m).map(v=>v.tavg))];
+                 ...Object.values(compareMaps).flatMap(m=>Object.values(m).map(v=>v.tavg)),
+                 ...( _tempCompareMinMax ? Object.values(compareMaps).flatMap(m=>Object.values(m).flatMap(v=>[v.tmax,v.tmin])) : [] ).filter(v=>v!=null)];
   const minV=Math.floor(Math.min(...allVals))-2;
   const maxV=Math.ceil(Math.max(...allVals))+2;
   const range=maxV-minV||1;
@@ -7767,20 +7776,30 @@ function renderTempChart(){
   const tminLine=buildLine('tmin','#2980B9','');
   const tavgLine=buildLine('tavg','#27AE60','4 2');
 
-  /* 전년/전전년 비교선 — 같은 x축(이번해 날짜) 위에 해당 연도 같은 월/일의 평균기온을 겹쳐 그림 */
+  /* 전년/전전년 비교선 — 같은 x축(이번해 날짜) 위에 해당 연도 같은 월/일의 평균기온을 겹쳐 그림.
+     "최고최저" 토글이 켜지면 같은 방식으로 그 해 최고·최저기온선도 추가로 겹쳐 그림 */
   const COMPARE_COLORS={[curYear-1]:'#8E44AD',[curYear-2]:'#7F8C8D'};
-  function buildCompareLine(mapObj,color){
+  function buildCompareLine(mapObj,color,key,dash,width,opacity){
     let path='',prev=null;
     pts.forEach((p,i)=>{
-      const v=mapObj[p.date]?.tavg;
+      const v=mapObj[p.date]?.[key];
       if(v==null){prev=null;return;}
       const px=xPos(i),py=yPos(v);
       path+=(prev?`L${px.toFixed(1)},${py.toFixed(1)}`:`M${px.toFixed(1)},${py.toFixed(1)}`);
       prev={x:px,y:py};
     });
-    return path?`<path d="${path}" fill="none" stroke="${color}" stroke-width="1.2" stroke-dasharray="2 2" stroke-linejoin="round" stroke-linecap="round" opacity="0.85"/>`:'';
+    return path?`<path d="${path}" fill="none" stroke="${color}" stroke-width="${width}" stroke-dasharray="${dash}" stroke-linejoin="round" stroke-linecap="round" opacity="${opacity}"/>`:'';
   }
-  const compareLines=[..._tempCompareYears].map(y=>buildCompareLine(compareMaps[y]||{},COMPARE_COLORS[y]||'#999')).join('');
+  const compareLines=[..._tempCompareYears].map(y=>{
+    const color=COMPARE_COLORS[y]||'#999';
+    const map=compareMaps[y]||{};
+    let seg=buildCompareLine(map,color,'tavg','2 2',1.2,0.85);
+    if(_tempCompareMinMax){
+      seg+=buildCompareLine(map,color,'tmax','5 2',1,0.55);
+      seg+=buildCompareLine(map,color,'tmin','1 2',1,0.55);
+    }
+    return seg;
+  }).join('');
 
   /* X축 라벨 */
   let xLabels='';
@@ -7821,6 +7840,7 @@ function renderTempChart(){
         <span style="display:flex;align-items:center;gap:2px;"><span style="width:12px;height:2.5px;background:#27AE60;border-radius:1px;display:inline-block;border-bottom:2px dashed #27AE60;background:none;"></span>평균</span>
         <button onclick="toggleTempCompareYear(${curYear-1})" style="font-size:9px;padding:2px 7px;border-radius:100px;cursor:pointer;border:1.3px solid ${_tempCompareYears.has(curYear-1)?'#8E44AD':'#ccc'};background:${_tempCompareYears.has(curYear-1)?'#8E44AD':'#fff'};color:${_tempCompareYears.has(curYear-1)?'#fff':'#888'};font-weight:700;">${String(curYear-1).slice(2)}년</button>
         <button onclick="toggleTempCompareYear(${curYear-2})" style="font-size:9px;padding:2px 7px;border-radius:100px;cursor:pointer;border:1.3px solid ${_tempCompareYears.has(curYear-2)?'#7F8C8D':'#ccc'};background:${_tempCompareYears.has(curYear-2)?'#7F8C8D':'#fff'};color:${_tempCompareYears.has(curYear-2)?'#fff':'#888'};font-weight:700;">${String(curYear-2).slice(2)}년</button>
+        <button onclick="toggleTempCompareMinMax()" style="font-size:9px;padding:2px 7px;border-radius:100px;cursor:pointer;border:1.3px solid ${_tempCompareMinMax?'#444':'#ccc'};background:${_tempCompareMinMax?'#444':'#fff'};color:${_tempCompareMinMax?'#fff':'#888'};font-weight:700;">최고최저</button>
         <span id="temp-compare-status" style="color:#B45309;font-size:9px;"></span>
       </div>
       <div style="display:flex;align-items:center;gap:4px;">
