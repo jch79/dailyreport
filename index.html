@@ -7769,9 +7769,10 @@ function renderTempChart(){
       const px=xPos(i),py=yPos(v);
       path+=(prev?`L${px.toFixed(1)},${py.toFixed(1)}`:`M${px.toFixed(1)},${py.toFixed(1)}`);
       dots+=`<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="2.7" fill="${color}" stroke="#fff" stroke-width="0.9"><title>${p.date} ${key==='tmax'?'최고':key==='tmin'?'최저':'평균'}: ${v.toFixed(1)}°C</title></circle>`;
-      /* 값 라벨: 5개 간격 */
+      /* 값 라벨: 5개 간격 — 최저기온은 선 아래쪽에 표기(평균선과 겹칠 때 최고/평균은
+         선 위, 최저는 선 아래로 갈라져 있어야 서로 안 겹침) */
       if(i%Math.max(1,Math.ceil(n/8))===0||i===n-1)
-        dots+=`<text x="${px.toFixed(1)}" y="${(py-5.5).toFixed(1)}" font-size="9.5" fill="${color}" text-anchor="middle">${v.toFixed(1)}</text>`;
+        dots+=`<text x="${px.toFixed(1)}" y="${(key==='tmin'?py+13:py-5.5).toFixed(1)}" font-size="9.5" fill="${color}" text-anchor="middle">${v.toFixed(1)}</text>`;
       prev={x:px,y:py};
     });
     return `<path d="${path}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"${dash?` stroke-dasharray="${dash}"`:''}/>${dots}`;
