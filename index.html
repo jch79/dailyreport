@@ -7777,26 +7777,39 @@ function renderTempChart(){
   const tavgLine=buildLine('tavg','#27AE60','4 2');
 
   /* 전년/전전년 비교선 — 같은 x축(이번해 날짜) 위에 해당 연도 같은 월/일의 평균기온을 겹쳐 그림.
-     "최고최저" 토글이 켜지면 같은 방식으로 그 해 최고·최저기온선도 추가로 겹쳐 그림 */
+     "최고최저" 토글이 켜지면 같은 방식으로 그 해 최고·최저기온선도 추가로 겹쳐 그림.
+     실제 최고/최저/평균선처럼, 비교선도 꺾이는 지점(변곡점)에 기온값을 라벨로 표시 */
   const COMPARE_COLORS={[curYear-1]:'#8E44AD',[curYear-2]:'#7F8C8D'};
-  function buildCompareLine(mapObj,color,key,dash,width,opacity){
+  function buildCompareLine(mapObj,color,key,dash,width,opacity,peakOff,valleyOff){
     let path='',prev=null;
+    const valid=[]; /* {i,px,py,v} — 값 있는 지점만, 변곡점 판정용 */
     pts.forEach((p,i)=>{
       const v=mapObj[p.date]?.[key];
       if(v==null){prev=null;return;}
       const px=xPos(i),py=yPos(v);
       path+=(prev?`L${px.toFixed(1)},${py.toFixed(1)}`:`M${px.toFixed(1)},${py.toFixed(1)}`);
       prev={x:px,y:py};
+      valid.push({px,py,v});
     });
-    return path?`<path d="${path}" fill="none" stroke="${color}" stroke-width="${width}" stroke-dasharray="${dash}" stroke-linejoin="round" stroke-linecap="round" opacity="${opacity}"/>`:'';
+    if(!path)return'';
+    let labels='';
+    for(let k=1;k<valid.length-1;k++){
+      const a=valid[k-1].v,b=valid[k].v,c=valid[k+1].v;
+      const isPeak=b>a&&b>c, isValley=b<a&&b<c;
+      if(!isPeak&&!isValley)continue;
+      const{px,py}=valid[k];
+      const ty=isPeak?py+peakOff:py+valleyOff;
+      labels+=`<text x="${px.toFixed(1)}" y="${ty.toFixed(1)}" font-size="8.5" fill="${color}" text-anchor="middle" font-weight="700" opacity="0.9">${b.toFixed(1)}</text>`;
+    }
+    return `<path d="${path}" fill="none" stroke="${color}" stroke-width="${width}" stroke-dasharray="${dash}" stroke-linejoin="round" stroke-linecap="round" opacity="${opacity}"/>${labels}`;
   }
   const compareLines=[..._tempCompareYears].map(y=>{
     const color=COMPARE_COLORS[y]||'#999';
     const map=compareMaps[y]||{};
-    let seg=buildCompareLine(map,color,'tavg','2 2',1.2,0.85);
+    let seg=buildCompareLine(map,color,'tavg','2 2',1.2,0.85,-5.5,11);
     if(_tempCompareMinMax){
-      seg+=buildCompareLine(map,color,'tmax','5 2',1,0.55);
-      seg+=buildCompareLine(map,color,'tmin','1 2',1,0.55);
+      seg+=buildCompareLine(map,color,'tmax','5 2',1,0.55,-5.5,11);
+      seg+=buildCompareLine(map,color,'tmin','1 2',1,0.55,-5.5,11);
     }
     return seg;
   }).join('');
@@ -8256,13 +8269,15 @@ function buildGpNChartSVG(dates,gpMap,nMap,navInfo){
   const COMPARE_WINDOW=90;
   const compareDates=dates.slice(-COMPARE_WINDOW);
   const compareGpMaps={};
+  const compareTempMaps={}; /* 산출근거(변곡점 기온 라벨)용 — 연도별 원본 기온도 같이 보관 */
   let missingAllGp=[];
   _gpCompareYears.forEach(y=>{
     const {map,missing}=getSyncHistMap(compareDates,curYear-y);
     missingAllGp=missingAllGp.concat(missing);
-    const gpCompare={};
-    compareDates.forEach(d=>{ if(map[d]&&map[d].tavg!=null) gpCompare[d]=calcGP(map[d].tavg); });
+    const gpCompare={},tempCompare={};
+    compareDates.forEach(d=>{ if(map[d]&&map[d].tavg!=null){ gpCompare[d]=calcGP(map[d].tavg); tempCompare[d]=map[d].tavg; } });
     compareGpMaps[y]=gpCompare;
+    compareTempMaps[y]=tempCompare;
   });
   if(missingAllGp.length && !_histFetchBusy){
     fetchMissingHistAndRerender(missingAllGp, renderGpWriteBox, (done,total)=>{
@@ -8333,9 +8348,11 @@ function buildGpNChartSVG(dates,gpMap,nMap,navInfo){
   }
   const gpMaLine=maPath?`<path d="${maPath}" fill="none" stroke="#E67E22" stroke-width="1.15" stroke-dasharray="3,2" stroke-linejoin="round" stroke-linecap="round" opacity="0.9"/>`:'';
 
-  /* 전년/전전년 이동평균 비교선 그리기 — 위에서 계산한 compareGpMaps를 같은 트레일링 평균 방식으로 */
+  /* 전년/전전년 이동평균 비교선 그리기 — 위에서 계산한 compareGpMaps를 같은 트레일링 평균 방식으로.
+     실제 GP선의 꼭지점 기온라벨(tempLabels)과 같은 방식으로, 비교선도 꺾이는 지점(변곡점)에
+     그 해의 원본 일평균기온(compareTempMaps)을 라벨로 표시 */
   const COMPARE_COLORS_GP={[curYear-1]:'#8E44AD',[curYear-2]:'#7F8C8D'};
-  function buildCompareMaLine(gpCompareMap,color){
+  function buildCompareMaLine(gpCompareMap,color,tempMapForYear){
     const validIdx2=[];
     dates.forEach((d,i)=>{ if(gpCompareMap[d]!==undefined) validIdx2.push(i); });
     if(validIdx2.length<2) return '';
@@ -8349,9 +8366,21 @@ function buildGpNChartSVG(dates,gpMap,nMap,navInfo){
       const px=xPos(i),py=yPosGp(maVals2[k]);
       path2+=(k===0?`M${px.toFixed(1)},${py.toFixed(1)}`:`L${px.toFixed(1)},${py.toFixed(1)}`);
     });
-    return `<path d="${path2}" fill="none" stroke="${color}" stroke-width="1.15" stroke-dasharray="2 2" stroke-linejoin="round" stroke-linecap="round" opacity="0.85"/>`;
+    let labels2='';
+    validIdx2.forEach((i,k)=>{
+      if(k===0||k===validIdx2.length-1)return; /* 양끝 제외, 방향 꺾이는 지점만 */
+      const prevV=maVals2[k-1],curV=maVals2[k],nextV=maVals2[k+1];
+      const isPeak=curV>prevV&&curV>nextV, isValley=curV<prevV&&curV<nextV;
+      if(!isPeak&&!isValley)return;
+      const d=dates[i], t=tempMapForYear&&tempMapForYear[d];
+      if(t===undefined)return;
+      const px=xPos(i), py=yPosGp(curV);
+      const ty=isPeak?py-6:py+14;
+      labels2+=`<text x="${px.toFixed(1)}" y="${ty.toFixed(1)}" font-size="8.5" fill="${color}" text-anchor="middle" font-weight="700" opacity="0.9">${t.toFixed(1)}°</text>`;
+    });
+    return `<path d="${path2}" fill="none" stroke="${color}" stroke-width="1.15" stroke-dasharray="2 2" stroke-linejoin="round" stroke-linecap="round" opacity="0.85"/>${labels2}`;
   }
-  const compareMaSvg=[..._gpCompareYears].map(y=>buildCompareMaLine(compareGpMaps[y]||{},COMPARE_COLORS_GP[y]||'#999')).join('');
+  const compareMaSvg=[..._gpCompareYears].map(y=>buildCompareMaLine(compareGpMaps[y]||{},COMPARE_COLORS_GP[y]||'#999',compareTempMaps[y]||{})).join('');
 
   /* 실제기록 있는 마지막 지점과 그 다음(미래/참고값 구간) 경계에 안내선 표시 */
   let gpFutureMarker='';
