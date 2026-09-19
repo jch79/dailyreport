@@ -7745,6 +7745,12 @@ function renderTempChart(){
   const xPos=i=>PL+(n<=1?cW/2:i/(n-1)*cW);
   const yPos=v=>PT+cH-(v-minV)/range*cH;
 
+  /* 렌더 후 스크롤을 맨 오른쪽 끝(scrollWidth)으로 강제 이동시키므로, 초기 진입 시
+     실제로 보이는 구간은 [W-availW, W] 뿐 — 그 밖(왼쪽으로 스크롤 밖)에 중심이 걸리는
+     변곡점 라벨은 절반이 잘려 보이므로 미리 계산해 라벨 표시에서 제외 */
+  const _visLeft=availW>0?Math.max(0,W-availW):0;
+  const isLabelVisible=px=>px>=_visLeft+13 && px<=W-11;
+
   /* 격자 */
   let grid='';
   const gCnt=4;
@@ -7780,7 +7786,9 @@ function renderTempChart(){
      "최고최저" 토글이 켜지면 같은 방식으로 그 해 최고·최저기온선도 추가로 겹쳐 그림.
      실제 최고/최저/평균선처럼, 비교선도 꺾이는 지점(변곡점)에 기온값을 라벨로 표시 */
   const COMPARE_COLORS={[curYear-1]:'#8E44AD',[curYear-2]:'#7F8C8D'};
-  function buildCompareLine(mapObj,color,key,dash,width,opacity,peakOff,valleyOff){
+  function buildCompareLine(mapObj,color,key,dash,width,opacity,peakOff,valleyOff,labelMode){
+    /* labelMode: 'both'(기본, 평균선용) | 'peak'(최고기온선 — 올라갔다 내려오는 봉우리만)
+       | 'valley'(최저기온선 — 내려갔다 올라가는 골짜기만) */
     let path='',prev=null;
     const valid=[]; /* {i,px,py,v} — 값 있는 지점만, 변곡점 판정용 */
     pts.forEach((p,i)=>{
@@ -7793,23 +7801,32 @@ function renderTempChart(){
     });
     if(!path)return'';
     let labels='';
+    let lastLabelK=-999;
     for(let k=1;k<valid.length-1;k++){
       const a=valid[k-1].v,b=valid[k].v,c=valid[k+1].v;
-      const isPeak=b>a&&b>c, isValley=b<a&&b<c;
-      if(!isPeak&&!isValley)continue;
+      /* 이틀 이상 같은 값이 이어지는 "고원"(정상/바닥이 평평하게 이어지는 구간)도
+         변곡점으로 인정 — 엄격한 부등호(>)만 쓰면 최고점이 이틀 연속 같은 값일 때
+         양쪽 다 "이전보다 크다"를 만족 못해 라벨이 아예 안 붙는 문제가 있었음 */
+      const isPeak=b>=a&&b>=c&&(b>a||b>c), isValley=b<=a&&b<=c&&(b<a||b<c);
+      if(labelMode==='peak'&&!isPeak)continue;
+      if(labelMode==='valley'&&!isValley)continue;
+      if(labelMode!=='peak'&&labelMode!=='valley'&&!isPeak&&!isValley)continue;
+      if(k-lastLabelK<=1)continue; /* 고원 양끝에 같은 값 라벨이 중복으로 붙는 것 방지 */
       const{px,py}=valid[k];
+      if(!isLabelVisible(px))continue;
       const ty=isPeak?py+peakOff:py+valleyOff;
       labels+=`<text x="${px.toFixed(1)}" y="${ty.toFixed(1)}" font-size="8.5" fill="${color}" text-anchor="middle" font-weight="700" opacity="0.9">${b.toFixed(1)}</text>`;
+      lastLabelK=k;
     }
     return `<path d="${path}" fill="none" stroke="${color}" stroke-width="${width}" stroke-dasharray="${dash}" stroke-linejoin="round" stroke-linecap="round" opacity="${opacity}"/>${labels}`;
   }
   const compareLines=[..._tempCompareYears].map(y=>{
     const color=COMPARE_COLORS[y]||'#999';
     const map=compareMaps[y]||{};
-    let seg=buildCompareLine(map,color,'tavg','2 2',1.2,0.85,-5.5,11);
+    let seg=buildCompareLine(map,color,'tavg','2 2',1.2,0.85,-5.5,11,'both');
     if(_tempCompareMinMax){
-      seg+=buildCompareLine(map,color,'tmax','5 2',1,0.55,-5.5,11);
-      seg+=buildCompareLine(map,color,'tmin','1 2',1,0.55,-5.5,11);
+      seg+=buildCompareLine(map,color,'tmax','5 2',1,0.55,-5.5,11,'peak');
+      seg+=buildCompareLine(map,color,'tmin','1 2',1,0.55,-5.5,11,'valley');
     }
     return seg;
   }).join('');
@@ -8298,6 +8315,11 @@ function buildGpNChartSVG(dates,gpMap,nMap,navInfo){
   const yPosGp=v=>PT+cH-v*cH;              /* GP 0~1 → 좌측 축 */
   const yPosN=v=>PT+cH-(v/maxN)*cH;        /* N grams → 우측 축(스케일 별도) */
 
+  /* 렌더 후 스크롤을 맨 오른쪽 끝으로 이동시키므로, 초기에 실제로 보이는 구간은
+     [W-availW, W] 뿐 — 그 밖에 중심이 걸리는 변곡점 라벨은 잘려 보이므로 제외 */
+  const _visLeft=availW>0?Math.max(0,W-availW):0;
+  const isLabelVisible=px=>px>=_visLeft+13 && px<=W-11;
+
   /* 격자 (GP 기준, 0/0.5/1.0) */
   let grid='';
   [0,0.5,1].forEach(gv=>{
@@ -8367,16 +8389,21 @@ function buildGpNChartSVG(dates,gpMap,nMap,navInfo){
       path2+=(k===0?`M${px.toFixed(1)},${py.toFixed(1)}`:`L${px.toFixed(1)},${py.toFixed(1)}`);
     });
     let labels2='';
+    let lastLabelK2=-999;
     validIdx2.forEach((i,k)=>{
       if(k===0||k===validIdx2.length-1)return; /* 양끝 제외, 방향 꺾이는 지점만 */
       const prevV=maVals2[k-1],curV=maVals2[k],nextV=maVals2[k+1];
-      const isPeak=curV>prevV&&curV>nextV, isValley=curV<prevV&&curV<nextV;
+      /* 고원(같은 값이 이틀 이상 이어지는 정상/바닥) 라벨 누락 방지 — 위 기온추이차트와 동일 처리 */
+      const isPeak=curV>=prevV&&curV>=nextV&&(curV>prevV||curV>nextV), isValley=curV<=prevV&&curV<=nextV&&(curV<prevV||curV<nextV);
       if(!isPeak&&!isValley)return;
+      if(k-lastLabelK2<=1)return; /* 고원 양끝에 같은 값 라벨이 중복으로 붙는 것 방지 */
       const d=dates[i], t=tempMapForYear&&tempMapForYear[d];
       if(t===undefined)return;
       const px=xPos(i), py=yPosGp(curV);
+      if(!isLabelVisible(px))return;
       const ty=isPeak?py-6:py+14;
       labels2+=`<text x="${px.toFixed(1)}" y="${ty.toFixed(1)}" font-size="8.5" fill="${color}" text-anchor="middle" font-weight="700" opacity="0.9">${t.toFixed(1)}°</text>`;
+      lastLabelK2=k;
     });
     return `<path d="${path2}" fill="none" stroke="${color}" stroke-width="1.15" stroke-dasharray="2 2" stroke-linejoin="round" stroke-linecap="round" opacity="0.85"/>${labels2}`;
   }
