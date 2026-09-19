@@ -7745,11 +7745,10 @@ function renderTempChart(){
   const xPos=i=>PL+(n<=1?cW/2:i/(n-1)*cW);
   const yPos=v=>PT+cH-(v-minV)/range*cH;
 
-  /* 렌더 후 스크롤을 맨 오른쪽 끝(scrollWidth)으로 강제 이동시키므로, 초기 진입 시
-     실제로 보이는 구간은 [W-availW, W] 뿐 — 그 밖(왼쪽으로 스크롤 밖)에 중심이 걸리는
-     변곡점 라벨은 절반이 잘려 보이므로 미리 계산해 라벨 표시에서 제외 */
-  const _visLeft=availW>0?Math.max(0,W-availW):0;
-  const isLabelVisible=px=>px>=_visLeft+13 && px<=W-11;
+  /* 요청으로 되돌림: 화면에 "보이는 구간"만 계산해 그 밖의 변곡점 라벨을 숨기던
+     로직(availW 측정 타이밍에 따라 실제로는 다 보이는 화면에서도 라벨이 대거
+     누락되는 부작용이 있었음)을 제거 — 모든 변곡점 기록이 항상 표시되도록 함 */
+  const isLabelVisible=()=>true;
 
   /* 격자 */
   let grid='';
@@ -8315,10 +8314,9 @@ function buildGpNChartSVG(dates,gpMap,nMap,navInfo){
   const yPosGp=v=>PT+cH-v*cH;              /* GP 0~1 → 좌측 축 */
   const yPosN=v=>PT+cH-(v/maxN)*cH;        /* N grams → 우측 축(스케일 별도) */
 
-  /* 렌더 후 스크롤을 맨 오른쪽 끝으로 이동시키므로, 초기에 실제로 보이는 구간은
-     [W-availW, W] 뿐 — 그 밖에 중심이 걸리는 변곡점 라벨은 잘려 보이므로 제외 */
-  const _visLeft=availW>0?Math.max(0,W-availW):0;
-  const isLabelVisible=px=>px>=_visLeft+13 && px<=W-11;
+  /* 요청으로 되돌림: "보이는 구간" 밖 변곡점 라벨을 숨기던 로직 제거 —
+     항상 모든 변곡점 기록이 표시되도록 함 */
+  const isLabelVisible=()=>true;
 
   /* 격자 (GP 기준, 0/0.5/1.0) */
   let grid='';
