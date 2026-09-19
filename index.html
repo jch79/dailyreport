@@ -7632,16 +7632,38 @@ function getTempDataFromRecords(){
   return arr.sort((a,b)=>a.date.localeCompare(b.date));
 }
 
+/* 요청: ▶ 를 계속 눌러 실제기록 이후(미래, 올해 12월까지)로도 넘어가서
+   24년/25년 같은 날짜의 참고선(비교선)을 미리 볼 수 있게 함 — 차트 형식/스타일은
+   그대로 두고, 좌우이동 가능한 "가상 날짜축"만 실제기록 마지막일 이후로 연장.
+   axis: 실제기록 첫날 ~ (올해 또는 마지막기록 연도 중 늦은 해) 12/31 까지의 전체 날짜 배열
+   byDate: 그 중 실제기록이 있는 날짜만 채워진 맵(나머지는 없음=미래/예측 구간) */
+function buildTempFullAxis(){
+  const raw=getTempDataFromRecords();
+  if(!raw.length)return{axis:[],byDate:{}};
+  const byDate={};
+  raw.forEach(d=>{byDate[d.date]=d;});
+  const startDate=raw[0].date;
+  const lastActual=raw[raw.length-1].date;
+  const curYear=new Date().getFullYear();
+  const endYear=Math.max(curYear,parseInt(lastActual.slice(0,4)));
+  const endDate=`${endYear}-12-31`;
+  const axis=[];
+  let d=new Date(startDate+'T00:00:00');
+  const end=new Date(endDate+'T00:00:00');
+  while(d<=end){
+    axis.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);
+    d.setDate(d.getDate()+1);
+  }
+  return{axis,byDate};
+}
 function calcTempOffset(){
-  const _raw=getTempDataFromRecords();
+  const {axis:_axis}=buildTempFullAxis();
   const _pickerISO=document.getElementById('inp-date-picker')?.value||'';
   const _todayISO=(()=>{const _n=new Date();return`${_n.getFullYear()}-${String(_n.getMonth()+1).padStart(2,'0')}-${String(_n.getDate()).padStart(2,'0')}`;})();
-  if(_pickerISO && _pickerISO!==_todayISO){
-    let _ei=_raw.length;
-    for(let _i=0;_i<_raw.length;_i++){if(_raw[_i].date>_pickerISO){_ei=_i;break;}}
-    return Math.max(0,_ei-TEMP_WIN);
-  }
-  return Math.max(0,_raw.length-TEMP_WIN);
+  const _target=(_pickerISO&&_pickerISO!==_todayISO)?_pickerISO:_todayISO;
+  let _ei=_axis.length;
+  for(let _i=0;_i<_axis.length;_i++){if(_axis[_i]>_target){_ei=_i;break;}}
+  return Math.max(0,_ei-TEMP_WIN);
 }
 
 let _tempCompareYears=new Set();
@@ -7654,25 +7676,26 @@ function renderTempChart(){
   const el=document.getElementById('temp-trend-chart');
   if(!el)return;
 
-  /* 일보 레코드에서 기온 데이터 추출 */
-  const raw=getTempDataFromRecords();
+  /* 일보 레코드에서 기온 데이터 추출 + 실제기록 이후(미래, 12월까지) 가상 날짜축 연장 */
+  const {axis:tempAxis,byDate:tempByDate}=buildTempFullAxis();
 
   /* 수동 이동이 아닌 경우 항상 picker 날짜 기준 끝점으로 자동 설정 */
   if(!_tempManualNav){
     _tempOffset=calcTempOffset();
   }
 
-  if(!raw.length){
+  if(!tempAxis.length){
     el.innerHTML='<div style="color:#bbb;font-size:11px;text-align:center;padding:10px 0;">기온 데이터 없음 (날씨 섹션 최저/최고 입력 후 표시)</div>';
     return;
   }
 
-  const total=raw.length;
+  const total=tempAxis.length;
   const win=Math.min(TEMP_WIN,total);
   /* 범위 보정 */
   if(_tempOffset>total-win)_tempOffset=Math.max(0,total-win);
   if(_tempOffset<0)_tempOffset=0;
-  const pts=raw.slice(_tempOffset,_tempOffset+win);
+  const ptDates=tempAxis.slice(_tempOffset,_tempOffset+win);
+  const pts=ptDates.map(iso=>tempByDate[iso]||{date:iso,tmax:null,tmin:null,tavg:null});
   const n=pts.length;
   const curYear=new Date().getFullYear();
   const ptIsos=pts.map(p=>p.date);
@@ -7776,6 +7799,15 @@ function renderTempChart(){
     clickOverlays+=`<rect x="${(cx-halfW).toFixed(1)}" y="0" width="${(halfW*2).toFixed(1)}" height="${H}" fill="transparent" style="cursor:pointer;pointer-events:all;" onclick="openTempDayEdit('${p.date}')"><title>${p.date} 클릭하여 기온 수정</title></rect>`;
   });
 
+  /* 실제기록 있는 마지막 지점과 그 다음(미래/참고값 구간) 경계에 안내선 표시 */
+  let tempFutureMarker='';
+  let tempBoundaryIdx=-1;
+  for(let i=n-1;i>=0;i--){ if(pts[i].tavg!=null||pts[i].tmax!=null||pts[i].tmin!=null){tempBoundaryIdx=i;break;} }
+  if(tempBoundaryIdx>=0 && tempBoundaryIdx<n-1){
+    const bx=(xPos(tempBoundaryIdx)+xPos(tempBoundaryIdx+1))/2;
+    tempFutureMarker=`<line x1="${bx.toFixed(1)}" y1="${PT}" x2="${bx.toFixed(1)}" y2="${PT+cH}" stroke="#bbb" stroke-width="1" stroke-dasharray="3 3"/><text x="${bx.toFixed(1)}" y="14" font-size="8.5" fill="#999" text-anchor="middle">이후 참고값</text>`;
+  }
+
   const canLeft=_tempOffset>0;
   const canRight=_tempOffset+win<total;
   const p0=pts[0].date.slice(5).replace('-','/');
@@ -7804,6 +7836,7 @@ function renderTempChart(){
         <line x1="${PL}" y1="${PT+cH}" x2="${W-PR}" y2="${PT+cH}" stroke="#ddd" stroke-width="0.8"/>
         ${compareLines}
         ${tminLine}${tavgLine}${tmaxLine}
+        ${tempFutureMarker}
         ${xLabels}
         ${clickOverlays}
       </svg>
@@ -7814,8 +7847,8 @@ function renderTempChart(){
 }
 
 function tempNav(dir){
-  const raw=getTempDataFromRecords();
-  const total=raw.length;
+  const {axis:_axis}=buildTempFullAxis();
+  const total=_axis.length;
   const win=Math.min(TEMP_WIN,total);
   _tempOffset=Math.max(0,Math.min(total-win,_tempOffset+dir*win));
   _tempManualNav=true; /* 수동 이동 표시 */
@@ -8130,12 +8163,32 @@ function toggleGpCompareYear(y){
 const GP_WIN=40;
 let _gpOffset=0;
 let _gpManualNav=false;
+/* 요청: ▶ 를 계속 눌러 picker 날짜(보통 오늘) 이후(미래, 올해 12월까지)로도 넘어가서
+   24년/25년 이동평균 참고선을 미리 볼 수 있게 함 — 차트 형식은 그대로, 좌우이동
+   가능한 "가상 날짜축"만 연장. realLen: 실제기록(<=iso) 개수(= 기본 표시 시 끝 위치) */
+function buildGpFullAxis(iso){
+  const gpMap=getDailyGPMap();
+  let realDates=Object.keys(gpMap).sort();
+  if(iso)realDates=realDates.filter(d=>d<=iso);
+  if(!realDates.length)return{axis:[],realLen:0};
+  const startDate=realDates[0];
+  const baseISO=iso||realDates[realDates.length-1];
+  const curYear=new Date().getFullYear();
+  const endYear=Math.max(curYear,parseInt(baseISO.slice(0,4)));
+  const endDate=`${endYear}-12-31`;
+  const axis=[];
+  let d=new Date(startDate+'T00:00:00');
+  const end=new Date(endDate+'T00:00:00');
+  while(d<=end){
+    axis.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);
+    d.setDate(d.getDate()+1);
+  }
+  return{axis,realLen:realDates.length};
+}
 function gpNav(dir){
-  const area=document.getElementById('gp-area-sel')?.value||'';
   const iso=getPickerISO()||(()=>{const t=new Date();return`${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`;})();
-  let dates=Object.keys(getDailyGPMap()).sort();
-  if(iso)dates=dates.filter(d=>d<=iso);
-  const total=dates.length;
+  const {axis}=buildGpFullAxis(iso);
+  const total=axis.length;
   const win=Math.min(GP_WIN,total);
   _gpOffset=Math.max(0,Math.min(total-win,_gpOffset+dir*win));
   _gpManualNav=true;
@@ -8146,15 +8199,14 @@ function renderGpWriteChart(area,iso,gpMap,nMap){
   if(!el)return;
   gpMap=gpMap||getDailyGPMap();
   nMap=nMap||getDailyNByArea(area);
-  let allDates=Object.keys(gpMap).sort();
-  if(iso)allDates=allDates.filter(d=>d<=iso);
+  const {axis:allDates,realLen}=buildGpFullAxis(iso);
   if(!allDates.length){
     el.innerHTML='<div style="font-size:11px;color:#aaa;padding:8px 0;">기온 데이터 없음 (운영/날씨 섹션에서 기온 입력 후 표시)</div>';
     return;
   }
   const total=allDates.length;
   const win=Math.min(GP_WIN,total);
-  if(!_gpManualNav) _gpOffset=Math.max(0,total-win);
+  if(!_gpManualNav) _gpOffset=Math.max(0,realLen-win);
   if(_gpOffset>total-win)_gpOffset=Math.max(0,total-win);
   if(_gpOffset<0)_gpOffset=0;
   const dates=allDates.slice(_gpOffset,_gpOffset+win);
@@ -8281,6 +8333,15 @@ function buildGpNChartSVG(dates,gpMap,nMap,navInfo){
   }
   const compareMaSvg=[..._gpCompareYears].map(y=>buildCompareMaLine(compareGpMaps[y]||{},COMPARE_COLORS_GP[y]||'#999')).join('');
 
+  /* 실제기록 있는 마지막 지점과 그 다음(미래/참고값 구간) 경계에 안내선 표시 */
+  let gpFutureMarker='';
+  let gpBoundaryIdx=-1;
+  for(let i=n-1;i>=0;i--){ if(gpMap[dates[i]]!==undefined){gpBoundaryIdx=i;break;} }
+  if(gpBoundaryIdx>=0 && gpBoundaryIdx<n-1){
+    const bx=(xPos(gpBoundaryIdx)+xPos(gpBoundaryIdx+1))/2;
+    gpFutureMarker=`<line x1="${bx.toFixed(1)}" y1="${PT}" x2="${bx.toFixed(1)}" y2="${PT+cH}" stroke="#bbb" stroke-width="1" stroke-dasharray="3 3"/><text x="${bx.toFixed(1)}" y="14" font-size="8.5" fill="#999" text-anchor="middle">이후 참고값</text>`;
+  }
+
   /* 위/아래 꼭지점(극댓값·극솟값)에 산출근거인 일평균기온 라벨 표시 */
   let tempLabels='';
   validIdx.forEach((i,k)=>{
@@ -8341,12 +8402,13 @@ function buildGpNChartSVG(dates,gpMap,nMap,navInfo){
         ${gpLine}
         ${gpMaLine}
         ${compareMaSvg}
+        ${gpFutureMarker}
         ${tempLabels}
         ${xLabels}
         ${clickAreas}
       </svg>
     </div>
-    <div style="font-size:9px;color:#999;text-align:right;margin-top:2px;">◀ 좌우 이동 · 탭하여 산출근거 보기</div>`;
+    <div style="font-size:9px;color:#999;text-align:right;margin-top:2px;">◀ 좌우 이동 · 탭하여 산출근거 보기 (실제기록 이후는 24/25년 참고선만 표시)</div>`;
 }
 
 /* 특정 날짜 · 특정 그린기준(area)의 비료 시비 내역 — 상표명/사용량/질소 순성분량(g).
