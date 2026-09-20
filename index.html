@@ -941,6 +941,7 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
    없어 차트 전체를 열어줘도 안전함. */
 .write-sec-wrap.sec-locked #temp-trend-chart button[onclick^="toggleTempCompareYear"],
 .write-sec-wrap.sec-locked #temp-trend-chart button[onclick^="toggleTempCompareMinMax"],
+.write-sec-wrap.sec-locked #temp-trend-chart button[onclick^="openTempYearCalendarBtn"],
 .write-sec-wrap.sec-locked #temp-trend-chart button[onclick^="tempNav"]{pointer-events:auto!important;opacity:1!important;}
 .write-sec-wrap.sec-locked #gp-write-chart,
 .write-sec-wrap.sec-locked #gp-write-chart *{pointer-events:auto!important;}
@@ -7874,6 +7875,7 @@ function renderTempChart(){
         <span id="temp-compare-status" style="color:#B45309;font-size:9px;"></span>
       </div>
       <div style="display:flex;align-items:center;gap:4px;">
+        <button onclick="openTempYearCalendarBtn()" title="달력으로 24/25/26년 기온 비교해서 보기" style="width:22px;height:22px;border-radius:6px;border:1.3px solid #85B7EB;background:#eaf3fc;color:#185FA5;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;margin-right:2px;">📅</button>
         <button onclick="tempNav(-1)" ${!canLeft?'disabled':''} style="width:20px;height:20px;border-radius:50%;border:1px solid #c8c8c8;background:${canLeft?'#fff':'#f5f5f5'};color:${canLeft?'#444':'#ccc'};font-size:10px;cursor:${canLeft?'pointer':'not-allowed'};display:flex;align-items:center;justify-content:center;padding:0;">◀</button>
         <span style="font-size:9px;color:#888;min-width:60px;text-align:center;">${p0} ~ ${pN}</span>
         <button onclick="tempNav(1)" ${!canRight?'disabled':''} style="width:20px;height:20px;border-radius:50%;border:1px solid #c8c8c8;background:${canRight?'#fff':'#f5f5f5'};color:${canRight?'#444':'#ccc'};font-size:10px;cursor:${canRight?'pointer':'not-allowed'};display:flex;align-items:center;justify-content:center;padding:0;">▶</button>
@@ -8032,6 +8034,114 @@ async function fetchMissingHistAndRerender(missingTargets,rerenderFn,progressFn)
   if(changed) setHistCache(cache);
   _histFetchBusy=false;
   if(typeof rerenderFn==='function') rerenderFn();
+}
+
+/* ── "기온 추이" 헤더의 📅 버튼: 연도별 누적강우량 비교의 달력 팝업과 동일한 방식으로,
+   특정 월/일을 기준으로 24/25/26년(curYear-2, curYear-1, curYear) 기온을 달력으로 비교 ──
+   getSyncHistMap은 "이번해 날짜 → deltaYears 전"으로 동작하므로, 임의의 해(year)를
+   직접 조회하려면 이번해의 같은 월/일로 가짜 날짜를 만들어 deltaYears=curYear-year를
+   넘기는 방식으로 재사용한다(과거 백필/캐시/API 재조회 로직을 그대로 활용). */
+function getTempMonthMap(year,mm){
+  const curYear=new Date().getFullYear();
+  const daysInMonth=new Date(year,mm,0).getDate();
+  const isos=[];
+  for(let d=1;d<=daysInMonth;d++) isos.push(`${curYear}-${String(mm).padStart(2,'0')}-${String(d).padStart(2,'0')}`);
+  const deltaYears=curYear-year;
+  const {map,missing}=getSyncHistMap(isos,deltaYears);
+  const outMap={};
+  Object.keys(map).forEach(k=>{
+    const dd=k.slice(8,10);
+    outMap[`${year}-${String(mm).padStart(2,'0')}-${dd}`]=map[k];
+  });
+  return {map:outMap,missing};
+}
+function buildTempMonthCalendar(year,mm,highlightDd,color,monthMap){
+  const today=new Date();
+  const first=new Date(year,mm-1,1);
+  const daysInMonth=new Date(year,mm,0).getDate();
+  const startWeekday=first.getDay();
+  const wdNames=['일','월','화','수','목','금','토'];
+  let cells='';
+  for(let i=0;i<startWeekday;i++) cells+=`<div></div>`;
+  let sumMax=0,sumMin=0,sumAvg=0,cnt=0;
+  for(let d=1;d<=daysInMonth;d++){
+    const dt=new Date(year,mm-1,d);
+    const iso=`${year}-${String(mm).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const isFuture=dt>today;
+    const v=monthMap[iso];
+    const hasV=v&&v.tmax!=null&&v.tmin!=null;
+    const isHi=d===highlightDd;
+    if(hasV){ sumMax+=v.tmax; sumMin+=v.tmin; sumAvg+=(v.tavg!=null?v.tavg:(v.tmax+v.tmin)/2); cnt++; }
+    const valRow=hasV
+      ? `<div style="font-size:8px;white-space:nowrap;"><span style="color:${isHi?'#fff':'#E74C3C'};font-weight:700;">${v.tmax.toFixed(0)}</span>/<span style="color:${isHi?'#fff':'#2980B9'};font-weight:700;">${v.tmin.toFixed(0)}</span></div>`
+      : (isFuture?'':`<div style="font-size:8px;color:${isHi?'#fff':'#ccc'};">-</div>`);
+    const inner=`<div style="font-size:9px;font-weight:${isHi?700:400};color:${isHi?'#fff':'#333'};">${d}</div>${valRow}`;
+    cells+=`<div style="aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:6px;background:${isHi?color:(hasV?color+'14':'transparent')};">${inner}</div>`;
+  }
+  const avgMax=cnt?sumMax/cnt:null,avgMin=cnt?sumMin/cnt:null,avgAvg=cnt?sumAvg/cnt:null;
+  return `
+    <div style="margin-bottom:14px;">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px;flex-wrap:wrap;gap:4px;">
+        <span style="font-weight:700;color:${color};font-size:13px;">${year}년 ${mm}월</span>
+        <span style="font-size:10px;color:#999;">${cnt?`월평균 최고<b style="color:#E74C3C;">${avgMax.toFixed(1)}°</b>·최저<b style="color:#2980B9;">${avgMin.toFixed(1)}°</b>·평균<b style="color:#27AE60;">${avgAvg.toFixed(1)}°</b>`:'자료 없음'}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:3px;">
+        ${wdNames.map(w=>`<div style="text-align:center;font-size:9px;color:#aaa;">${w}</div>`).join('')}
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;">${cells}</div>
+    </div>`;
+}
+function openTempYearCalendarBtn(){
+  const pickerISO=getPickerISO()||(()=>{const t=new Date();return`${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`;})();
+  const [,mmStr,ddStr]=pickerISO.split('-');
+  showTempYearDayDetail(parseInt(mmStr,10),parseInt(ddStr,10));
+}
+let _tempYearDayModalState={mm:1,dd:1};
+function navTempYearDayModal(dir){
+  let {mm,dd}=_tempYearDayModalState;
+  mm+=dir;
+  if(mm<1) mm=12; else if(mm>12) mm=1;
+  const daysInNewMonth=new Date(new Date().getFullYear(),mm,0).getDate();
+  if(dd>daysInNewMonth) dd=daysInNewMonth;
+  showTempYearDayDetail(mm,dd);
+}
+function showTempYearDayDetail(mm,dd){
+  _tempYearDayModalState={mm,dd};
+  const modal=document.getElementById('temp-year-day-modal');
+  const body=document.getElementById('temp-year-day-modal-body');
+  const titleEl=modal?modal.querySelector('.modal-ttl'):null;
+  if(!modal||!body)return;
+  const curYear=new Date().getFullYear();
+  const years=[curYear-2,curYear-1,curYear];
+  const COLORS={[curYear]:'#185FA5',[curYear-1]:'#8E44AD',[curYear-2]:'#7F8C8D'};
+  if(titleEl){
+    titleEl.innerHTML=`
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
+        <button onclick="navTempYearDayModal(-1)" title="이전달" style="flex-shrink:0;width:22px;height:22px;border-radius:50%;border:1px solid #c8c8c8;background:#fff;color:#444;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;">◀</button>
+        <span style="flex:1;text-align:center;">🌡️ ${mm}월 기온 (${dd}일 기준)</span>
+        <button onclick="navTempYearDayModal(1)" title="다음달" style="flex-shrink:0;width:22px;height:22px;border-radius:50%;border:1px solid #c8c8c8;background:#fff;color:#444;font-size:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;">▶</button>
+      </div>`;
+  }
+  let missingAll=[];
+  const monthMaps={};
+  years.forEach(y=>{
+    const {map,missing}=getTempMonthMap(y,mm);
+    monthMaps[y]=map;
+    missingAll=missingAll.concat(missing);
+  });
+  const html=years.map(y=>{
+    const dt=new Date(y,mm-1,dd);
+    const validDay=dt.getMonth()===mm-1;
+    return buildTempMonthCalendar(y,mm,validDay?dd:null,COLORS[y],monthMaps[y]);
+  }).join('');
+  body.innerHTML=html+`<div id="temp-cal-status" style="font-size:10.5px;color:#B45309;text-align:center;"></div>`;
+  modal.style.display='flex';
+  if(missingAll.length && !_histFetchBusy){
+    fetchMissingHistAndRerender(missingAll, ()=>showTempYearDayDetail(mm,dd), (done,total)=>{
+      const st=document.getElementById('temp-cal-status');
+      if(st) st.textContent=`⏳ 과거 기온 불러오는 중 (${done}/${total})`;
+    });
+  }
 }
 
 /* GP=1.0 기준 처리지역별 주간 목표 질소량(g) 저장 */
@@ -15025,6 +15135,16 @@ function showPdfGuide(ri){
       <button class="btn btn-sm" onclick="document.getElementById('rain-year-day-modal').style.display='none'">✕ 닫기</button>
     </div>
     <div id="rain-year-day-modal-body" style="padding:8px 2px 4px;font-size:13px;line-height:1.5;"></div>
+  </div>
+</div>
+
+<div id="temp-year-day-modal" class="modal-wrap" onclick="if(event.target===this)this.style.display='none'" style="display:none;">
+  <div class="modal" style="max-width:460px;width:94%;max-height:86vh;overflow-y:auto;">
+    <div class="modal-hdr">
+      <div class="modal-ttl">🌡️ 이 달의 기온</div>
+      <button class="btn btn-sm" onclick="document.getElementById('temp-year-day-modal').style.display='none'">✕ 닫기</button>
+    </div>
+    <div id="temp-year-day-modal-body" style="padding:8px 2px 4px;font-size:13px;line-height:1.5;"></div>
   </div>
 </div>
 
