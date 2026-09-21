@@ -2416,7 +2416,7 @@ function buildTaskRow(si,ti,task,cls){
         <button onclick="moveTaskRow(${si},${ti},-1)" style="border:none;background:#e8e8e8;border-radius:3px;padding:1px 4px;font-size:9px;cursor:pointer;line-height:1;color:#666;" title="위로">&#9650;</button>
         <button onclick="moveTaskRow(${si},${ti},1)"  style="border:none;background:#e8e8e8;border-radius:3px;padding:1px 4px;font-size:9px;cursor:pointer;line-height:1;color:#666;" title="아래로">&#9660;</button>
       </div>
-      <input type="text" value="${matEscHtml(task.name)}" title="클릭하여 항목 이름 수정"
+      <input type="text" value="${matEscHtml(task.name)}" title="클릭하여 항목 이름 수정" placeholder="항목이름 기재"
         onchange="renameTaskRow(${si},${ti},this.value)"
         style="flex:1;min-width:0;border:none;background:transparent;font:inherit;color:inherit;font-weight:700;padding:1px 2px;border-radius:3px;cursor:text;"
         onfocus="this.style.background='#fff';this.style.boxShadow='0 0 0 1.5px #999';" onblur="this.style.background='transparent';this.style.boxShadow='none';">
@@ -2525,7 +2525,16 @@ function moveTaskRow(si,ti,dir){
   [tasks[ti],tasks[target]]=[tasks[target],tasks[ti]];
   refreshSection(si);
 }
-function addTaskToSection(si){const name=prompt('항목 이름:');if(!name)return;markDirty();curTasks[si].tasks.push({name,early:false,day:false,night:false,detail:'',equip:'',workers:['']});refreshSection(si);}
+function addTaskToSection(si){
+  markDirty();
+  curTasks[si].tasks.push({name:'',early:false,day:false,night:false,detail:'',equip:'',workers:['']});
+  refreshSection(si);
+  /* 팝업으로 이름 물어보는 대신, 바로 빈 행을 추가하고 이름칸에 포커스 — 흐릿한 안내문구(placeholder)로 유도 */
+  const ti=curTasks[si].tasks.length-1;
+  const row=document.getElementById(`tr-${si}-${ti}`);
+  const nameInput=row&&row.querySelector('.task-name-cell input[type="text"]');
+  if(nameInput) nameInput.focus();
+}
 function addCustomTask(){
   const name=prompt('항목 이름:');if(!name)return;
   const secs=curTasks.map(s=>s.section);
