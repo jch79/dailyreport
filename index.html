@@ -8350,7 +8350,8 @@ function buildGpFullAxis(iso){
   if(iso)realDates=realDates.filter(d=>d<=iso);
   if(!realDates.length)return{axis:[],realLen:0};
   const startDate=realDates[0];
-  const baseISO=iso||realDates[realDates.length-1];
+  const lastRealDate=realDates[realDates.length-1];
+  const baseISO=iso||lastRealDate;
   const curYear=new Date().getFullYear();
   const endYear=Math.max(curYear,parseInt(baseISO.slice(0,4)));
   const endDate=`${endYear}-12-31`;
@@ -8361,7 +8362,12 @@ function buildGpFullAxis(iso){
     axis.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);
     d.setDate(d.getDate()+1);
   }
-  return{axis,realLen:realDates.length};
+  /* 요청: 실제기록에 중간중간 빠진 날짜(공백)가 있으면 realDates.length(실제 기록 "개수")와
+     axis에서 마지막 실제기록일이 놓인 "위치(인덱스)"가 어긋나서, 최근 날짜가 있어도
+     차트 기본화면이 그 이전 어딘가에 멈춰버리는 문제가 있었음 — 개수 대신 마지막
+     실제기록일의 axis상 위치를 직접 찾아 반환하도록 수정 */
+  const realLen=axis.indexOf(lastRealDate)+1;
+  return{axis,realLen};
 }
 function gpNav(dir){
   const iso=getPickerISO()||(()=>{const t=new Date();return`${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`;})();
