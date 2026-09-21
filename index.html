@@ -2386,9 +2386,9 @@ function renderTasks(){
         </div>
         <div id="sec-${si}"></div>
       </div>
-      <div class="task-add-row" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
-        <span style="font-size:10px;color:#888;">작업자 + 버튼: 같은 작업에 여러 명 가로 추가</span>
+      <div class="task-add-row" style="display:flex;align-items:center;justify-content:flex-start;gap:8px;flex-wrap:wrap;">
         <button class="btn btn-sm" style="${sec.cls==='mowing'?'background:#185FA5;border-color:#185FA5;':'background:#3B6D11;border-color:#3B6D11;'}color:#fff;font-size:11px;flex-shrink:0;" onclick="addTaskToSection(${si})">+ 행 추가</button>
+        <span style="font-size:10px;color:#888;">작업자 + 버튼: 같은 작업에 여러 명 가로 추가</span>
       </div>`;
     container.appendChild(block);
     const secEl=document.getElementById(`sec-${si}`);
