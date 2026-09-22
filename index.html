@@ -4430,6 +4430,21 @@ async function fetchWeeklyForecast(){
   if(container) container.innerHTML='<div style="font-size:11px;color:#aaa;padding:10px;">불러오는 중...</div>';
   const ctrl=new AbortController();
   const tid=setTimeout(()=>ctrl.abort(),10000);
+  /* 요청: 실패 시 뭉뚱그린 안내 대신 실제 원인(HTTP 상태코드/JSON 파싱 오류/타임아웃 등)을
+     화면에 그대로 보여줘서, 다음에 또 실패했을 때 스샷만으로 정확한 원인을 알 수 있게 함 */
+  async function fetchJson(url,label){
+    let res;
+    try{ res=await fetch(url,{signal:ctrl.signal}); }
+    catch(networkErr){ throw new Error(`[${label}] 네트워크/CORS 오류: ${networkErr.message}`); }
+    const raw=await res.text();
+    if(!res.ok){
+      throw new Error(`[${label}] HTTP ${res.status} ${res.statusText} — 응답: ${raw.slice(0,200)}`);
+    }
+    try{ return JSON.parse(raw); }
+    catch(parseErr){
+      throw new Error(`[${label}] JSON 파싱 실패(응답이 JSON이 아님) — 응답 앞부분: ${raw.slice(0,200)}`);
+    }
+  }
   try{
     const loc=getWeatherLoc();
     const {nx,ny}=kmaLatLonToGrid(loc.lat,loc.lon);
@@ -4439,9 +4454,9 @@ async function fetchWeeklyForecast(){
 
     const base='https://empty-morning-c054.loveinch2000.workers.dev/';
     const [vilageRes,midLandRes,midTaRes]=await Promise.all([
-      fetch(`${base}?kind=forecast_vilage&nx=${nx}&ny=${ny}&base_date=${vt.base_date}&base_time=${vt.base_time}`,{signal:ctrl.signal}).then(r=>r.json()),
-      fetch(`${base}?kind=forecast_mid_land&regId=${MID_REGID_LAND}&tmFc=${tmFc}`,{signal:ctrl.signal}).then(r=>r.json()),
-      fetch(`${base}?kind=forecast_mid_ta&regId=${MID_REGID_TA}&tmFc=${tmFc}`,{signal:ctrl.signal}).then(r=>r.json()),
+      fetchJson(`${base}?kind=forecast_vilage&nx=${nx}&ny=${ny}&base_date=${vt.base_date}&base_time=${vt.base_time}`,'단기예보'),
+      fetchJson(`${base}?kind=forecast_mid_land&regId=${MID_REGID_LAND}&tmFc=${tmFc}`,'중기육상'),
+      fetchJson(`${base}?kind=forecast_mid_ta&regId=${MID_REGID_TA}&tmFc=${tmFc}`,'중기기온'),
     ]);
     clearTimeout(tid);
 
@@ -4488,7 +4503,12 @@ async function fetchWeeklyForecast(){
   }catch(e){
     clearTimeout(tid);
     console.warn('[주간예보]',e);
-    if(container) container.innerHTML='<div style="font-size:11px;color:#c0392b;padding:10px;">불러오기 실패 — Worker의 forecast 라우팅·서비스키 설정을 확인하세요</div>';
+    const isAbort=e.name==='AbortError';
+    const msg=isAbort?'10초 내 응답 없음(타임아웃)':(e.message||String(e));
+    if(container) container.innerHTML=`<div style="font-size:11px;color:#c0392b;padding:10px;line-height:1.5;">
+      불러오기 실패<br>
+      <span style="font-size:10px;color:#a03020;word-break:break-all;">${matEscHtml(msg)}</span>
+    </div>`;
   }
 }
 
