@@ -5298,7 +5298,12 @@ function buildRainYearlyChartSVG(dataByYear,years,loadingYears){
   }
   const GRID_TICKS=5;
   const step=niceStep(rawMaxV,GRID_TICKS)||10;
-  const maxV=step*GRID_TICKS;
+  let maxV=step*GRID_TICKS;
+  /* 요청으로 수정: "깔끔한 눈금" 계산이 반올림 특성상 실제 최대값보다 낮게
+     나올 수 있어(예: 24년처럼 값이 큰 선이 축 위쪽 경계 밖으로 밀려나 안 보이던
+     문제) — 그 경우 눈금 개수를 늘려서라도 반드시 실제 최대값을 덮도록 보정 */
+  let gridTicks=GRID_TICKS;
+  if(maxV<rawMaxV){ gridTicks=Math.ceil(rawMaxV/step); maxV=step*gridTicks; }
 
   const H=175,PL=48,PR=54,PT=20,PB=30; /* 끝 값 라벨(예: "1116.4mm")이 안 잘리게 PR 확대 */
   const el0=document.getElementById('rain-yearly-chart');
@@ -5311,7 +5316,7 @@ function buildRainYearlyChartSVG(dataByYear,years,loadingYears){
   const yPos=v=>PT+cH-(v/maxV)*cH;
 
   let grid='';
-  for(let g=0;g<=GRID_TICKS;g++){
+  for(let g=0;g<=gridTicks;g++){
     const gv=step*g;
     const gy=yPos(gv);
     grid+=`<line x1="${PL}" y1="${gy.toFixed(1)}" x2="${W-PR}" y2="${gy.toFixed(1)}" stroke="${g===0?'#ddd':'#f2f2f2'}" stroke-width="${g===0?0.7:0.35}"/>`;
