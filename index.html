@@ -941,6 +941,7 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
    없어 차트 전체를 열어줘도 안전함. */
 .write-sec-wrap.sec-locked #temp-trend-chart button[onclick^="toggleTempCompareYear"],
 .write-sec-wrap.sec-locked #temp-trend-chart button[onclick^="toggleTempCompareMinMax"],
+.write-sec-wrap.sec-locked #temp-trend-chart button[onclick^="toggleTempShowThisYear"],
 .write-sec-wrap.sec-locked #temp-trend-chart button[onclick^="openTempYearCalendarBtn"],
 .write-sec-wrap.sec-locked #temp-trend-chart button[onclick^="tempNav"]{pointer-events:auto!important;opacity:1!important;}
 .write-sec-wrap.sec-locked #gp-write-chart,
@@ -7725,6 +7726,13 @@ function calcTempOffset(){
   return Math.max(0,_ei-TEMP_WIN);
 }
 
+/* 요청: 24/25년처럼 26년(올해, 실측 최고/최저/평균선)도 껐다 켰다 할 수 있게 —
+   기본은 켜짐(true) */
+let _tempShowThisYear=true;
+function toggleTempShowThisYear(){
+  _tempShowThisYear=!_tempShowThisYear;
+  renderTempChart();
+}
 let _tempCompareYears=new Set();
 function toggleTempCompareYear(y){
   if(_tempCompareYears.has(y)) _tempCompareYears.delete(y);
@@ -7789,11 +7797,12 @@ function renderTempChart(){
     });
   }
 
-  const allVals=[...pts.map(p=>p.tmax).filter(v=>v!=null),
-                 ...pts.map(p=>p.tmin).filter(v=>v!=null),
-                 ...pts.map(p=>p.tavg).filter(v=>v!=null),
+  const allVals=[...( _tempShowThisYear ? pts.map(p=>p.tmax).filter(v=>v!=null) : [] ),
+                 ...( _tempShowThisYear ? pts.map(p=>p.tmin).filter(v=>v!=null) : [] ),
+                 ...( _tempShowThisYear ? pts.map(p=>p.tavg).filter(v=>v!=null) : [] ),
                  ...Object.values(compareMaps).flatMap(m=>Object.values(m).map(v=>v.tavg)),
                  ...( _tempCompareMinMax ? Object.values(compareMaps).flatMap(m=>Object.values(m).flatMap(v=>[v.tmax,v.tmin])) : [] ).filter(v=>v!=null)];
+  if(!allVals.length) allVals.push(0,30); /* 요청: 26년/비교연도 모두 꺼져 값이 하나도 없을 때 축 계산이 깨지는 것 방지 */
   const minV=Math.floor(Math.min(...allVals))-2;
   const maxV=Math.ceil(Math.max(...allVals))+2;
   const range=maxV-minV||1;
@@ -7857,9 +7866,9 @@ function renderTempChart(){
     return `<path d="${solidPath}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"${dash?` stroke-dasharray="${dash}"`:''}/><path d="${dashPath}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="5 3"/>${dots}`;
   }
 
-  const tmaxLine=buildLine('tmax','#E74C3C','');
-  const tminLine=buildLine('tmin','#2980B9','');
-  const tavgLine=buildLine('tavg','#27AE60','4 2');
+  const tmaxLine=_tempShowThisYear?buildLine('tmax','#E74C3C',''):'';
+  const tminLine=_tempShowThisYear?buildLine('tmin','#2980B9',''):'';
+  const tavgLine=_tempShowThisYear?buildLine('tavg','#27AE60','4 2'):'';
 
   /* 전년/전전년 비교선 — 같은 x축(이번해 날짜) 위에 해당 연도 같은 월/일의 평균기온을 겹쳐 그림.
      "최고최저" 토글이 켜지면 같은 방식으로 그 해 최고·최저기온선도 추가로 겹쳐 그림.
@@ -7947,6 +7956,7 @@ function renderTempChart(){
         <span style="display:flex;align-items:center;gap:2px;"><span style="width:12px;height:2.5px;background:#E74C3C;border-radius:1px;display:inline-block;"></span>최고</span>
         <span style="display:flex;align-items:center;gap:2px;"><span style="width:12px;height:2.5px;background:#2980B9;border-radius:1px;display:inline-block;"></span>최저</span>
         <span style="display:flex;align-items:center;gap:2px;"><span style="width:12px;height:2.5px;background:#27AE60;border-radius:1px;display:inline-block;border-bottom:2px dashed #27AE60;background:none;"></span>평균</span>
+        <button onclick="toggleTempShowThisYear()" style="font-size:9px;padding:2px 7px;border-radius:100px;cursor:pointer;border:1.3px solid ${_tempShowThisYear?'#333':'#ccc'};background:${_tempShowThisYear?'#333':'#fff'};color:${_tempShowThisYear?'#fff':'#888'};font-weight:700;">${String(curYear).slice(2)}년</button>
         <button onclick="toggleTempCompareYear(${curYear-1})" style="font-size:9px;padding:2px 7px;border-radius:100px;cursor:pointer;border:1.3px solid ${_tempCompareYears.has(curYear-1)?'#8E44AD':'#ccc'};background:${_tempCompareYears.has(curYear-1)?'#8E44AD':'#fff'};color:${_tempCompareYears.has(curYear-1)?'#fff':'#888'};font-weight:700;">${String(curYear-1).slice(2)}년</button>
         <button onclick="toggleTempCompareYear(${curYear-2})" style="font-size:9px;padding:2px 7px;border-radius:100px;cursor:pointer;border:1.3px solid ${_tempCompareYears.has(curYear-2)?'#7F8C8D':'#ccc'};background:${_tempCompareYears.has(curYear-2)?'#7F8C8D':'#fff'};color:${_tempCompareYears.has(curYear-2)?'#fff':'#888'};font-weight:700;">${String(curYear-2).slice(2)}년</button>
         <button onclick="toggleTempCompareMinMax()" style="font-size:9px;padding:2px 7px;border-radius:100px;cursor:pointer;border:1.3px solid ${_tempCompareMinMax?'#444':'#ccc'};background:${_tempCompareMinMax?'#444':'#fff'};color:${_tempCompareMinMax?'#fff':'#888'};font-weight:700;">최고최저</button>
