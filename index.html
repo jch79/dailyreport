@@ -14239,9 +14239,9 @@ function renderMatUseCalendar(){
       else if(selArea)                     passDropdown = bn===selArea;
       if(!passDropdown) return;
       (block.items||[]).forEach(item=>{
-        if(item.type==='fert' && parseGram(item.amount)) usedAreasFert.add(bn);
-        if(item.type==='pest' && parseGram(item.amount)) usedAreasPest.add(bn);
-        if(item.type==='sand' && parseSandAmt(item.amount)) usedAreasSand.add(bn);
+        if(item.type==='fert' && item.brandName) usedAreasFert.add(bn);
+        if(item.type==='pest' && item.brandName) usedAreasPest.add(bn);
+        if(item.type==='sand' && item.brandName) usedAreasSand.add(bn);
       });
     });
   });
@@ -14265,31 +14265,36 @@ function renderMatUseCalendar(){
       const area = block.areaName || '미지정';
       (block.items||[]).forEach(item=>{
         if(item.type==='fert'){
-          const amtG=parseGram(item.amount); if(!amtG) return;
+          if(!item.brandName) return; /* 상표명조차 없으면 표시할 게 없음 */
+          const amtG=parseGram(item.amount); /* 요청: 사용량 미기재도 상표명은 표기 — 더 이상 여기서 return하지 않음 */
           let p=(item._listIdx!==undefined)?fertList[item._listIdx]:null;
           if(!p||(p.name&&item.brandName&&p.name.trim()!==String(item.brandName).trim())){p=fertList.find(f=>f.name.trim()===String(item.brandName||'').trim());}
-          if(!p) return;
-          const nutr={N:0,P:0,K:0};
-          ['N','P','K'].forEach(nu=>{
-            const ratio = parseFloat(p[nu]);
-            if(!isNaN(ratio) && ratio>0) nutr[nu] = amtG*ratio/100;
-          });
+          let nutr=null;
+          if(amtG&&p){
+            nutr={N:0,P:0,K:0};
+            ['N','P','K'].forEach(nu=>{
+              const ratio = parseFloat(p[nu]);
+              if(!isNaN(ratio) && ratio>0) nutr[nu] = amtG*ratio/100;
+            });
+          }
           const excluded = !(_matuCalShowFert && areaMatchFor('fert', block.areaName));
-          (byDate[iso]=byDate[iso]||[]).push({area, kind:'fert', brand:item.brandName||p.name||'?', amount:amtG, unit:'g', nutr, excluded});
+          (byDate[iso]=byDate[iso]||[]).push({area, kind:'fert', brand:item.brandName||p?.name||'?', amount:amtG, unit:'g', nutr, excluded});
         }
         if(item.type==='pest'){
-          const amt=parseGram(item.amount); if(!amt) return;
+          if(!item.brandName) return;
+          const amt=parseGram(item.amount); /* 요청: 사용량 미기재도 상표명은 표기 */
           let pp=(item._listIdx!==undefined)?pestList[item._listIdx]:null;
           if(!pp||(pp.name&&item.brandName&&pp.name.trim()!==String(item.brandName).trim())){pp=pestList.find(f=>f.name.trim()===String(item.brandName||'').trim());}
           const excluded = !(_matuCalShowPest && areaMatchFor('pest', block.areaName));
           (byDate[iso]=byDate[iso]||[]).push({area, kind:'pest', brand:item.brandName||'기타', amount:amt, unit:'ml', category:pp?.type||'', excluded});
         }
         if(item.type==='sand'){
-          const sa=parseSandAmt(item.amount); if(!sa) return;
+          if(!item.brandName) return;
+          const sa=parseSandAmt(item.amount); /* 요청: 사용량 미기재도 상표명은 표기 */
           let sp=(item._listIdx!==undefined)?sandList[item._listIdx]:null;
           if(!sp||(sp.name&&item.brandName&&sp.name.trim()!==String(item.brandName).trim())){sp=sandList.find(f=>f.name.trim()===String(item.brandName||'').trim());}
           const excluded = !(_matuCalShowSand && areaMatchFor('sand', block.areaName));
-          (byDate[iso]=byDate[iso]||[]).push({area, kind:'sand', brand:item.brandName||sp?.name||'기타', amount:sa.value, unit:sa.unit, category:sp?.category||'', excluded});
+          (byDate[iso]=byDate[iso]||[]).push({area, kind:'sand', brand:item.brandName||sp?.name||'기타', amount:sa?sa.value:null, unit:sa?sa.unit:'', category:sp?.category||'', excluded});
         }
       });
     });
@@ -14335,23 +14340,25 @@ function renderMatUseCalendar(){
       let block = `<div style="font-size:9.5px;font-weight:800;color:${matuAreaColor(area).c};line-height:1.5;${areaAllHidden?'visibility:hidden;':''}">${area}</div>`;
       if(g.fert.length){
         const brandHtml = g.fert.map(it=>
-          `<span style="color:${brandColor(it.brand)};font-weight:700;">${it.brand} ${fmtAmt(it.amount)}g</span>`
+          `<span style="color:${brandColor(it.brand)};font-weight:700;">${it.brand}${it.amount!=null?` ${fmtAmt(it.amount)}g`:''}</span>`
         ).join('<span style="color:#999;">, </span>');
         const an = g.fert.reduce((s,it)=>({N:s.N+(it.nutr?.N||0), P:s.P+(it.nutr?.P||0), K:s.K+(it.nutr?.K||0)}), {N:0,P:0,K:0});
-        block += `<div style="font-size:9px;line-height:1.4;margin-left:2px;white-space:normal;word-break:keep-all;${fertHidden?'visibility:hidden;':''}">🌱 ${brandHtml}</div>
-          <div style="font-size:8.5px;color:#2d6a1e;font-weight:800;margin:0 0 3px 14px;white-space:nowrap;${fertHidden?'visibility:hidden;':''}">N:${fmtAmt(an.N)}g P:${fmtAmt(an.P)}g K:${fmtAmt(an.K)}g</div>`;
+        const hasNutr = g.fert.some(it=>it.nutr);
+        block += `<div style="font-size:9px;line-height:1.4;margin-left:2px;white-space:normal;word-break:keep-all;${fertHidden?'visibility:hidden;':''}">🌱 ${brandHtml}</div>`
+          + (hasNutr?`<div style="font-size:8.5px;color:#2d6a1e;font-weight:800;margin:0 0 3px 14px;white-space:nowrap;${fertHidden?'visibility:hidden;':''}">N:${fmtAmt(an.N)}g P:${fmtAmt(an.P)}g K:${fmtAmt(an.K)}g</div>`:'');
       }
       if(g.pest.length){
         const brandHtml = g.pest.map(it=>
-          `<span style="color:${pestCatColorCal(it.category)};font-weight:700;">${it.brand} ${fmtAmt(it.amount)}ml</span>`
+          `<span style="color:${pestCatColorCal(it.category)};font-weight:700;">${it.brand}${it.amount!=null?` ${fmtAmt(it.amount)}ml`:''}</span>`
         ).join('<span style="color:#999;">, </span>');
-        const totalPest = g.pest.reduce((s,it)=>s+it.amount,0);
-        block += `<div style="font-size:9px;line-height:1.4;margin-left:2px;white-space:normal;word-break:keep-all;${pestHidden?'visibility:hidden;':''}">🧪 ${brandHtml}</div>
-          <div style="font-size:8.5px;color:#8a4b00;font-weight:800;margin:0 0 3px 14px;${pestHidden?'visibility:hidden;':''}">계 ${fmtAmt(totalPest)}ml</div>`;
+        const totalPest = g.pest.reduce((s,it)=>s+(it.amount||0),0);
+        const hasAmt = g.pest.some(it=>it.amount!=null);
+        block += `<div style="font-size:9px;line-height:1.4;margin-left:2px;white-space:normal;word-break:keep-all;${pestHidden?'visibility:hidden;':''}">🧪 ${brandHtml}</div>`
+          + (hasAmt?`<div style="font-size:8.5px;color:#8a4b00;font-weight:800;margin:0 0 3px 14px;${pestHidden?'visibility:hidden;':''}">계 ${fmtAmt(totalPest)}ml</div>`:'');
       }
       if(g.sand.length){
         const brandHtml = g.sand.map(it=>
-          `<span style="color:#B98A3D;font-weight:700;">${it.brand} ${fmtAmt(it.amount)}${it.unit}</span>`
+          `<span style="color:#B98A3D;font-weight:700;">${it.brand}${it.amount!=null?` ${fmtAmt(it.amount)}${it.unit}`:''}</span>`
         ).join('<span style="color:#999;">, </span>');
         block += `<div style="font-size:9px;line-height:1.4;margin-left:2px;white-space:normal;word-break:keep-all;${sandHidden?'visibility:hidden;':''}">🏖 ${brandHtml}</div>`;
       }
@@ -14477,34 +14484,37 @@ function showMatUseDayDetail(dateStr){
     const area = block.areaName || '미지정';
     (block.items||[]).forEach(item=>{
       if(_matuCalShowFert && item.type==='fert' && areaMatchFor('fert', block.areaName)){
-        const amtG=parseGram(item.amount); if(!amtG) return;
+        if(!item.brandName) return; /* 요청: 사용량 미기재도 상표명은 표기 — amtG 필수 조건 제거 */
+        const amtG=parseGram(item.amount);
         let idx = (item._listIdx!==undefined && fertList[item._listIdx] && String(fertList[item._listIdx].name||'').trim()===String(item.brandName||'').trim())
           ? item._listIdx : fertList.findIndex(f=>f.name.trim()===String(item.brandName||'').trim());
         const p = idx>=0 ? fertList[idx] : null;
         rows.push({area, kind:'fert', brand:item.brandName||p?.name||'?', product:p?.product||'', amount:amtG, unit:'g', idx, content:''});
       }
       if(_matuCalShowPest && item.type==='pest' && areaMatchFor('pest', block.areaName)){
-        const amt=parseGram(item.amount); if(!amt) return;
+        if(!item.brandName) return;
+        const amt=parseGram(item.amount);
         let idx = (item._listIdx!==undefined && pestList[item._listIdx] && String(pestList[item._listIdx].name||'').trim()===String(item.brandName||'').trim())
           ? item._listIdx : pestList.findIndex(f=>f.name.trim()===String(item.brandName||'').trim());
         const pp = idx>=0 ? pestList[idx] : null;
         rows.push({area, kind:'pest', brand:item.brandName||'기타', product:pp?.product||'', amount:amt, unit:'ml', idx, category:pp?.type||'', content:pp?.content||''});
       }
       if(_matuCalShowSand && item.type==='sand' && areaMatchFor('sand', block.areaName)){
-        const sa=parseSandAmt(item.amount); if(!sa) return;
+        if(!item.brandName) return;
+        const sa=parseSandAmt(item.amount);
         let idx = (item._listIdx!==undefined && sandList[item._listIdx] && String(sandList[item._listIdx].name||'').trim()===String(item.brandName||'').trim())
           ? item._listIdx : sandList.findIndex(f=>f.name.trim()===String(item.brandName||'').trim());
         const sp = idx>=0 ? sandList[idx] : null;
-        rows.push({area, kind:'sand', brand:item.brandName||sp?.name||'기타', product:'', amount:sa.value, unit:sa.unit, idx, category:sp?.category||'', content:''});
+        rows.push({area, kind:'sand', brand:item.brandName||sp?.name||'기타', product:'', amount:sa?sa.value:null, unit:sa?sa.unit:'', idx, category:sp?.category||'', content:''});
       }
     });
   });
 
   const [y,m,d] = dateStr.split('-');
   const dow = ['일','월','화','수','목','금','토'][new Date(dateStr+'T00:00:00').getDay()];
-  const fertTotal = rows.filter(r=>r.kind==='fert').reduce((s,r)=>s+r.amount,0);
-  const pestTotal = rows.filter(r=>r.kind==='pest').reduce((s,r)=>s+r.amount,0);
-  const sandTotal = rows.filter(r=>r.kind==='sand').reduce((s,r)=>s+r.amount,0);
+  const fertTotal = rows.filter(r=>r.kind==='fert').reduce((s,r)=>s+(r.amount||0),0);
+  const pestTotal = rows.filter(r=>r.kind==='pest').reduce((s,r)=>s+(r.amount||0),0);
+  const sandTotal = rows.filter(r=>r.kind==='sand').reduce((s,r)=>s+(r.amount||0),0);
 
   document.getElementById('madu-day-modal-wrap')?.remove();
   const wrap = document.createElement('div');
@@ -14530,7 +14540,7 @@ function showMatUseDayDetail(dateStr){
         ${r.product?`<div style="font-size:10px;font-weight:500;color:#888;margin-top:1px;white-space:normal;word-break:break-all;">${r.product}</div>`:''}
       </td>
       <td style="padding:5px 8px;font-size:11.5px;font-weight:600;color:${r.content?'#555':'#ccc'};text-align:center;border:1px solid #eee;white-space:nowrap;">${r.content||'-'}</td>
-      <td style="padding:5px 8px;font-size:12px;font-weight:700;color:#2d6a1e;text-align:right;border:1px solid #eee;white-space:nowrap;">${fmtAmt(r.amount)} ${r.unit}</td>
+      <td style="padding:5px 8px;font-size:12px;font-weight:700;color:${r.amount!=null?'#2d6a1e':'#ccc'};text-align:right;border:1px solid #eee;white-space:nowrap;">${r.amount!=null?`${fmtAmt(r.amount)} ${r.unit}`:'미기재'}</td>
     </tr>`).join('') : `<tr><td colspan="5" style="text-align:center;padding:24px;color:#bbb;font-size:13px;">해당 조건의 사용 기록이 없습니다</td></tr>`;
 
   wrap.innerHTML = `
