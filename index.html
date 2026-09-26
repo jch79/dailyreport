@@ -4424,6 +4424,11 @@ function wfcstTextIcon(wf){
   return WFCST_ICON.sunny;
 }
 
+/* 기온추이차트에서 "오늘 이후" 구간에 이번 주 예보 최고/최저를 겹쳐 보여주기 위한 저장소 —
+   fetchWeeklyForecast()가 채우고, renderTempChart()가 읽어서 실측기록이 없는 미래
+   날짜에 한해 사용함(실측을 덮어쓰지 않음) */
+let _weeklyForecastByISO={};
+
 async function fetchWeeklyForecast(){
   const container=document.getElementById('weekly-fcst-container');
   const timeEl=document.getElementById('weekly-fcst-time');
@@ -4500,6 +4505,16 @@ async function fetchWeeklyForecast(){
     }
     renderWeeklyForecast(days);
     if(timeEl) timeEl.textContent=`경기 광주시 곤지암읍 · 단기 ${vt.base_date.slice(4,6)}/${vt.base_date.slice(6,8)} ${vt.base_time.slice(0,2)}시 · 중기 ${tmFc.slice(4,6)}/${tmFc.slice(6,8)} ${tmFc.slice(8,10)}시 발표`;
+    /* 요청: 기온추이차트가 "오늘 이후"(미래) 구간으로 넘어가면 26년(올해) 실측기록이
+       있을 수 없어 24/25년 참고선만 보이던 것을, 이번 주 예보(최고·최저)만이라도
+       겹쳐 보여주도록 — 여기서 방금 불러온 7일치 예보를 날짜별로 저장해두고,
+       기온추이차트 쪽에서 실측기록이 없는 미래 날짜에 한해 이 값을 가져다 씀 */
+    _weeklyForecastByISO={};
+    days.forEach(d=>{
+      const iso=`${d.date.getFullYear()}-${String(d.date.getMonth()+1).padStart(2,'0')}-${String(d.date.getDate()).padStart(2,'0')}`;
+      if(d.tmx!=null&&d.tmx!==''&&d.tmn!=null&&d.tmn!=='') _weeklyForecastByISO[iso]={tmax:parseFloat(d.tmx),tmin:parseFloat(d.tmn)};
+    });
+    if(typeof renderTempChart==='function' && document.getElementById('temp-trend-chart')) renderTempChart();
   }catch(e){
     clearTimeout(tid);
     console.warn('[주간예보]',e);
@@ -7746,7 +7761,14 @@ function renderTempChart(){
   if(_tempOffset>total-win)_tempOffset=Math.max(0,total-win);
   if(_tempOffset<0)_tempOffset=0;
   const ptDates=tempAxis.slice(_tempOffset,_tempOffset+win);
-  const pts=ptDates.map(iso=>tempByDate[iso]||{date:iso,tmax:null,tmin:null,tavg:null});
+  const pts=ptDates.map(iso=>{
+    if(tempByDate[iso]) return tempByDate[iso];
+    /* 실측기록이 없는 미래 날짜엔, 있으면 이번 주 예보(최고/최저)로 대신 채움 —
+       예보 기반임을 표시하려고 isForecast 플래그를 달아 선/점 스타일을 다르게 그림 */
+    const fc=_weeklyForecastByISO[iso];
+    if(fc) return {date:iso,tmax:fc.tmax,tmin:fc.tmin,tavg:null,isForecast:true};
+    return {date:iso,tmax:null,tmin:null,tavg:null};
+  });
   const n=pts.length;
   const curYear=new Date().getFullYear();
   const ptIsos=pts.map(p=>p.date);
@@ -7805,20 +7827,34 @@ function renderTempChart(){
 
   /* 라인 빌더 */
   function buildLine(key,color,dash){
-    let path='',dots='',prev=null;
+    /* 요청: 실측기록이 끝난 뒤 이번 주 예보로 채워진 구간(pts[i].isForecast)은
+       선을 별도 대시(점선)로 갈라 그리고, 점도 속이 빈 원으로 그려서 "예보값"임을
+       시각적으로 구분함. 구간 전환 지점은 이어지도록 직전 좌표에서 시작 */
+    let solidPath='',dashPath='',dots='',prevSolid=null,prevAny=null,dashStarted=false;
     pts.forEach((p,i)=>{
       const v=p[key];
-      if(v==null){prev=null;return;}
+      if(v==null){prevSolid=null;prevAny=null;dashStarted=false;return;}
       const px=xPos(i),py=yPos(v);
-      path+=(prev?`L${px.toFixed(1)},${py.toFixed(1)}`:`M${px.toFixed(1)},${py.toFixed(1)}`);
-      dots+=`<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="2.7" fill="${color}" stroke="#fff" stroke-width="0.9"><title>${p.date} ${key==='tmax'?'최고':key==='tmin'?'최저':'평균'}: ${v.toFixed(1)}°C</title></circle>`;
+      if(p.isForecast){
+        if(!dashStarted){
+          dashPath+=prevAny?`M${prevAny.x.toFixed(1)},${prevAny.y.toFixed(1)}L${px.toFixed(1)},${py.toFixed(1)}`:`M${px.toFixed(1)},${py.toFixed(1)}`;
+          dashStarted=true;
+        }else{
+          dashPath+=`L${px.toFixed(1)},${py.toFixed(1)}`;
+        }
+      }else{
+        solidPath+=(prevSolid?`L${px.toFixed(1)},${py.toFixed(1)}`:`M${px.toFixed(1)},${py.toFixed(1)}`);
+        prevSolid={x:px,y:py};
+      }
+      prevAny={x:px,y:py};
+      dots+=`<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="2.7" fill="${p.isForecast?'#fff':color}" stroke="${p.isForecast?color:'#fff'}" stroke-width="${p.isForecast?1.4:0.9}"><title>${p.date} ${key==='tmax'?'최고':key==='tmin'?'최저':'평균'}: ${v.toFixed(1)}°C${p.isForecast?' (예보)':''}</title></circle>`;
       /* 값 라벨: 5개 간격 — 최저기온은 선 아래쪽에 표기(평균선과 겹칠 때 최고/평균은
-         선 위, 최저는 선 아래로 갈라져 있어야 서로 안 겹침) */
-      if(i%Math.max(1,Math.ceil(n/8))===0||i===n-1)
+         선 위, 최저는 선 아래로 갈라져 있어야 서로 안 겹침). 예보 구간은 며칠 안 되니
+         빠짐없이 매일 라벨을 붙임 */
+      if(p.isForecast||i%Math.max(1,Math.ceil(n/8))===0||i===n-1)
         dots+=`<text x="${px.toFixed(1)}" y="${(key==='tmin'?py+13:py-5.5).toFixed(1)}" font-size="9.5" fill="${color}" text-anchor="middle">${v.toFixed(1)}</text>`;
-      prev={x:px,y:py};
     });
-    return `<path d="${path}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"${dash?` stroke-dasharray="${dash}"`:''}/>${dots}`;
+    return `<path d="${solidPath}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"${dash?` stroke-dasharray="${dash}"`:''}/><path d="${dashPath}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="5 3"/>${dots}`;
   }
 
   const tmaxLine=buildLine('tmax','#E74C3C','');
@@ -7894,7 +7930,7 @@ function renderTempChart(){
   /* 실제기록 있는 마지막 지점과 그 다음(미래/참고값 구간) 경계에 안내선 표시 */
   let tempFutureMarker='';
   let tempBoundaryIdx=-1;
-  for(let i=n-1;i>=0;i--){ if(pts[i].tavg!=null||pts[i].tmax!=null||pts[i].tmin!=null){tempBoundaryIdx=i;break;} }
+  for(let i=n-1;i>=0;i--){ if(!pts[i].isForecast && (pts[i].tavg!=null||pts[i].tmax!=null||pts[i].tmin!=null)){tempBoundaryIdx=i;break;} }
   if(tempBoundaryIdx>=0 && tempBoundaryIdx<n-1){
     const bx=(xPos(tempBoundaryIdx)+xPos(tempBoundaryIdx+1))/2;
     tempFutureMarker=`<line x1="${bx.toFixed(1)}" y1="${PT}" x2="${bx.toFixed(1)}" y2="${PT+cH}" stroke="#bbb" stroke-width="1" stroke-dasharray="3 3"/><text x="${bx.toFixed(1)}" y="14" font-size="8.5" fill="#999" text-anchor="middle">이후 참고값</text>`;
@@ -7934,7 +7970,8 @@ function renderTempChart(){
         ${xLabels}
         ${clickOverlays}
       </svg>
-    </div>`;
+    </div>
+    ${Object.keys(_weeklyForecastByISO).length?'<div style="font-size:9px;color:#999;text-align:right;margin-top:2px;">- - - 점선 구간: 이번 주 예보 최고·최저 (실측 아님)</div>':''}`;
   renderGpWriteBox();
   const _tsc=el.querySelector('.temp-chart-scroll');
   if(_tsc)_tsc.scrollLeft=_tsc.scrollWidth;
