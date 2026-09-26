@@ -836,7 +836,7 @@ textarea{resize:vertical;min-height:55px;}
 .task-col-hdr div{padding:6px 4px;border-right:1.5px solid #c8c8c8;}
 .task-col-hdr div:last-child{border-right:none;}
 .task-col-hdr .tl{text-align:left;padding-left:8px;}
-.task-col-hdr .task-remark-hdr{border-left:2px solid #999;}
+.task-col-hdr .task-remark-hdr{border-left:1.5px solid #c8c8c8;}
 
 .task-row{display:grid;grid-template-columns:120px 34px 34px 34px 210px 140px 260px 30px 150px;gap:0;align-items:stretch;border-top:1.5px solid #d8d8d8;min-width:1012px;}
 .task-block.work .task-row{grid-template-columns:192px 34px 34px 34px 316px 140px 260px 30px 150px;min-width:1232px;}
@@ -850,7 +850,7 @@ textarea{resize:vertical;min-height:55px;}
 
 .task-cell{padding:4px;border-right:1.5px solid #d8d8d8;display:flex;align-items:center;}
 .task-cell:last-child{border-right:none;justify-content:center;}
-.task-remark-cell{border-left:2px solid #999;justify-content:flex-start!important;}
+.task-remark-cell{border-left:1.5px solid #d8d8d8;justify-content:flex-start!important;}
 .task-cell input[type=checkbox]{width:15px;height:15px;cursor:pointer;margin:0 auto;display:block;accent-color:#378ADD;}
 .task-cell input[type=checkbox].chk-early{accent-color:#E67E22;}
 .task-cell input[type=checkbox].chk-day{accent-color:#378ADD;}
@@ -2437,7 +2437,7 @@ function buildTaskRow(si,ti,task,cls){
       </div>
     </div>
     <div class="task-cell"><button class="task-del-btn" onclick="removeTaskRow(${si},${ti})">&#10005;</button></div>
-    <div class="task-cell task-remark-cell"><input type="text" value="${matEscHtml(task.remark||'')}" placeholder="비고" onchange="setTask(${si},${ti},'remark',this.value)" style="width:100%;"></div>`;
+    <div class="task-cell task-remark-cell"><input type="text" value="${matEscHtml(task.remark||'')}" onchange="setTask(${si},${ti},'remark',this.value)" style="width:100%;"></div>`;
   return row;
 }
 
