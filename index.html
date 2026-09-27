@@ -944,6 +944,7 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
 .write-sec-wrap.sec-locked #temp-trend-chart button[onclick^="toggleTempCompareYear"],
 .write-sec-wrap.sec-locked #temp-trend-chart button[onclick^="toggleTempCompareMinMax"],
 .write-sec-wrap.sec-locked #temp-trend-chart button[onclick^="toggleTempShowThisYear"],
+.write-sec-wrap.sec-locked #temp-trend-chart button[onclick^="toggleTempShowRain"],
 .write-sec-wrap.sec-locked #temp-trend-chart button[onclick^="openTempYearCalendarBtn"],
 .write-sec-wrap.sec-locked #temp-trend-chart button[onclick^="tempNav"]{pointer-events:auto!important;opacity:1!important;}
 .write-sec-wrap.sec-locked #gp-write-chart,
@@ -7732,6 +7733,11 @@ function calcTempOffset(){
 
 /* 요청: 24/25년처럼 26년(올해, 실측 최고/최저/평균선)도 껐다 켰다 할 수 있게 —
    기본은 켜짐(true) */
+let _tempShowRain=false;
+function toggleTempShowRain(){
+  _tempShowRain=!_tempShowRain;
+  renderTempChart();
+}
 let _tempShowThisYear=true;
 function toggleTempShowThisYear(){
   _tempShowThisYear=!_tempShowThisYear;
@@ -7827,6 +7833,63 @@ function renderTempChart(){
      로직(availW 측정 타이밍에 따라 실제로는 다 보이는 화면에서도 라벨이 대거
      누락되는 부작용이 있었음)을 제거 — 모든 변곡점 기록이 항상 표시되도록 함 */
   const isLabelVisible=()=>true;
+
+  /* 요청: 강우량 막대 — 지금 켜져 있는 연도(26/25/24년)의 그 날짜 강우량을
+     참고용 막대로 겹쳐보기. 숫자 라벨은 넣지 않고 막대만(요청사항) — 기온
+     축과는 별도로, 지금 보이는 구간의 최댓값 기준으로 자체 정규화해서
+     차트 아래쪽 30% 높이 안에서만 그림(기온선을 가리지 않도록) */
+  let rainBars='';
+  if(_tempShowRain){
+    const RAIN_COLORS={[curYear]:'#185FA5',[curYear-1]:'#8E44AD',[curYear-2]:'#7F8C8D'};
+    const activeRainYears=[];
+    if(_tempShowThisYear) activeRainYears.push(curYear);
+    [..._tempCompareYears].sort((a,b)=>b-a).forEach(y=>activeRainYears.push(y));
+    const rainMaps={};
+    let rainNeedFetch=[];
+    activeRainYears.forEach(y=>{
+      const cache=getYearRainCache();
+      const local=getYearlyRainFromRecords(y);
+      const cached=cache[y];
+      rainMaps[y]=cached?{...cached,...local}:local;
+      if(!cached && Object.keys(local).length===0) rainNeedFetch.push(y);
+    });
+    if(rainNeedFetch.length){
+      rainNeedFetch.forEach(y=>{
+        if(_yearRainFetchBusy[y])return;
+        _yearRainFetchBusy[y]=true;
+        fetchYearRainRange(y)
+          .then(map=>{ const c=getYearRainCache(); c[y]=map; setYearRainCache(c); })
+          .catch(()=>{ const c=getYearRainCache(); c[y]={}; setYearRainCache(c); })
+          .finally(()=>{ _yearRainFetchBusy[y]=false; renderTempChart(); });
+      });
+    }
+    /* 26년(실측 그대로)은 축 날짜 그 자체의 값을, 25/24년은 같은 날짜를
+       비교선과 동일한 방식(deltaYears)으로 환산한 값을 사용 */
+    const barValsInView=[];
+    pts.forEach(p=>{
+      activeRainYears.forEach(y=>{
+        const iso = y===curYear ? p.date : toCompareISO(p.date, curYear-y);
+        const v=rainMaps[y]?.[iso];
+        if(v!=null) barValsInView.push(v);
+      });
+    });
+    const maxRain=Math.max(1,...barValsInView);
+    const rainBandH=cH*0.3; /* 차트 높이의 30%까지만 사용 */
+    const nYears=activeRainYears.length||1;
+    const groupW=Math.min(dayW*0.7, 26);
+    const barW=Math.max(2,groupW/nYears-1);
+    pts.forEach((p,i)=>{
+      activeRainYears.forEach((y,yi)=>{
+        const iso = y===curYear ? p.date : toCompareISO(p.date, curYear-y);
+        const v=rainMaps[y]?.[iso];
+        if(v==null||v<=0)return;
+        const bh=(v/maxRain)*rainBandH;
+        const bx=xPos(i)-groupW/2+yi*(barW+1);
+        const by=PT+cH-bh;
+        rainBars+=`<rect x="${bx.toFixed(1)}" y="${by.toFixed(1)}" width="${barW.toFixed(1)}" height="${bh.toFixed(1)}" fill="${RAIN_COLORS[y]||'#999'}" opacity="0.35" rx="1"><title>${iso} 강우량 ${v.toFixed(1)}mm</title></rect>`;
+      });
+    });
+  }
 
   /* 격자 */
   let grid='';
@@ -7964,6 +8027,7 @@ function renderTempChart(){
         <button onclick="toggleTempCompareYear(${curYear-1})" style="font-size:9px;padding:2px 7px;border-radius:100px;cursor:pointer;border:1.3px solid ${_tempCompareYears.has(curYear-1)?'#8E44AD':'#ccc'};background:${_tempCompareYears.has(curYear-1)?'#8E44AD':'#fff'};color:${_tempCompareYears.has(curYear-1)?'#fff':'#888'};font-weight:700;">${String(curYear-1).slice(2)}년</button>
         <button onclick="toggleTempCompareYear(${curYear-2})" style="font-size:9px;padding:2px 7px;border-radius:100px;cursor:pointer;border:1.3px solid ${_tempCompareYears.has(curYear-2)?'#7F8C8D':'#ccc'};background:${_tempCompareYears.has(curYear-2)?'#7F8C8D':'#fff'};color:${_tempCompareYears.has(curYear-2)?'#fff':'#888'};font-weight:700;">${String(curYear-2).slice(2)}년</button>
         <button onclick="toggleTempCompareMinMax()" style="font-size:9px;padding:2px 7px;border-radius:100px;cursor:pointer;border:1.3px solid ${_tempCompareMinMax?'#444':'#ccc'};background:${_tempCompareMinMax?'#444':'#fff'};color:${_tempCompareMinMax?'#fff':'#888'};font-weight:700;">최고최저</button>
+        <button onclick="toggleTempShowRain()" title="지금 켜진 연도의 강우량을 막대로 겹쳐보기" style="font-size:9px;padding:2px 7px;border-radius:100px;cursor:pointer;border:1.3px solid ${_tempShowRain?'#185FA5':'#ccc'};background:${_tempShowRain?'#185FA5':'#fff'};color:${_tempShowRain?'#fff':'#888'};font-weight:700;">강우량</button>
         <span id="temp-compare-status" style="color:#B45309;font-size:9px;"></span>
       </div>
       <div style="display:flex;align-items:center;gap:4px;">
@@ -7978,6 +8042,7 @@ function renderTempChart(){
         ${grid}
         <line x1="${PL}" y1="${PT}" x2="${PL}" y2="${PT+cH}" stroke="#ddd" stroke-width="0.8"/>
         <line x1="${PL}" y1="${PT+cH}" x2="${W-PR}" y2="${PT+cH}" stroke="#ddd" stroke-width="0.8"/>
+        ${rainBars}
         ${compareLines}
         ${tminLine}${tavgLine}${tmaxLine}
         ${tempFutureMarker}
@@ -7985,6 +8050,7 @@ function renderTempChart(){
         ${clickOverlays}
       </svg>
     </div>
+    ${_tempShowRain?'<div style="font-size:9px;color:#999;text-align:right;margin-top:2px;">▮ 막대: 해당 연도 일일 강우량(mm, 수치 표시 없음)</div>':''}
     ${Object.keys(_weeklyForecastByISO).length?'<div style="font-size:9px;color:#999;text-align:right;margin-top:2px;">- - - 점선 구간: 이번 주 예보 최고·최저 (실측 아님)</div>':''}`;
   renderGpWriteBox();
   const _tsc=el.querySelector('.temp-chart-scroll');
