@@ -5123,6 +5123,24 @@ function getYearlyRainFromRecords(year){
   });
   return map;
 }
+/* getYearlyRainFromRecords와 같은 방식이지만 연도 구분 없이 저장된 모든 기록의
+   강우량을 날짜(iso) 기준으로 한 맵에 모음 — "강우 현황" 90일 차트가 그리드모델
+   예측값(rainData30) 대신 실제 저장된 값으로 덮어쓸 때 씀 */
+function getLocalRainMapAll(){
+  const map={};
+  gd().forEach(r=>{
+    const m=r.date?.match(/(\d+)년\s*(\d+)월\s*(\d+)일/);
+    if(!m)return;
+    const yy=parseInt(m[1]);const yyyy=yy<50?2000+yy:1900+yy;
+    const iso=`${yyyy}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+    const w=r.weather;
+    if(w && w.rain!=null && w.rain!==''){
+      const v=parseFloat(w.rain);
+      if(!isNaN(v)) map[iso]=v;
+    }
+  });
+  return map;
+}
 function parseKmaRnDayText(txt){
   const map={};
   (txt||'').split('\n').forEach(line=>{
@@ -5507,6 +5525,18 @@ function renderRainChart(page){
   if(!wrap) return;
   if(typeof page==='number') _rainPage=page;
   renderRainYearlyChart(); /* 연도별 누적강우량 비교 차트도 함께 갱신 (강우 현황과 별개 데이터 소스라 독립적으로 그림) */
+
+  /* 요청으로 수정: "강우 현황" 차트는 rainData30(그리드모델 예측 API, "오늘"만
+     실측으로 덮어씀)을 써서, 지난 날짜는 일통계·연도별 누적 비교(둘 다 실제
+     저장기록 기준)와 다른 값(대개 0)으로 보이는 경우가 있었음 — 그리기 직전에
+     실제 저장된 기록이 있는 날짜는 그 값으로 덮어써서 항상 일치하게 함
+     (사용자가 직접 수정(manual)한 값은 그대로 최우선 유지) */
+  const _localRainMap=getLocalRainMapAll();
+  rainData30.forEach(d=>{
+    if(d.manual) return;
+    const rec=_localRainMap[d.date];
+    if(rec!=null && rec!==d.rain) d.rain=rec;
+  });
 
   if(!rainData30.length){
     wrap.innerHTML='<div style="font-size:11px;color:#aaa;padding:10px;">자동 불러오기 후 표시됩니다</div>';
