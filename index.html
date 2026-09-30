@@ -12295,7 +12295,11 @@ function parseGram(str){
 function parseSandAmt(str){
   if(!str) return null;
   const s = String(str).trim().replace(/,/g,'');
-  const m = s.match(/([\d.]+)\s*(kg|g|t|톤|㎥|m3|포)?/i);
+  /* 요청으로 재확인·수정: 모래는 두께(mm, 예: 예초/배토 두께)로 입력하는 경우가
+     많은데, 이 정규식에 mm/cm이 인식 단위 목록에 없어서 숫자만 남고 단위가
+     항상 기본값 'kg'로 잘못 붙던 문제(전에 고쳤다가 다시 원복된 부분) — mm/cm을
+     인식 단위에 추가. 단위가 전혀 없을 때만 기존처럼 kg으로 간주함 */
+  const m = s.match(/([\d.]+)\s*(kg|g|t|톤|㎥|m3|mm|cm|포)?/i);
   if(!m) return null;
   let v = parseFloat(m[1]);
   if(isNaN(v)||v<=0) return null;
