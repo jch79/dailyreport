@@ -14477,16 +14477,21 @@ function renderMatUseCalendar(){
   /* ── 비료/농약 표시 체크박스 + 지역 표시·제외 토글 칩 (종류별로 각각) ── */
   function buildAreaChipsRow(kind, usedSet, excludedSet){
     if(!allAreas.length) return '';
+    /* 요청: '전체 해제' 상태(excluded)에서도 실제 사용된 지역은 그 색을 반투명하게
+       유지해서 미사용 지역(무색)과 구별되도록 함 — 제외 여부는 투명도로,
+       사용 여부는 색상 자체로 나타냄 */
     return allAreas.map(a=>{
       const excluded = !!excludedSet[a];
       const used = usedSet.has(a);
       const c = used ? matuAreaColor(a) : {bg:'#fff', c:'#c2c2c2'};
-      const borderColor = excluded ? '#ddd' : (used ? c.c : '#e4e4e4');
+      const borderColor = used ? c.c : '#e4e4e4';
+      const opacity = excluded ? (used?0.45:0.6) : 1;
       return `<button onclick="toggleMatuCalArea('${kind}','${a.replace(/'/g,"\\'")}')"
         style="font-size:9.5px;font-weight:${used&&!excluded?700:500};padding:1px 9px;border-radius:100px;cursor:pointer;
           border:1.3px solid ${borderColor};
-          background:${excluded?'#f7f7f7':c.bg};
-          color:${excluded?'#bbb':c.c};
+          background:${c.bg};
+          color:${c.c};
+          opacity:${opacity};
           text-decoration:${excluded?'line-through':'none'};" title="${used?'이번 달 사용됨 · ':'이번 달 미사용 · '}클릭하면 ${excluded?'다시 표시':'제외'}됩니다">${a}</button>`;
     }).join('');
   }
