@@ -113,6 +113,54 @@ _fbAuth.onAuthStateChanged(async user => {
 /* ════════════════════════════════════════════
    완전 동기화: 일보 + 자재정보 + 모든 설정
 ════════════════════════════════════════════ */
+/* ── 마지막 동기화 시각(ms) — 증분(변경분만) 동기화의 기준점 ──
+   전체동기화가 끝날 때마다, 그리고 증분동기화가 끝날 때마다 갱신한다.
+   기기에 기록이 전혀 없으면(처음 로그인 등) 0을 반환하고, 그 경우
+   증분동기화는 안전하게 전체동기화로 대신 처리한다. */
+function getLastSyncTs(){ try{ return parseInt(localStorage.getItem('golf_last_sync_ts_v1')||'0')||0; }catch(e){ return 0; } }
+function setLastSyncTs(ms){ try{ localStorage.setItem('golf_last_sync_ts_v1', String(ms)); }catch(e){} }
+
+/* ── 저장 직후처럼 "방금 내가 올린 것 + 혹시 그사이 다른 사람이 바꾼 것"만
+   빠르게 반영하고 싶을 때 쓰는 증분 동기화. 삭제된 기록은 이 방식으로는
+   감지되지 않으므로(문서가 사라지면 "변경"으로 안 잡힘), 완전한 정합성은
+   여전히 일반 전체동기화(페이지 로드 시 자동 실행됨)가 책임진다 — 이 함수는
+   그 사이사이 빠르게 최신 상태를 맞추는 보조 수단. ── */
+async function fbIncrementalSyncReports(){
+  if(!_fbUser) return;
+  const lastTs = getLastSyncTs();
+  const nowMs = Date.now();
+  if(!lastTs){
+    /* 이 기기에서 동기화 기준점이 없으면(최초) 안전하게 전체동기화로 */
+    await fbFullSyncFromCloud();
+    return;
+  }
+  try{
+    const sinceTs = firebase.firestore.Timestamp.fromMillis(lastTs);
+    const snap = await _fbDb.collection(FB_COL_REPORTS)
+                              .where('_updatedAt','>',sinceTs)
+                              .get();
+    if(!snap.empty){
+      const changed = snap.docs.map(d=>{
+        const r={...d.data()};
+        delete r._savedBy; delete r._savedByUid; delete r._updatedAt;
+        return r;
+      });
+      const all = gd();
+      changed.forEach(r=>{
+        const i = all.findIndex(x=>x.date===r.date);
+        if(i>=0) all[i]=r; else all.unshift(r);
+      });
+      sd(all);
+      console.log('[FB] 증분 동기화: '+changed.length+'건 반영');
+    }
+    setLastSyncTs(nowMs);
+  }catch(e){
+    /* 실패해도 기준점은 그대로 둬서, 다음 번 증분(또는 다음 전체)동기화 때
+       이번에 놓친 구간까지 이어서 포함되게 함 */
+    console.warn('[FB] 증분 동기화 실패 — 다음 동기화 때 보정됩니다:', e);
+  }
+}
+
 async function fbFullSyncFromCloud(){
   if(!_fbUser) return;
   console.log('[FB] 완전 동기화 시작...');
@@ -181,6 +229,7 @@ async function fbFullSyncFromCloud(){
     const inpC=document.getElementById('inp-course');
     if(inpC&&!inpC.value) inpC.value=localStorage.getItem('golf_course_name')||'';
 
+    setLastSyncTs(Date.now()); /* 전체동기화도 증분동기화의 기준점을 함께 갱신 */
     showToast('☁️ 클라우드 동기화 완료');
   }catch(e){ console.warn('[FB] 완전 동기화 실패:', e); }
 }
@@ -5777,6 +5826,25 @@ function undoForm(){
 
 /* ── 저장 / 초기화 ── */
 let _saveReportBusy = false;
+/* ── 저장 후 전체 새로고침 없이 화면만 그 자리에서 갱신 ──
+   예전엔 저장 성공 시 0.9초 뒤 location.reload()로 페이지를 통째로 다시
+   불러왔음(2MB 파일 재다운로드 + Firebase 재로그인 + 클라우드 전체 재조회 포함) —
+   방금 저장한 내용이 이미 로컬·클라우드 양쪽에 반영돼 있으므로 사실상
+   다시 받아올 필요가 없었음. loadForEdit(idx, true)로 방금 저장한 기록을
+   그대로 다시 채우고(확인창·탭전환·토스트 없이), 날짜에 의존하는 각종
+   차트/기록·통계 화면만 다시 그려서 체감 속도를 크게 개선함. */
+function refreshAfterSaveNoReload(dateLabel){
+  const all = gd();
+  const idx = all.findIndex(x=>x.date===dateLabel);
+  if(idx>=0) loadForEdit(idx, true);
+  if(typeof renderHistory==='function') renderHistory();
+  if(typeof renderStats==='function') renderStats();
+  if(typeof renderTempChart==='function') renderTempChart();
+  if(typeof renderGpWriteBox==='function') renderGpWriteBox();
+  if(typeof renderRainChart==='function') renderRainChart();
+  if(typeof renderElapsedItems==='function') renderElapsedItems();
+}
+
 function saveReport(){
   if(_saveReportBusy) return;
   _saveReportBusy = true;
@@ -5867,9 +5935,10 @@ function saveReport(){
     fbSaveReport(r).then(ok=>{
       if(ok){
         showToast('저장 + 클라우드 업로드 완료!');
-        /* 클라우드 업로드 성공한 뒤에만 새로고침 — 이후 자동 동기화가 방금 올린
-           내용을 그대로 다시 받아오므로 안전함 */
-        setTimeout(()=>location.reload(), 900);
+        /* 요청으로 개선: 전체 새로고침 대신, 혹시 그 사이 다른 사람이 바꾼 내용만
+           빠르게 받아오는 증분 동기화 후 화면을 그 자리에서 갱신 (삭제 반영 등
+           완전한 정합성은 평소처럼 다음 전체 재접속/로그인 때 자동으로 맞춰짐) */
+        fbIncrementalSyncReports().finally(()=>{ refreshAfterSaveNoReload(r.date); });
       } else {
         /* 클라우드 업로드 실패 시에는 절대 새로고침하지 않음.
            새로고침하면 800ms 뒤 자동으로 fbFullSyncFromCloud()가 실행되는데,
@@ -5885,9 +5954,9 @@ function saveReport(){
     });
   } else {
     showToast('저장되었습니다!');
-    setTimeout(()=>location.reload(), 900);
+    refreshAfterSaveNoReload(r.date);
   }
-  /* ── 저장 후 스크롤/포커스 복원 (새로고침 전까지 잠깐 유지) ── */
+  /* ── 저장 후 스크롤/포커스 복원 ── */
   const _activeEl = document.activeElement;
   renderHistory();renderStats();
   /* renderHistory/renderStats가 DOM을 재구성하므로 requestAnimationFrame으로 다음 프레임에 복원 */
