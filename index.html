@@ -14564,7 +14564,7 @@ function renderMatUseCalendar(){
     const visibleItems = items.filter(it=>!it.excluded);
     const bg = visibleItems.length ? '#f0f8e8' : (dow===0||dow===6 ? '#fbfbfb' : '#fff');
     const wx = wxByDate[dateStr];
-    const wxBadge = wx ? `<div style="position:absolute;top:2px;right:3px;font-size:11px;line-height:1;text-align:right;pointer-events:none;">${wx.icon}${wx.rain>0?`<div style="font-size:7.5px;color:#185FA5;font-weight:700;margin-top:1px;">${wx.rain.toFixed(1)}</div>`:''}</div>` : '';
+    const wxBadge = wx ? `<div style="position:absolute;top:2px;right:3px;font-size:15px;line-height:1;text-align:right;pointer-events:none;">${wx.icon}${wx.rain>0?`<div style="font-size:9px;color:#185FA5;font-weight:700;margin-top:1px;">${wx.rain.toFixed(1)}</div>`:''}</div>` : '';
     cells += `<div ${visibleItems.length?`onclick="showMatUseDayDetail('${dateStr}')" style="cursor:pointer;`:'style="'}min-height:70px;border:1px solid #eee;padding:3px 4px;background:${bg};position:relative;${isToday?'box-shadow:inset 0 0 0 2px #2d6a1e;':''}">
       <div style="font-size:11px;font-weight:700;color:${dowColor};">${d}</div>
       ${wxBadge}
