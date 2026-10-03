@@ -14487,6 +14487,28 @@ function renderMatUseCalendar(){
   const now = new Date();
   const todayISO = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
 
+  /* 요청: 자재 사용 여부와 상관없이 모든 날짜 칸 우측 상단에 그날 날씨를
+     해/구름/비 세 아이콘으로, 비가 왔으면 강우량(mm)도 함께 표시.
+     weather.rain(실제 저장된 강우량)을 최우선 근거로 쓰고(기존 "강우 현황"
+     차트 수정 때와 같은 방식), 비가 0이면 weather.sky 텍스트(맑음/구름/흐림 등,
+     wmo() 함수가 만드는 짧은 한국어 단어)로 구분. 날씨 정보 자체가 없는
+     날짜(기록 없음/비어있음)는 아이콘을 아예 표시하지 않음. */
+  function classifyWx(skyText, rainVal){
+    if(rainVal>0) return {icon:'🌧️', rain:rainVal};
+    if(skyText && skyText!=='--'){
+      if(skyText.includes('맑음')) return {icon:'☀️', rain:0};
+      return {icon:'☁️', rain:0}; /* 구름/흐림/안개 등은 뭉뚱그려 구름 아이콘 */
+    }
+    return null;
+  }
+  const wxByDate = {};
+  allRecs.forEach(r=>{
+    const iso = recIsoDate(r.date);
+    if(!iso) return;
+    const rainVal = parseFloat(r.weather?.rain);
+    wxByDate[iso] = classifyWx(r.weather?.sky, isNaN(rainVal)?0:rainVal);
+  });
+
   let cells = '';
   for(let i=0;i<firstDow;i++) cells += `<div style="min-height:70px;border:1px solid #eee;background:#fafafa;"></div>`;
   for(let d=1; d<=daysInMonth; d++){
@@ -14541,8 +14563,11 @@ function renderMatUseCalendar(){
     /* 배경색·클릭 가능 여부는 실제로 "보이는(제외되지 않은)" 항목이 있을 때만 적용 */
     const visibleItems = items.filter(it=>!it.excluded);
     const bg = visibleItems.length ? '#f0f8e8' : (dow===0||dow===6 ? '#fbfbfb' : '#fff');
-    cells += `<div ${visibleItems.length?`onclick="showMatUseDayDetail('${dateStr}')" style="cursor:pointer;`:'style="'}min-height:70px;border:1px solid #eee;padding:3px 4px;background:${bg};${isToday?'box-shadow:inset 0 0 0 2px #2d6a1e;':''}">
+    const wx = wxByDate[dateStr];
+    const wxBadge = wx ? `<div style="position:absolute;top:2px;right:3px;font-size:11px;line-height:1;text-align:right;pointer-events:none;">${wx.icon}${wx.rain>0?`<div style="font-size:7.5px;color:#185FA5;font-weight:700;margin-top:1px;">${wx.rain.toFixed(1)}</div>`:''}</div>` : '';
+    cells += `<div ${visibleItems.length?`onclick="showMatUseDayDetail('${dateStr}')" style="cursor:pointer;`:'style="'}min-height:70px;border:1px solid #eee;padding:3px 4px;background:${bg};position:relative;${isToday?'box-shadow:inset 0 0 0 2px #2d6a1e;':''}">
       <div style="font-size:11px;font-weight:700;color:${dowColor};">${d}</div>
+      ${wxBadge}
       ${lines}
     </div>`;
   }
