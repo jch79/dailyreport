@@ -14546,10 +14546,8 @@ function renderMatUseCalendar(){
         const brandHtml = g.pest.map(it=>
           `<span style="color:${pestCatColorCal(it.category)};font-weight:700;">${it.brand}${it.amount!=null?` ${fmtAmt(it.amount)}ml`:''}</span>`
         ).join('<span style="color:#999;">, </span>');
-        const totalPest = g.pest.reduce((s,it)=>s+(it.amount||0),0);
-        const hasAmt = g.pest.some(it=>it.amount!=null);
-        block += `<div style="font-size:9px;line-height:1.4;margin-left:2px;white-space:normal;word-break:keep-all;${pestHidden?'visibility:hidden;':''}">🧪 ${brandHtml}</div>`
-          + (hasAmt?`<div style="font-size:8.5px;color:#8a4b00;font-weight:800;margin:0 0 3px 14px;${pestHidden?'visibility:hidden;':''}">계 ${fmtAmt(totalPest)}ml</div>`:'');
+        /* 농약 '계 OOml' 합계 표시는 사용자 요청으로 제거 — 품목별 사용량만 표시 */
+        block += `<div style="font-size:9px;line-height:1.4;margin:0 0 3px 2px;white-space:normal;word-break:keep-all;${pestHidden?'visibility:hidden;':''}">🧪 ${brandHtml}</div>`;
       }
       if(g.sand.length){
         const brandHtml = g.sand.map(it=>
