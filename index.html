@@ -5701,7 +5701,7 @@ function renderRainChart(page){
       <span>연누적 강우량(${pY}년) <b style="color:#185FA5;">${yearCum.toFixed(1)}mm</b></span>
     </div>`;
 }
-function wmo(c){if(c===0)return'맑음';if(c<=3)return'구름';if(c<=49)return'안개';if(c<=67)return'비';if(c<=77)return'눈';if(c<=82)return'소나기';if(c<=86)return'눈 소나기';return'뇌우';}
+function wmo(c){if(c===0)return'맑음';if(c===1)return'대체로 맑음';/* 코드1(대체로 맑음)도 캘린더에서 해 아이콘 */if(c<=3)return'구름';if(c<=49)return'안개';if(c<=67)return'비';if(c<=77)return'눈';if(c<=82)return'소나기';if(c<=86)return'눈 소나기';return'뇌우';}
 
 /* ── 되돌리기 스냅샷 ── */
 /*
@@ -14496,7 +14496,7 @@ function renderMatUseCalendar(){
   function classifyWx(skyText, rainVal){
     if(rainVal>0) return {icon:'🌧️', rain:rainVal};
     if(skyText && skyText!=='--'){
-      if(skyText.includes('맑음')) return {icon:'☀️', rain:0};
+      if(skyText.includes('맑음')) return {icon:'☀️', rain:0}; /* '맑음'·'대체로 맑음' 모두 해 */
       return {icon:'☁️', rain:0}; /* 구름/흐림/안개 등은 뭉뚱그려 구름 아이콘 */
     }
     return null;
