@@ -14518,6 +14518,36 @@ function renderMatUseCalendar(){
     wxByDate[iso] = classifyWx(r.weather?.sky, isNaN(rainVal)?0:rainVal);
   });
 
+  /* ── 관수량 표기 (날짜 옆, 상단 처리지역 선택에 따라 구역 결정) ──
+     값 = 기록의 관수시간(분), 자동+수동 합계(getZoneTotal과 동일 규칙)
+     전체/그린전면 → G:(좌/우), 좌그린 기준·좌그린 → G:(좌), 우그린 기준·우그린 → G:(우),
+     티전면 → T:(티), F/W전면·페어웨이부분 → F:(F/W), 그 외 지역 → 표기 안 함 */
+  const irrMode = (()=>{
+    const a = String(selArea||'').trim();
+    if(!a || a==='그린전면') return 'GLR';
+    if(a==='__left_green__'  || a==='좌그린') return 'GL';
+    if(a==='__right_green__' || a==='우그린') return 'GR';
+    if(/티/.test(a)) return 'T';
+    if(/F\/W|페어웨이/i.test(a)) return 'F';
+    return '';
+  })();
+  const irrByDate = {};
+  if(irrMode){
+    allRecs.forEach(r=>{
+      const iso = recIsoDate(r.date);
+      if(!iso || !iso.startsWith(monthPrefix) || !r.irrigation) return;
+      const irr = r.irrigation;
+      const gl = getZoneTotal(irr,'green-left'), gr = getZoneTotal(irr,'green-right');
+      let txt = '';
+      if(irrMode==='GLR'){ if(gl||gr) txt = `G:(${gl}/${gr})`; }
+      else if(irrMode==='GL'){ if(gl) txt = `G:(${gl})`; }
+      else if(irrMode==='GR'){ if(gr) txt = `G:(${gr})`; }
+      else if(irrMode==='T'){ const t = getZoneTotal(irr,'tee'); if(t) txt = `T:(${t})`; }
+      else if(irrMode==='F'){ const f = getZoneTotal(irr,'fw'); if(f) txt = `F:(${f})`; }
+      if(txt) irrByDate[iso] = txt;
+    });
+  }
+
   let cells = '';
   for(let i=0;i<firstDow;i++) cells += `<div style="min-height:70px;border:1px solid #eee;background:#fafafa;"></div>`;
   for(let d=1; d<=daysInMonth; d++){
@@ -14576,7 +14606,10 @@ function renderMatUseCalendar(){
     const wx = wxByDate[dateStr];
     const wxBadge = wx ? `<div style="position:absolute;top:2px;right:3px;font-size:15px;line-height:1;text-align:right;pointer-events:none;">${wx.icon}${wx.rain>0?`<div style="font-size:9px;color:#185FA5;font-weight:700;margin-top:1px;">${wx.rain.toFixed(1)}</div>`:''}</div>` : '';
     cells += `<div ${visibleItems.length?`onclick="showMatUseDayDetail('${dateStr}')" style="cursor:pointer;`:'style="'}min-height:70px;border:1px solid #eee;padding:3px 4px;background:${bg};position:relative;${isToday?'box-shadow:inset 0 0 0 2px #2d6a1e;':''}">
-      <div style="font-size:11px;font-weight:700;color:${dowColor};">${d}</div>
+      <div style="display:flex;flex-wrap:wrap;align-items:baseline;column-gap:4px;padding-right:${wx?20:0}px;">
+        <span style="font-size:11px;font-weight:700;color:${dowColor};">${d}</span>
+        ${irrByDate[dateStr]?`<span title="관수시간(분, 자동+수동)" style="font-size:8.5px;font-weight:800;color:#1a6fb5;white-space:nowrap;letter-spacing:-0.2px;">${irrByDate[dateStr]}</span>`:''}
+      </div>
       ${wxBadge}
       ${lines}
     </div>`;
