@@ -14532,31 +14532,34 @@ function renderMatUseCalendar(){
       const pestHidden = g.pest.length>0 && g.pest[0].excluded;
       const sandHidden = g.sand.length>0 && g.sand[0].excluded;
       const areaAllHidden = (!g.fert.length || fertHidden) && (!g.pest.length || pestHidden) && (!g.sand.length || sandHidden);
-      let block = `<div style="font-size:9.5px;font-weight:800;color:${matuAreaColor(area).c};line-height:1.5;${areaAllHidden?'visibility:hidden;':''}">${area}</div>`;
-      if(g.fert.length){
+      /* 필터로 제외된 항목은 자리를 비워두지 않고(visibility:hidden 대신) 아예 그리지 않음
+         → 남은 필터 결과가 날짜 칸 맨 위로 붙어서 정렬됨 */
+      if(areaAllHidden) return '';
+      let block = `<div style="font-size:9.5px;font-weight:800;color:${matuAreaColor(area).c};line-height:1.5;">${area}</div>`;
+      if(g.fert.length && !fertHidden){
         const brandHtml = g.fert.map(it=>
           `<span style="color:${brandColor(it.brand)};font-weight:700;">${it.brand}${it.amount!=null?` ${fmtAmt(it.amount)}g`:''}</span>`
         ).join('<span style="color:#999;">, </span>');
         const an = g.fert.reduce((s,it)=>({N:s.N+(it.nutr?.N||0), P:s.P+(it.nutr?.P||0), K:s.K+(it.nutr?.K||0)}), {N:0,P:0,K:0});
         const hasNutr = g.fert.some(it=>it.nutr);
-        block += `<div style="font-size:9px;line-height:1.4;margin-left:2px;white-space:normal;word-break:keep-all;${fertHidden?'visibility:hidden;':''}">🌱 ${brandHtml}</div>`
-          + (hasNutr?`<div style="font-size:8.5px;color:#2d6a1e;font-weight:800;margin:0 0 3px 14px;white-space:nowrap;${fertHidden?'visibility:hidden;':''}">N:${fmtAmt(an.N)}g P:${fmtAmt(an.P)}g K:${fmtAmt(an.K)}g</div>`:'');
+        block += `<div style="font-size:9px;line-height:1.4;margin-left:2px;white-space:normal;word-break:keep-all;">🌱 ${brandHtml}</div>`
+          + (hasNutr?`<div style="font-size:8.5px;color:#2d6a1e;font-weight:800;margin:0 0 3px 14px;white-space:nowrap;">N:${fmtAmt(an.N)}g P:${fmtAmt(an.P)}g K:${fmtAmt(an.K)}g</div>`:'');
       }
-      if(g.pest.length){
+      if(g.pest.length && !pestHidden){
         const brandHtml = g.pest.map(it=>
           `<span style="color:${pestCatColorCal(it.category)};font-weight:700;">${it.brand}${it.amount!=null?` ${fmtAmt(it.amount)}ml`:''}</span>`
         ).join('<span style="color:#999;">, </span>');
         /* 농약 '계 OOml' 합계 표시는 사용자 요청으로 제거 — 품목별 사용량만 표시 */
-        block += `<div style="font-size:9px;line-height:1.4;margin:0 0 3px 2px;white-space:normal;word-break:keep-all;${pestHidden?'visibility:hidden;':''}">🧪 ${brandHtml}</div>`;
+        block += `<div style="font-size:9px;line-height:1.4;margin:0 0 3px 2px;white-space:normal;word-break:keep-all;">🧪 ${brandHtml}</div>`;
       }
-      if(g.sand.length){
+      if(g.sand.length && !sandHidden){
         const brandHtml = g.sand.map(it=>
           `<span style="color:#B98A3D;font-weight:700;">${it.brand}${it.amount!=null?` ${fmtAmt(it.amount)}${it.unit}`:''}</span>`
         ).join('<span style="color:#999;">, </span>');
-        block += `<div style="font-size:9px;line-height:1.4;margin-left:2px;white-space:normal;word-break:keep-all;${sandHidden?'visibility:hidden;':''}">🏖 ${brandHtml}</div>`;
+        block += `<div style="font-size:9px;line-height:1.4;margin-left:2px;white-space:normal;word-break:keep-all;">🏖 ${brandHtml}</div>`;
       }
       return block;
-    }).join('<div style="height:2px;"></div>');
+    }).filter(Boolean).join('<div style="height:2px;"></div>');
 
     /* 배경색·클릭 가능 여부는 실제로 "보이는(제외되지 않은)" 항목이 있을 때만 적용 */
     const visibleItems = items.filter(it=>!it.excluded);
