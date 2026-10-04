@@ -2224,6 +2224,15 @@ function recIsoDate(dateStr){
   return`${yyyy}-${String(parseInt(m[2])).padStart(2,'0')}-${String(parseInt(m[3])).padStart(2,'0')}`;
 }
 
+/* 기록 날짜 문자열("26년 10월 05일 (월)")에서 월(1~12) 숫자만 안전하게 추출.
+   ⚠ 예전엔 r.date.slice(5,7)을 썼는데, 이 형식에서 5~6번째 글자는 "9월"처럼
+   월의 '둘째 자리+월'이라 1~9월은 우연히 맞았지만 10월은 "0월"→0(집계 제외),
+   11월은 "1월"→1월로, 12월은 "2월"→2월로 잘못 들어가던 버그가 있었음 */
+function recMonthNum(dateStr){
+  const m=String(dateStr||'').match(/(\d+)월/);
+  return m?parseInt(m[1],10):0;
+}
+
 /* ── id 마이그레이션: 기존 데이터에 id 없는 레코드 자동 보정 ── */
 (function migrateIds(){
   try{
@@ -12883,7 +12892,7 @@ function renderMatUsePanel(page){
   renderNpkSummaryCards(selYear, allRecs, fertList);
 
   recs.forEach(r=>{
-    const mo = parseInt(r.date?.slice(5,7));
+    const mo = recMonthNum(r.date);
     if(!mo) return;
     (r.matUseRows||[]).forEach(block=>{
       if(!areaMatch(block.areaName)) return;
@@ -13583,7 +13592,7 @@ function showMatUseAnnualNutrPopup(){
   for(let m=1;m<=12;m++){ monthNutr[m]={}; monthAmt[m]=0; brandMonth[m]=[]; }
 
   recs.forEach(r=>{
-    const mo = parseInt(r.date?.slice(5,7));
+    const mo = recMonthNum(r.date);
     if(!mo) return;
     (r.matUseRows||[]).forEach(block=>{
       if(!areaOk(block.areaName)) return;
@@ -13986,7 +13995,7 @@ function showMatUseMonthDetail(mo, year, filterNutr, areaOverride){
 
   /* ── 해당 월 일보 필터 ── */
   const allRecs = gd().filter(r=>
-    r.date?.startsWith(String(year)) && parseInt(r.date?.slice(5,7))===mo
+    r.date?.startsWith(String(year)) && recMonthNum(r.date)===mo
   );
 
   /* ── 행 데이터 수집 ──
