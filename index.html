@@ -49,7 +49,7 @@ let _fbReady   = false;  // Auth 초기화 완료 여부
 /* ── 작성 탭 섹션 정의 (팀 관리에서 부분편집 권한을 나눌 때도 이 목록/이름을 그대로 사용) ── */
 const WRITE_SEC_LABELS = {
   weather:'운영/날씨', ballspeed:'볼스피드', gp:'GP·질소시비', irr:'관수 기록', workers:'작업자',
-  tasks:'작업 내용', notes:'비고', materials_use:'비료·농약·모래 자재 사용', elapsed:'경과일 기록'
+  tasks:'작업 내용', notes:'비고', materials_use:'비료·농약·모래 자재 사용', elapsed:'경과일 기록', sk:'S/K자재 입출고'
 };
 
 /* ─── Firestore 컬렉션 경로 ─── */
@@ -472,6 +472,7 @@ async function fbRegister(){
   }
 }
 async function fbLogout(){
+  if(typeof skStopSync==='function') skStopSync();
   await _fbAuth.signOut();
   showToast('로그아웃되었습니다.');
 }
@@ -1068,6 +1069,7 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
     <div class="nav-tab" onclick="showPanel('stats',this)">📊 통계</div>
     <div class="nav-tab" onclick="showPanel('materials',this)">🌿 자재정보</div>
     <div class="nav-tab" onclick="showPanel('matuse',this);renderMatUsePanel()">🧪 자재사용량</div>
+    <div class="nav-tab" onclick="showPanel('sk',this)">🔧 S/K자재</div>
     <!-- ☁️ Firebase 인증 바 -->
     <div id="fb-auth-bar" style="display:flex;align-items:center;gap:5px;flex-shrink:0;padding-right:4px;">
       <span style="font-size:11px;color:#aaa;">☁️ 초기화 중...</span>
@@ -10582,6 +10584,7 @@ function showPanel(id,tab){
   if(id==='stats'){applyStatsOrder();renderStats();}
   if(id==='search')renderRecentChips();
   if(id==='materials')renderMaterialsPanel();
+  if(id==='sk' && typeof skInit==='function') skInit();
   /* 탭을 바꾸면 항상 그 탭의 맨 위(최근 항목)부터 보이도록 스크롤 리셋.
      예전 탭에서 스크롤을 많이 내려놨던 상태가 그대로 남아있으면, 다른
      탭으로 바꿔도 화면이 이미 아래쪽(과거 기록 등)에 가 있는 것처럼
@@ -15449,6 +15452,518 @@ function showPdfGuide(ri){
   <div id="matu-calendar-wrap" style="margin-top:16px;padding:14px;background:#fff;border:1.5px solid #d5e6c2;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.05);"></div>
 
 </div>
+
+<!-- ════════════════════════════════════════════
+     🔧 S/K(스프링클러) 자재 입출고 관리
+     - Firestore 컬렉션 sk_items(품목·이월재고), sk_tx(입출고 내역)에 저장
+     - onSnapshot 실시간 구독 → PC/모바일 어디서 입력해도 바로 반영
+     - 현재고 = 전년도 이월재고 + 입고 합계 − 출고 합계 (자동 계산)
+     - 엑셀 가져오기(기존 사용장부 .xlsx) / 엑셀 내보내기(수불대장 형식)
+════════════════════════════════════════════ -->
+<style>
+#panel-sk{padding:12px;}
+.sk-wrap{max-width:1100px;margin:0 auto;}
+.sk-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px;}
+.sk-title{font-size:15px;font-weight:800;color:#185FA5;}
+.sk-btn{font-size:12px;font-weight:700;padding:6px 11px;border-radius:8px;border:1.5px solid #b8cfe6;background:#fff;color:#185FA5;cursor:pointer;white-space:nowrap;}
+.sk-btn.pri{background:#185FA5;color:#fff;border-color:#185FA5;}
+.sk-btn.in{background:#e8f4ff;border-color:#185FA5;}
+.sk-btn.out{background:#fff3e8;border-color:#d9822b;color:#b35c00;}
+.sk-btn:disabled{opacity:.4;cursor:not-allowed;}
+.sk-sub{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;}
+.sk-sub .sk-btn.on{background:#185FA5;color:#fff;}
+.sk-card{background:#fff;border:1.5px solid #dfe9f3;border-radius:12px;padding:12px;margin-bottom:12px;}
+.sk-sum{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:12px;}
+.sk-sum div{background:#f4f8fc;border-radius:10px;padding:8px 10px;text-align:center;}
+.sk-sum b{display:block;font-size:18px;color:#185FA5;}
+.sk-sum span{font-size:11px;color:#667;}
+.sk-tools{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;}
+.sk-tools input,.sk-tools select,.sk-form input,.sk-form select{font-size:13px;padding:7px 9px;border:1.5px solid #cfdcea;border-radius:8px;background:#fff;min-width:0;}
+.sk-tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+.sk-tbl{width:100%;border-collapse:collapse;font-size:12px;min-width:640px;}
+.sk-tbl th{background:#eef4fa;color:#234;font-weight:700;padding:6px 5px;border-bottom:2px solid #cfdcea;white-space:nowrap;position:sticky;top:0;}
+.sk-tbl td{padding:6px 5px;border-bottom:1px solid #edf1f5;text-align:center;}
+.sk-tbl td.l{text-align:left;}
+.sk-tbl tr.click{cursor:pointer;}
+.sk-tbl tr.click:hover td{background:#f7fbff;}
+.sk-zero{color:#bbb;}
+.sk-low{color:#c0392b;font-weight:800;}
+.sk-stock{font-weight:800;color:#185FA5;font-size:13px;}
+.sk-tag{display:inline-block;font-size:10.5px;font-weight:800;padding:1px 7px;border-radius:100px;}
+.sk-tag.in{background:#e3f0ff;color:#185FA5;}
+.sk-tag.out{background:#ffeedd;color:#b35c00;}
+.sk-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;}
+.sk-form label{font-size:11px;color:#556;font-weight:700;display:flex;flex-direction:column;gap:3px;}
+.sk-form .full{grid-column:1/-1;}
+.sk-io-toggle{display:flex;gap:6px;}
+.sk-io-toggle button{flex:1;font-size:14px;font-weight:800;padding:9px;border-radius:9px;border:2px solid #ddd;background:#fff;cursor:pointer;}
+.sk-io-toggle button.in.on{background:#185FA5;color:#fff;border-color:#185FA5;}
+.sk-io-toggle button.out.on{background:#d9822b;color:#fff;border-color:#d9822b;}
+.sk-sugg{position:absolute;left:0;right:0;top:100%;z-index:50;background:#fff;border:1.5px solid #cfdcea;border-radius:8px;max-height:240px;overflow:auto;box-shadow:0 6px 18px rgba(0,0,0,.12);}
+.sk-sugg div{padding:7px 9px;font-size:12.5px;cursor:pointer;border-bottom:1px solid #f0f3f6;}
+.sk-sugg div:hover{background:#f0f7ff;}
+.sk-note{font-size:11px;color:#889;margin-top:6px;}
+.sk-modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:760;display:none;align-items:flex-start;justify-content:center;padding:60px 10px 10px;overflow:auto;}
+.sk-modal{background:#fff;border-radius:14px;max-width:560px;width:100%;padding:14px;}
+.sk-modal h3{margin:0 0 10px;font-size:15px;color:#185FA5;}
+.sk-ro .sk-edit-only{display:none !important;}
+</style>
+
+<div class="panel" id="panel-sk">
+ <div class="sk-wrap">
+  <div class="sk-head">
+    <div class="sk-title">🔧 S/K 자재 입출고 <span id="sk-sync-state" style="font-size:11px;font-weight:600;color:#889;margin-left:6px;"></span></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;">
+      <button class="sk-btn sk-edit-only" onclick="skImportPick()">📥 엑셀 가져오기</button>
+      <button class="sk-btn" onclick="skExportXlsx()">📤 엑셀 내보내기</button>
+      <input type="file" id="sk-import-file" accept=".xlsx,.xls" style="display:none" onchange="skImportFile(this)">
+    </div>
+  </div>
+
+  <div class="sk-sub">
+    <button class="sk-btn on" data-sk-view="stock" onclick="skView('stock')">📦 재고현황</button>
+    <button class="sk-btn sk-edit-only" data-sk-view="entry" onclick="skView('entry')">✏️ 입출고 등록</button>
+    <button class="sk-btn" data-sk-view="log" onclick="skView('log')">📒 수불내역</button>
+    <button class="sk-btn sk-edit-only" data-sk-view="items" onclick="skView('items')">🗂 품목관리</button>
+  </div>
+
+  <!-- 재고현황 -->
+  <div id="sk-v-stock">
+    <div class="sk-sum" id="sk-summary"></div>
+    <div class="sk-card">
+      <div class="sk-tools">
+        <input id="sk-q" placeholder="🔍 품목·규격·용도 검색" oninput="skRenderStock()" style="flex:1 1 180px;">
+        <select id="sk-filter" onchange="skRenderStock()">
+          <option value="all">전체</option><option value="has">재고 있음</option><option value="zero">재고 없음</option><option value="moved">올해 입출고 있음</option>
+        </select>
+        <select id="sk-sort" onchange="skRenderStock()">
+          <option value="stock">현재고 많은순</option><option value="name">이름순</option><option value="recent">최근 입출고순</option>
+        </select>
+      </div>
+      <div class="sk-tbl-wrap"><table class="sk-tbl" id="sk-stock-tbl"></table></div>
+      <div class="sk-note">행을 누르면 해당 품목의 입출고 내역을 볼 수 있습니다. 현재고 = 전년도 이월재고 + 입고 − 출고</div>
+    </div>
+  </div>
+
+  <!-- 입출고 등록 -->
+  <div id="sk-v-entry" style="display:none;">
+    <div class="sk-card">
+      <div class="sk-io-toggle" style="margin-bottom:10px;">
+        <button class="in on" id="sk-io-in" onclick="skSetIo('입고')">⬇ 입고</button>
+        <button class="out" id="sk-io-out" onclick="skSetIo('출고')">⬆ 출고</button>
+      </div>
+      <div class="sk-form">
+        <label>일자<input type="date" id="sk-e-date"></label>
+        <label class="full" style="position:relative;">제품명 (검색해서 선택)
+          <input id="sk-e-item" placeholder="예: 레듀샤, G85, 새들티" autocomplete="off" oninput="skSuggest()" onfocus="skSuggest()">
+          <div class="sk-sugg" id="sk-e-sugg" style="display:none;"></div>
+        </label>
+        <div class="full" id="sk-e-iteminfo" style="font-size:12px;color:#456;"></div>
+        <label>수량<input type="number" id="sk-e-qty" inputmode="decimal" min="0" step="any"></label>
+        <label>사용처 / 입고처<input id="sk-e-place" list="sk-place-list" placeholder="예: 동3번 페어웨이"></label>
+        <label class="full">비고<input id="sk-e-note" placeholder="예: 누수 헤드 교체"></label>
+      </div>
+      <datalist id="sk-place-list"></datalist>
+      <div style="display:flex;gap:8px;margin-top:12px;">
+        <button class="sk-btn pri" style="flex:1;padding:10px;font-size:14px;" onclick="skSaveTx()" id="sk-e-save">저장</button>
+        <button class="sk-btn" onclick="skResetEntry()">초기화</button>
+      </div>
+      <div class="sk-note" id="sk-e-editing"></div>
+    </div>
+  </div>
+
+  <!-- 수불내역 -->
+  <div id="sk-v-log" style="display:none;">
+    <div class="sk-card">
+      <div class="sk-tools">
+        <select id="sk-log-month" onchange="skRenderLog()"></select>
+        <select id="sk-log-io" onchange="skRenderLog()"><option value="">입고+출고</option><option>입고</option><option>출고</option></select>
+        <input id="sk-log-q" placeholder="🔍 품목·사용처 검색" oninput="skRenderLog()" style="flex:1 1 160px;">
+      </div>
+      <div class="sk-tbl-wrap"><table class="sk-tbl" id="sk-log-tbl"></table></div>
+    </div>
+  </div>
+
+  <!-- 품목관리 -->
+  <div id="sk-v-items" style="display:none;">
+    <div class="sk-card">
+      <div class="sk-tools">
+        <button class="sk-btn pri" onclick="skEditItem(null)">＋ 품목 추가</button>
+        <input id="sk-items-q" placeholder="🔍 검색" oninput="skRenderItems()" style="flex:1 1 160px;">
+      </div>
+      <div class="sk-tbl-wrap"><table class="sk-tbl" id="sk-items-tbl"></table></div>
+      <div class="sk-note">전년도 이월재고는 연초 재고 수량입니다. 품목 삭제는 입출고 내역이 없는 품목만 가능합니다.</div>
+    </div>
+  </div>
+ </div>
+</div>
+
+<!-- 품목 상세 / 품목 편집 모달 -->
+<div class="sk-modal-bg" id="sk-modal-bg" onclick="if(event.target===this)skCloseModal()">
+  <div class="sk-modal" id="sk-modal"></div>
+</div>
+
+<script>
+/* ═══════════ S/K 자재 입출고 ═══════════ */
+const SK_COL_ITEMS='sk_items', SK_COL_TX='sk_tx';
+const SK_CACHE_KEY='golf_sk_cache_v1';
+let _skItems=[], _skTx=[], _skUnsubs=[], _skIo='입고', _skSelItemId=null, _skEditingTxId=null, _skViewName='stock';
+
+(function(){ try{const c=JSON.parse(localStorage.getItem(SK_CACHE_KEY)||'null'); if(c){_skItems=c.items||[];_skTx=c.tx||[];}}catch(e){} })();
+
+function skEsc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function skNorm(s){return String(s||'').replace(/\s+/g,'').toLowerCase();}
+function skNum(v){const n=parseFloat(String(v==null?'':v).replace(/,/g,''));return isNaN(n)?0:n;}
+function skFmt(n){n=Math.round(n*100)/100;return n.toLocaleString('ko-KR');}
+function skToday(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
+function skCanEdit(){ if(!_fbUser) return false; if(_fbRole==='admin'||_fbRole==='member') return true; return _fbRole==='partial' && canEditSection('sk'); }
+function skCanMaster(){ return !!_fbUser && (_fbRole==='admin'||_fbRole==='member'); }
+
+/* ── 실시간 구독 ── */
+function skInit(){
+  skApplyRole();
+  if(!_fbUser){ document.getElementById('sk-sync-state').textContent='· 로그인 필요(저장된 사본 표시)'; skRenderAll(); return; }
+  if(_skUnsubs.length){ skRenderAll(); return; }
+  document.getElementById('sk-sync-state').textContent='· 불러오는 중…';
+  _skUnsubs.push(_fbDb.collection(SK_COL_ITEMS).onSnapshot(snap=>{
+    _skItems=snap.docs.map(d=>({id:d.id,...d.data()}));
+    skAfterSync();
+  },e=>{console.warn('[SK] items',e);document.getElementById('sk-sync-state').textContent='· ⚠️ 동기화 실패';}));
+  _skUnsubs.push(_fbDb.collection(SK_COL_TX).onSnapshot(snap=>{
+    _skTx=snap.docs.map(d=>({id:d.id,...d.data()}));
+    skAfterSync();
+  },e=>console.warn('[SK] tx',e)));
+}
+function skAfterSync(){
+  try{ localStorage.setItem(SK_CACHE_KEY, JSON.stringify({items:_skItems,tx:_skTx.map(t=>{const c={...t};delete c.createdAt;delete c.updatedAt;return c;})})); }catch(e){}
+  const el=document.getElementById('sk-sync-state'); if(el) el.textContent='· ☁️ 실시간 동기화 중';
+  skRenderAll();
+}
+function skStopSync(){ _skUnsubs.forEach(u=>{try{u();}catch(e){}}); _skUnsubs=[]; }
+function skApplyRole(){
+  const p=document.getElementById('panel-sk'); if(!p) return;
+  p.classList.toggle('sk-ro', !skCanEdit());
+  if(!skCanEdit() && (_skViewName==='entry'||_skViewName==='items')) skView('stock');
+  if(!skCanMaster() && _skViewName==='items') skView('stock');
+  p.querySelectorAll('[data-sk-view="items"],.sk-btn[onclick^="skImportPick"]').forEach(b=>b.style.display=skCanMaster()?'':'none');
+}
+
+/* ── 계산 ── */
+function skStats(){
+  const m={};
+  _skItems.forEach(it=>m[it.id]={in:0,out:0,lastIn:'',lastOut:'',last:''});
+  _skTx.forEach(t=>{
+    const s=m[t.itemId]; if(!s) return;
+    const q=skNum(t.qty);
+    if(t.io==='입고'){s.in+=q; if(t.date>s.lastIn)s.lastIn=t.date;}
+    else {s.out+=q; if(t.date>s.lastOut)s.lastOut=t.date;}
+    if(t.date>s.last)s.last=t.date;
+  });
+  _skItems.forEach(it=>{const s=m[it.id]; s.stock=skNum(it.carry)+s.in-s.out;});
+  return m;
+}
+function skItemById(id){return _skItems.find(i=>i.id===id);}
+
+/* ── 화면 전환 ── */
+function skView(v){
+  _skViewName=v;
+  ['stock','entry','log','items'].forEach(n=>{const e=document.getElementById('sk-v-'+n); if(e)e.style.display=(n===v)?'':'none';});
+  document.querySelectorAll('[data-sk-view]').forEach(b=>b.classList.toggle('on',b.dataset.skView===v));
+  if(v==='entry' && !document.getElementById('sk-e-date').value) skResetEntry();
+  skRenderAll();
+}
+function skRenderAll(){
+  if(!document.getElementById('panel-sk')) return;
+  if(_skViewName==='stock') skRenderStock();
+  if(_skViewName==='log') skRenderLog();
+  if(_skViewName==='items') skRenderItems();
+  skFillPlaces();
+}
+
+/* ── 재고현황 ── */
+function skRenderStock(){
+  const st=skStats();
+  const q=skNorm(document.getElementById('sk-q').value);
+  const f=document.getElementById('sk-filter').value, so=document.getElementById('sk-sort').value;
+  const ym=skToday().slice(0,7);
+  let list=_skItems.filter(it=>!q||skNorm(it.name+it.spec+it.use+it.vendor).includes(q));
+  if(f==='has') list=list.filter(it=>st[it.id].stock>0);
+  if(f==='zero') list=list.filter(it=>st[it.id].stock<=0);
+  if(f==='moved') list=list.filter(it=>st[it.id].in||st[it.id].out);
+  list.sort(so==='name'?(a,b)=>a.name.localeCompare(b.name,'ko'):so==='recent'?(a,b)=>(st[b.id].last||'').localeCompare(st[a.id].last||'')||a.name.localeCompare(b.name,'ko'):(a,b)=>st[b.id].stock-st[a.id].stock||a.name.localeCompare(b.name,'ko'));
+  /* 요약 */
+  let tIn=0,tOut=0,mIn=0,mOut=0,amt=0;
+  _skTx.forEach(t=>{const q2=skNum(t.qty); if(t.io==='입고'){tIn+=q2; if(String(t.date).startsWith(ym))mIn+=q2;} else {tOut+=q2; if(String(t.date).startsWith(ym))mOut+=q2;}});
+  _skItems.forEach(it=>amt+=Math.max(0,st[it.id].stock)*skNum(it.price));
+  document.getElementById('sk-summary').innerHTML=`
+    <div><b>${_skItems.length}</b><span>등록 품목</span></div>
+    <div><b>${_skItems.filter(it=>st[it.id].stock>0).length}</b><span>재고 보유 품목</span></div>
+    <div><b>${skFmt(mIn)} / ${skFmt(mOut)}</b><span>이번 달 입고 / 출고</span></div>
+    <div><b>${amt?skFmt(amt)+'원':'-'}</b><span>재고금액(단가 입력분)</span></div>`;
+  const rows=list.map(it=>{const s=st[it.id];
+    return `<tr class="click" onclick="skShowItem('${it.id}')">
+      <td class="l"><b>${skEsc(it.name)}</b><div style="font-size:10.5px;color:#889;">${skEsc(it.use||'')}</div></td>
+      <td>${skEsc(it.spec||'')}</td><td>${skEsc(it.unit||'')}</td>
+      <td class="sk-stock ${s.stock<=0?'sk-low':''}">${skFmt(s.stock)}</td>
+      <td>${skFmt(skNum(it.carry))}</td>
+      <td class="${s.in?'':'sk-zero'}">${skFmt(s.in)}</td><td class="${s.out?'':'sk-zero'}">${skFmt(s.out)}</td>
+      <td style="font-size:11px;">${s.lastIn?s.lastIn.slice(5):''}</td><td style="font-size:11px;">${s.lastOut?s.lastOut.slice(5):''}</td>
+      <td style="font-size:11px;">${skEsc(it.vendor||'')}</td></tr>`;}).join('');
+  document.getElementById('sk-stock-tbl').innerHTML=`<thead><tr><th>제품명</th><th>규격</th><th>단위</th><th>현재고</th><th>이월</th><th>입고</th><th>출고</th><th>최종입고</th><th>최종출고</th><th>납품업체</th></tr></thead>
+    <tbody>${rows||`<tr><td colspan="10" style="padding:22px;color:#999;">${_skItems.length?'검색 결과가 없습니다':'등록된 품목이 없습니다. 상단 「📥 엑셀 가져오기」로 기존 사용장부를 불러오세요.'}</td></tr>`}</tbody>`;
+}
+
+/* ── 품목 상세(내역) ── */
+function skShowItem(id){
+  const it=skItemById(id); if(!it) return;
+  const s=skStats()[id];
+  const tx=_skTx.filter(t=>t.itemId===id).sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.ts||0)-(a.ts||0));
+  document.getElementById('sk-modal').innerHTML=`
+    <h3>${skEsc(it.name)} <span style="font-size:12px;color:#889;">${skEsc(it.spec||'')} · ${skEsc(it.unit||'')}</span></h3>
+    <div class="sk-sum" style="margin-bottom:8px;">
+      <div><b>${skFmt(s.stock)}</b><span>현재고</span></div><div><b>${skFmt(skNum(it.carry))}</b><span>이월</span></div>
+      <div><b>${skFmt(s.in)}</b><span>입고</span></div><div><b>${skFmt(s.out)}</b><span>출고</span></div></div>
+    <div style="font-size:12px;color:#556;margin-bottom:8px;">${skEsc(it.use||'')}${it.vendor?' · '+skEsc(it.vendor):''}${skNum(it.price)?' · 단가 '+skFmt(skNum(it.price))+'원':''}</div>
+    <div class="sk-edit-only" style="display:flex;gap:6px;margin-bottom:8px;">
+      <button class="sk-btn in" onclick="skQuickEntry('${id}','입고')">⬇ 입고 등록</button>
+      <button class="sk-btn out" onclick="skQuickEntry('${id}','출고')">⬆ 출고 등록</button>
+    </div>
+    <div class="sk-tbl-wrap" style="max-height:45vh;overflow:auto;"><table class="sk-tbl" style="min-width:0;">
+      <thead><tr><th>일자</th><th>구분</th><th>수량</th><th>사용처</th><th>비고</th></tr></thead>
+      <tbody>${tx.map(t=>`<tr><td>${skEsc(t.date)}</td><td><span class="sk-tag ${t.io==='입고'?'in':'out'}">${t.io}</span></td><td><b>${skFmt(skNum(t.qty))}</b></td><td class="l">${skEsc(t.place||'')}</td><td class="l">${skEsc(t.note||'')}</td></tr>`).join('')||'<tr><td colspan="5" style="color:#999;padding:14px;">입출고 내역이 없습니다</td></tr>'}</tbody></table></div>
+    <div style="text-align:right;margin-top:10px;"><button class="sk-btn" onclick="skCloseModal()">닫기</button></div>`;
+  document.getElementById('sk-modal').classList.toggle('sk-ro',!skCanEdit());
+  document.getElementById('sk-modal-bg').style.display='flex';
+}
+function skCloseModal(){document.getElementById('sk-modal-bg').style.display='none';}
+function skQuickEntry(id,io){ skCloseModal(); skView('entry'); skResetEntry(); skSetIo(io); skPickItem(id); document.getElementById('sk-e-qty').focus(); }
+
+/* ── 입출고 등록 ── */
+function skSetIo(io){ _skIo=io; document.getElementById('sk-io-in').classList.toggle('on',io==='입고'); document.getElementById('sk-io-out').classList.toggle('on',io==='출고'); skShowItemInfo(); }
+function skSuggest(){
+  const box=document.getElementById('sk-e-sugg'); const q=skNorm(document.getElementById('sk-e-item').value);
+  const st=skStats();
+  const list=_skItems.filter(it=>!q||skNorm(it.name+it.spec+it.use).includes(q)).sort((a,b)=>a.name.localeCompare(b.name,'ko')).slice(0,40);
+  box.innerHTML=list.map(it=>`<div onmousedown="event.preventDefault();skPickItem('${it.id}')"><b>${skEsc(it.name)}</b> <span style="color:#889;">${skEsc(it.spec||'')}</span> <span style="float:right;color:#185FA5;font-weight:700;">재고 ${skFmt(st[it.id].stock)}${skEsc(it.unit||'')}</span></div>`).join('')||'<div style="color:#999;">일치하는 품목 없음 — 품목관리에서 추가하세요</div>';
+  box.style.display='block';
+  _skSelItemId=null; skShowItemInfo();
+}
+document.addEventListener('click',e=>{const b=document.getElementById('sk-e-sugg'); if(b && !e.target.closest('#sk-e-item') && !e.target.closest('#sk-e-sugg')) b.style.display='none';});
+function skPickItem(id){ const it=skItemById(id); if(!it) return; _skSelItemId=id; document.getElementById('sk-e-item').value=it.name; document.getElementById('sk-e-sugg').style.display='none'; skShowItemInfo(); }
+function skShowItemInfo(){
+  const el=document.getElementById('sk-e-iteminfo'); if(!el) return;
+  const it=_skSelItemId&&skItemById(_skSelItemId);
+  if(!it){el.innerHTML='';return;}
+  const s=skStats()[it.id];
+  el.innerHTML=`규격 <b>${skEsc(it.spec||'-')}</b> · 단위 <b>${skEsc(it.unit||'-')}</b> · 현재고 <b style="color:#185FA5;">${skFmt(s.stock)}</b>${it.use?' · '+skEsc(it.use):''}`;
+}
+function skResetEntry(){
+  _skSelItemId=null; _skEditingTxId=null;
+  document.getElementById('sk-e-date').value=skToday();
+  ['sk-e-item','sk-e-qty','sk-e-place','sk-e-note'].forEach(i=>document.getElementById(i).value='');
+  document.getElementById('sk-e-editing').textContent=''; document.getElementById('sk-e-save').textContent='저장';
+  skShowItemInfo();
+}
+function skFillPlaces(){
+  const dl=document.getElementById('sk-place-list'); if(!dl) return;
+  const set=[...new Set(_skTx.map(t=>t.place).filter(Boolean))].slice(0,200);
+  dl.innerHTML=set.map(p=>`<option value="${skEsc(p)}">`).join('');
+}
+async function skSaveTx(){
+  if(!skCanEdit()){showToast('입출고 등록 권한이 없습니다');return;}
+  const it=_skSelItemId&&skItemById(_skSelItemId);
+  if(!it){showToast('제품명을 목록에서 선택해 주세요');return;}
+  const date=document.getElementById('sk-e-date').value, qty=skNum(document.getElementById('sk-e-qty').value);
+  if(!date){showToast('일자를 입력해 주세요');return;}
+  if(!(qty>0)){showToast('수량을 입력해 주세요');return;}
+  const st=skStats()[it.id];
+  let avail=st.stock;
+  if(_skEditingTxId){const old=_skTx.find(t=>t.id===_skEditingTxId); if(old&&old.itemId===it.id) avail+= old.io==='출고'?skNum(old.qty):-skNum(old.qty);}
+  if(_skIo==='출고' && qty>avail && !confirm(`현재고(${skFmt(avail)})보다 많은 수량입니다. 그래도 저장할까요?`)) return;
+  const data={date,itemId:it.id,itemName:it.name,spec:it.spec||'',unit:it.unit||'',io:_skIo,qty,
+    place:document.getElementById('sk-e-place').value.trim(),note:document.getElementById('sk-e-note').value.trim(),
+    by:_fbUser.email,updatedAt:firebase.firestore.FieldValue.serverTimestamp()};
+  const btn=document.getElementById('sk-e-save'); btn.disabled=true;
+  try{
+    if(_skEditingTxId) await _fbDb.collection(SK_COL_TX).doc(_skEditingTxId).set(data,{merge:true});
+    else await _fbDb.collection(SK_COL_TX).add({...data,ts:Date.now(),createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+    showToast(`✅ ${it.name} ${_skIo} ${skFmt(qty)}${it.unit||''} ${_skEditingTxId?'수정':'저장'}됨`);
+    const keepDate=date, keepIo=_skIo; skResetEntry(); document.getElementById('sk-e-date').value=keepDate; skSetIo(keepIo);
+  }catch(e){console.warn(e);showToast('⚠️ 저장 실패: '+(e.message||e));}
+  btn.disabled=false;
+}
+
+/* ── 수불내역 ── */
+function skRenderLog(){
+  const sel=document.getElementById('sk-log-month');
+  const months=[...new Set(_skTx.map(t=>String(t.date||'').slice(0,7)).filter(Boolean))].sort().reverse();
+  const cur=skToday().slice(0,7); if(!months.includes(cur)) months.unshift(cur);
+  const prev=sel.value;
+  sel.innerHTML='<option value="">전체 기간</option>'+months.map(m=>`<option value="${m}">${m.slice(0,4)}년 ${parseInt(m.slice(5))}월</option>`).join('');
+  sel.value= prev!==''&&!months.includes(prev)?cur:(sel.dataset.init?prev:cur); sel.dataset.init='1';
+  const m=sel.value, io=document.getElementById('sk-log-io').value, q=skNorm(document.getElementById('sk-log-q').value);
+  const list=_skTx.filter(t=>(!m||String(t.date).startsWith(m))&&(!io||t.io===io)&&(!q||skNorm((skItemById(t.itemId)?.name||t.itemName)+t.place+t.note).includes(q)))
+    .sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.ts||0)-(a.ts||0));
+  let si=0,so=0; list.forEach(t=>t.io==='입고'?si+=skNum(t.qty):so+=skNum(t.qty));
+  const ce=skCanEdit();
+  document.getElementById('sk-log-tbl').innerHTML=`<thead><tr><th>일자</th><th>제품명</th><th>규격</th><th>구분</th><th>수량</th><th>단위</th><th>사용처</th><th>비고</th><th>입력</th>${ce?'<th></th>':''}</tr></thead><tbody>
+    ${list.map(t=>{const it=skItemById(t.itemId);return `<tr><td style="white-space:nowrap;">${skEsc(t.date)}</td><td class="l"><b>${skEsc(it?.name||t.itemName)}</b></td><td>${skEsc(it?.spec||t.spec||'')}</td>
+      <td><span class="sk-tag ${t.io==='입고'?'in':'out'}">${t.io}</span></td><td><b>${skFmt(skNum(t.qty))}</b></td><td>${skEsc(it?.unit||t.unit||'')}</td>
+      <td class="l">${skEsc(t.place||'')}</td><td class="l">${skEsc(t.note||'')}</td><td style="font-size:10px;color:#99a;">${skEsc(String(t.by||'').split('@')[0])}</td>
+      ${ce?`<td style="white-space:nowrap;"><button class="sk-btn" style="padding:3px 7px;font-size:11px;" onclick="skEditTx('${t.id}')">수정</button> <button class="sk-btn" style="padding:3px 7px;font-size:11px;color:#c0392b;border-color:#e6b0aa;" onclick="skDelTx('${t.id}')">삭제</button></td>`:''}</tr>`;}).join('')
+      ||`<tr><td colspan="10" style="padding:20px;color:#999;">내역이 없습니다</td></tr>`}
+    ${list.length?`<tr style="background:#f4f8fc;font-weight:800;"><td colspan="3">합계 (${list.length}건)</td><td colspan="${ce?7:6}" class="l">입고 ${skFmt(si)} · 출고 ${skFmt(so)}</td></tr>`:''}</tbody>`;
+}
+function skEditTx(id){
+  const t=_skTx.find(x=>x.id===id); if(!t) return;
+  skView('entry'); skResetEntry(); _skEditingTxId=id;
+  skSetIo(t.io); skPickItem(t.itemId);
+  document.getElementById('sk-e-date').value=t.date; document.getElementById('sk-e-qty').value=t.qty;
+  document.getElementById('sk-e-place').value=t.place||''; document.getElementById('sk-e-note').value=t.note||'';
+  document.getElementById('sk-e-save').textContent='수정 저장';
+  document.getElementById('sk-e-editing').textContent=`✎ ${t.date} ${t.io} 내역을 수정 중입니다 (초기화를 누르면 새 등록으로 돌아갑니다)`;
+}
+async function skDelTx(id){
+  if(!skCanEdit()) return;
+  const t=_skTx.find(x=>x.id===id); if(!t) return;
+  if(!confirm(`${t.date} ${skItemById(t.itemId)?.name||t.itemName} ${t.io} ${t.qty} 내역을 삭제할까요?`)) return;
+  try{await _fbDb.collection(SK_COL_TX).doc(id).delete(); showToast('삭제되었습니다');}catch(e){showToast('⚠️ 삭제 실패');}
+}
+
+/* ── 품목관리 ── */
+function skRenderItems(){
+  const q=skNorm(document.getElementById('sk-items-q').value); const st=skStats();
+  const list=_skItems.filter(it=>!q||skNorm(it.name+it.spec+it.use+it.vendor).includes(q)).sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+  document.getElementById('sk-items-tbl').innerHTML=`<thead><tr><th>제품명</th><th>규격</th><th>단위</th><th>단가</th><th>용도</th><th>납품업체</th><th>이월재고</th><th>현재고</th><th></th></tr></thead><tbody>
+    ${list.map(it=>`<tr><td class="l"><b>${skEsc(it.name)}</b></td><td>${skEsc(it.spec||'')}</td><td>${skEsc(it.unit||'')}</td><td>${skNum(it.price)?skFmt(skNum(it.price)):''}</td>
+      <td class="l" style="font-size:11px;">${skEsc(it.use||'')}</td><td style="font-size:11px;">${skEsc(it.vendor||'')}</td><td>${skFmt(skNum(it.carry))}</td><td class="sk-stock">${skFmt(st[it.id].stock)}</td>
+      <td><button class="sk-btn" style="padding:3px 8px;font-size:11px;" onclick="skEditItem('${it.id}')">편집</button></td></tr>`).join('')||'<tr><td colspan="9" style="padding:20px;color:#999;">품목이 없습니다</td></tr>'}</tbody>`;
+}
+function skEditItem(id){
+  if(!skCanMaster()){showToast('품목 관리는 관리자/팀원만 가능합니다');return;}
+  const it=id?skItemById(id):{name:'',spec:'',unit:'EA',price:'',use:'',vendor:'',carry:0};
+  const used=id&&_skTx.some(t=>t.itemId===id);
+  const f=(k,l,t='text')=>`<label>${l}<input id="sk-i-${k}" type="${t}" value="${skEsc(it[k]??'')}"></label>`;
+  document.getElementById('sk-modal').innerHTML=`<h3>${id?'품목 편집':'품목 추가'}</h3>
+    <div class="sk-form">${f('name','제품명')}${f('spec','규격')}${f('unit','단위')}${f('price','단가(원)','number')}${f('carry','전년도 이월재고','number')}${f('vendor','납품업체')}
+    <label class="full">용도<input id="sk-i-use" value="${skEsc(it.use||'')}"></label></div>
+    <div style="display:flex;gap:6px;justify-content:space-between;margin-top:12px;">
+      <div>${id?`<button class="sk-btn" style="color:#c0392b;border-color:#e6b0aa;" ${used?'disabled title="입출고 내역이 있어 삭제할 수 없습니다"':''} onclick="skDelItem('${id}')">삭제</button>`:''}</div>
+      <div style="display:flex;gap:6px;"><button class="sk-btn" onclick="skCloseModal()">취소</button><button class="sk-btn pri" onclick="skSaveItem(${id?`'${id}'`:'null'})">저장</button></div></div>`;
+  document.getElementById('sk-modal').classList.remove('sk-ro');
+  document.getElementById('sk-modal-bg').style.display='flex';
+}
+async function skSaveItem(id){
+  const g=k=>document.getElementById('sk-i-'+k).value.trim();
+  const data={name:g('name'),spec:g('spec'),unit:g('unit'),price:skNum(g('price')),carry:skNum(g('carry')),vendor:g('vendor'),use:g('use'),updatedAt:firebase.firestore.FieldValue.serverTimestamp()};
+  if(!data.name){showToast('제품명을 입력해 주세요');return;}
+  if(_skItems.some(it=>it.id!==id && skNorm(it.name)===skNorm(data.name) && skNorm(it.spec)===skNorm(data.spec))){showToast('같은 제품명·규격의 품목이 이미 있습니다');return;}
+  try{ if(id) await _fbDb.collection(SK_COL_ITEMS).doc(id).set(data,{merge:true}); else await _fbDb.collection(SK_COL_ITEMS).add(data);
+    skCloseModal(); showToast('품목이 저장되었습니다'); }catch(e){showToast('⚠️ 저장 실패');}
+}
+async function skDelItem(id){
+  if(_skTx.some(t=>t.itemId===id)){showToast('입출고 내역이 있어 삭제할 수 없습니다');return;}
+  if(!confirm('이 품목을 삭제할까요?')) return;
+  try{await _fbDb.collection(SK_COL_ITEMS).doc(id).delete(); skCloseModal(); showToast('삭제되었습니다');}catch(e){showToast('⚠️ 삭제 실패');}
+}
+
+/* ── 엑셀 라이브러리(SheetJS) 필요할 때만 불러오기 ── */
+function skLoadXlsx(){
+  if(window.XLSX) return Promise.resolve();
+  return new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';s.onload=res;s.onerror=()=>rej(new Error('엑셀 라이브러리 로드 실패'));document.head.appendChild(s);});
+}
+
+/* ── 엑셀 가져오기: 기존 「스프링클러 사용장부」 형식 ──
+   · 수불대장 표(구분/제품명/규격/용도/단위/…/전년도 이월재고/단가/…/비고) → 품목 + 이월재고
+   · 품목 시트(구분=제품명/규격/단위/단가/용도/비고) → 수불대장에 없는 품목 보충
+   · 일일수불대장 표(일자/제품명/규격/사용처/입출고/단위/수량/비고) → 입출고 내역
+   이미 같은 제품명·규격이 있으면 덮어쓰지 않고 비어있는 값만 채움 */
+function skImportPick(){ if(!skCanMaster()){showToast('관리자/팀원만 가져올 수 있습니다');return;} document.getElementById('sk-import-file').click(); }
+async function skImportFile(inp){
+  const file=inp.files[0]; inp.value=''; if(!file) return;
+  try{
+    await skLoadXlsx();
+    const wb=XLSX.read(await file.arrayBuffer(),{type:'array',cellDates:true});
+    const items={}, txs=[];
+    const key=(n,s)=>skNorm(n)+'|'+skNorm(s);
+    const H=v=>skNorm(v).replace(/[()]/g,'');
+    wb.SheetNames.forEach(sn=>{
+      const rows=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,defval:'',raw:true});
+      let mode=null, col={};
+      rows.forEach(r=>{
+        const hs=r.map(H);
+        const idx=(...names)=>hs.findIndex(h=>names.some(n=>h===n||h.startsWith(n)));
+        if(hs.includes('제품명') && hs.some(h=>h.startsWith('전년도'))){ mode='ledger'; col={name:idx('제품명'),spec:idx('규격'),use:idx('용도'),unit:idx('단위'),carry:idx('전년도'),price:idx('단가'),vendor:idx('비고')}; return; }
+        if(hs.includes('일자') && hs.includes('제품명')){ mode='daily'; col={date:idx('일자'),name:idx('제품명'),spec:idx('규격'),place:idx('사용처'),io:idx('입출고'),unit:idx('단위'),qty:idx('수량'),note:idx('비고')}; return; }
+        if(hs[0]==='구분' && hs.includes('규격') && hs.includes('단위') && !hs.includes('제품명')){ mode='master'; col={name:0,spec:idx('규격'),unit:idx('단위'),price:idx('단가'),use:idx('용도'),vendor:idx('비고납품업체','비고')}; return; }
+        if(!mode) return;
+        const v=i=>i>=0?r[i]:'';
+        if(mode==='ledger'||mode==='master'){
+          const name=String(v(col.name)).trim(); if(!name||/관리|대장/.test(name)) return;
+          const vendor=String(v(col.vendor)).trim(); const k=key(name,v(col.spec));
+          const o=items[k]||(items[k]={name,spec:String(v(col.spec)).trim(),unit:'',use:'',vendor:'',price:0,carry:0});
+          if(!o.unit) o.unit=String(v(col.unit)).trim();
+          if(!o.use) o.use=String(v(col.use)).trim();
+          if(!o.vendor && vendor && vendor!=='0') o.vendor=vendor;
+          if(!o.price) o.price=skNum(v(col.price));
+          if(mode==='ledger') o.carry=skNum(v(col.carry));
+        } else if(mode==='daily'){
+          const name=String(v(col.name)).trim(); const q=skNum(v(col.qty)); if(!name||!q) return;
+          let d=v(col.date); if(d instanceof Date) d=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+          else if(typeof d==='number'){const p=XLSX.SSF.parse_date_code(d); d=`${p.y}-${String(p.m).padStart(2,'0')}-${String(p.d).padStart(2,'0')}`;}
+          else { const m=String(d).match(/(\d{2,4})\D+(\d{1,2})\D+(\d{1,2})/); if(!m) return; const y=m[1].length===2?'20'+m[1]:m[1]; d=`${y}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`; }
+          txs.push({date:d,name,spec:String(v(col.spec)).trim(),io:/입/.test(String(v(col.io)))?'입고':'출고',qty:q,place:String(v(col.place)).trim(),note:String(v(col.note)).trim(),unit:String(v(col.unit)).trim()});
+        }
+      });
+    });
+    const list=Object.values(items);
+    if(!list.length && !txs.length){showToast('가져올 품목을 찾지 못했습니다 (사용장부 형식을 확인해 주세요)');return;}
+    const exist={}; _skItems.forEach(it=>exist[key(it.name,it.spec)]=it);
+    const newItems=list.filter(o=>!exist[key(o.name,o.spec)]);
+    if(!confirm(`엑셀에서 품목 ${list.length}개(신규 ${newItems.length}개), 입출고 내역 ${txs.length}건을 찾았습니다.\n\n· 이미 있는 품목은 비어있는 정보만 채우고 이월재고는 그대로 둡니다\n· 입출고 내역은 그대로 추가됩니다\n\n가져올까요?`)) return;
+    let batch=_fbDb.batch(), n=0; const commits=[];
+    const push=(ref,data,opt)=>{opt?batch.set(ref,data,opt):batch.set(ref,data); if(++n%400===0){commits.push(batch.commit()); batch=_fbDb.batch();}};
+    list.forEach(o=>{
+      const ex=exist[key(o.name,o.spec)];
+      if(ex){ const patch={}; ['unit','use','vendor'].forEach(f=>{if(!ex[f]&&o[f])patch[f]=o[f];}); if(!skNum(ex.price)&&o.price)patch.price=o.price;
+        if(Object.keys(patch).length) push(_fbDb.collection(SK_COL_ITEMS).doc(ex.id),patch,{merge:true}); }
+      else { const ref=_fbDb.collection(SK_COL_ITEMS).doc(); o.id=ref.id; exist[key(o.name,o.spec)]=o; push(ref,{name:o.name,spec:o.spec,unit:o.unit,use:o.use,vendor:o.vendor,price:o.price,carry:o.carry}); }
+    });
+    let ts=Date.now();
+    txs.forEach(t=>{
+      let it=exist[key(t.name,t.spec)]||Object.values(exist).find(x=>skNorm(x.name)===skNorm(t.name));
+      if(!it){ const ref=_fbDb.collection(SK_COL_ITEMS).doc(); it={id:ref.id,name:t.name,spec:t.spec,unit:t.unit}; exist[key(t.name,t.spec)]=it; push(ref,{name:t.name,spec:t.spec,unit:t.unit,use:'',vendor:'',price:0,carry:0}); }
+      push(_fbDb.collection(SK_COL_TX).doc(),{date:t.date,itemId:it.id,itemName:it.name,spec:it.spec||'',unit:it.unit||'',io:t.io,qty:t.qty,place:t.place,note:t.note,by:_fbUser.email,ts:ts++,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+    });
+    commits.push(batch.commit()); await Promise.all(commits);
+    showToast(`✅ 품목 ${newItems.length}개 추가, 입출고 ${txs.length}건 가져오기 완료`);
+  }catch(e){console.warn(e);showToast('⚠️ 가져오기 실패: '+(e.message||e));}
+}
+
+/* ── 엑셀 내보내기: 수불대장 / 일일수불대장 / 품목 시트 ── */
+async function skExportXlsx(){
+  try{
+    await skLoadXlsx();
+    const st=skStats(), yr=skToday().slice(0,4);
+    const items=[..._skItems].sort((a,b)=>st[b.id].stock-st[a.id].stock||a.name.localeCompare(b.name,'ko'));
+    const led=[[`S/K 관리 대장(${yr}년도)`],['구 분','제  품  명','규 격','용   도','단 위','현재수량','입고수량','출고수량','최종입고','최종출고','전년도  이월재고','단 가','입고금액','출고금액','비  고  (납품업체)']];
+    items.forEach(it=>{const s=st[it.id],p=skNum(it.price);led.push(['구매자재',it.name,it.spec||'',it.use||'',it.unit||'',s.stock,s.in,s.out,s.lastIn,s.lastOut,skNum(it.carry),p,s.in*p,s.out*p,it.vendor||'']);});
+    const tx=[..._skTx].sort((a,b)=>(a.date||'').localeCompare(b.date||'')||(a.ts||0)-(b.ts||0));
+    const run={}; _skItems.forEach(it=>run[it.id]=skNum(it.carry));
+    const daily=[[`S/K 일일수불대장(${yr}년도)`],['일자','제  품  명','규격','사 용 처','입출고','단 위','수량','비 고','현재고','단가','금액','입력자']];
+    tx.forEach(t=>{const it=skItemById(t.itemId)||{};const q=skNum(t.qty); if(run[t.itemId]!=null) run[t.itemId]+= t.io==='입고'?q:-q; const p=skNum(it.price);
+      daily.push([t.date,it.name||t.itemName,it.spec||t.spec||'',t.place||'',t.io,it.unit||t.unit||'',q,t.note||'',run[t.itemId]??'',p||'',p?p*q:'',String(t.by||'').split('@')[0]]);});
+    const mst=[['S/K 품목 관리'],['구 분','규 격','단 위','단 가','용  도','비 고(납품업체)']];
+    [..._skItems].sort((a,b)=>a.name.localeCompare(b.name,'ko')).forEach(it=>mst.push([it.name,it.spec||'',it.unit||'',skNum(it.price)||'',it.use||'',it.vendor||'']));
+    const wb=XLSX.utils.book_new();
+    const mk=(aoa,w)=>{const ws=XLSX.utils.aoa_to_sheet(aoa); ws['!cols']=w.map(x=>({wch:x})); ws['!merges']=[{s:{r:0,c:0},e:{r:0,c:Math.min(aoa[1].length-1,6)}}]; return ws;};
+    XLSX.utils.book_append_sheet(wb,mk(led,[9,30,14,30,6,9,9,9,11,11,10,10,11,11,16]),`${yr}년SK수불대장`);
+    XLSX.utils.book_append_sheet(wb,mk(daily,[11,30,14,22,7,6,7,22,8,9,10,10]),'일일수불대장');
+    XLSX.utils.book_append_sheet(wb,mk(mst,[30,14,6,10,30,16]),'품목-스프링클러');
+    XLSX.writeFile(wb,`${yr.slice(2)}년도 스프링클러 사용장부_${skToday()}.xlsx`);
+  }catch(e){console.warn(e);showToast('⚠️ 내보내기 실패: '+(e.message||e));}
+}
+</script>
 
 <div class="panel" id="panel-materials" style="padding:12px;">
 
