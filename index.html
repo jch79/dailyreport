@@ -5009,61 +5009,14 @@ async function fetchWeather(){
        (연 누적은 로컬 rainData30이 최근 ~90일치만 갖고 있어 격자모델로는 계산이
        안 되므로, 이 조회가 실패하면 이전 값을 그대로 둔다) */
     {
-      const _manualMR2=getStatManual(targetDate,'monthRain');
-      const _manualYR=getStatManual(targetDate,'yearRain');
-      try{
-        const parseDaySum=(txt)=>{
-          const lines=txt.split('\n').map(s=>s.trim()).filter(s=>s&&!s.startsWith('#'));
-          let sum=0,count=0;
-          lines.forEach(l=>{
-            const cols=l.split(',');
-            const v=parseFloat(cols[5]);
-            if(!isNaN(v)&&v>=0){ sum+=v; count++; }
-          });
-          return {sum,count};
-        };
-        const fetchKmaRange=(tm1,tm2)=>{
-          const ctrl=new AbortController();
-          const tid=setTimeout(()=>ctrl.abort(),8000);
-          return fetch(`https://empty-morning-c054.loveinch2000.workers.dev/?path=sfc_aws_day.php&tm1=${tm1}&tm2=${tm2}&obs=rn_day&stn=460`,{signal:ctrl.signal})
-            .then(r=>r.text()).finally(()=>clearTimeout(tid));
-        };
-        const tISO=targetDate.replace(/-/g,'');
-        const monthStartISO=`${tyyyy}${tmo}01`;
-        const yearStartISO=`${tyyyy}0101`;
-        /* 요청한 날짜범위 자체의 예상 일수 — 월초(9/1~9/3처럼) 며칠 안 됐으면
-           애초에 3줄만 와도 정상. 고정된 "5줄" 기준을 쓰면 매달 1~4일에는
-           실측 데이터가 정상적으로 와도 항상 "범위조회 미지원"으로 오판해
-           예측값으로 되돌아가버리는 버그가 있었음 — 요청 범위 일수와
-           비교해서 최소 기준을 그때그때 낮춰 잡도록 수정 */
-        const expectedMonthDays=parseInt(tdd,10)||1;
-        const expectedYearDays=Math.round((new Date(targetDate)-new Date(`${tyyyy}-01-01`))/86400000)+1;
-        const requiredMonthCount=Math.min(5,expectedMonthDays);
-        const requiredYearCount=Math.min(5,expectedYearDays);
-        const [mRes,yRes]=await Promise.allSettled([
-          fetchKmaRange(monthStartISO,tISO),
-          fetchKmaRange(yearStartISO,tISO)
-        ]);
-        if(mRes.status==='fulfilled'){
-          const {sum,count}=parseDaySum(mRes.value);
-          /* 요청 범위 일수 대비 너무 적은 줄(전형적으로 범위 무시하고 하루치 1줄만
-             돌아오는 경우)만 "범위조회 미지원"으로 보고 격자모델값을 유지한다 */
-          if(count>=requiredMonthCount){
-            kmaOverrideMonthRain=sum;
-            if(_manualMR2===undefined) document.getElementById('w-month-rain').textContent=sum.toFixed(1);
-          }
-        } else console.warn('[날씨] 월 누적강수량 기상청 조회 실패(격자 합산값 유지)',mRes.reason);
-        if(yRes.status==='fulfilled'){
-          const {sum,count}=parseDaySum(yRes.value);
-          if(count>=requiredYearCount){
-            kmaOverrideYearRain=sum;
-            const _yrEl2=document.getElementById('w-year-rain');
-            if(_yrEl2 && _manualYR===undefined) _yrEl2.textContent=sum.toFixed(1);
-          }
-        } else console.warn('[날씨] 연 누적강수량 기상청 조회 실패',yRes.reason);
-      }catch(eKmaCum){console.warn('[날씨] 월/연 누적강수량 조회 중 오류',eKmaCum);}
-      if(_manualMR2!==undefined) document.getElementById('w-month-rain').textContent=_manualMR2;
-      {const _yrEl3=document.getElementById('w-year-rain'); if(_yrEl3 && _manualYR!==undefined) _yrEl3.textContent=_manualYR;}
+      /* 예전: 기상청에 월/연 범위를 다시 조회해 합산 → 금일 강우량을 수동으로 고쳐도 누적에는 반영되지 않았음.
+         지금: 일보(금일 강우량) 기준 단일 합산. 기상청 실측은 일보가 없는 날을 채우는 데만 쓴다 */
+      try{ await ensureYearRain(parseInt(tyyyy,10)); }catch(eEns){}
+      const _cum=getRainCum(targetDate);
+      kmaOverrideMonthRain=_cum.month; kmaOverrideYearRain=_cum.year;
+      const _manualMR2=getStatManual(targetDate,'monthRain'), _manualYR=getStatManual(targetDate,'yearRain');
+      document.getElementById('w-month-rain').textContent=(_manualMR2!==undefined)?_manualMR2:_cum.month.toFixed(1);
+      {const _yrEl3=document.getElementById('w-year-rain'); if(_yrEl3) _yrEl3.textContent=(_manualYR!==undefined)?_manualYR:_cum.year.toFixed(1);}
     }
 
     /* 날씨 캐시 저장 — 기존 캐시와 병합해서 누적 보존 */
@@ -5099,6 +5052,7 @@ async function fetchWeather(){
     {
       const _targetEntry=rainData30.find(d=>d.date===targetDate);
       if(_targetEntry) document.getElementById('inp-rain').value=_targetEntry.rain||0;
+      updateRainCumCard(); /* 최종 금일 강우량(수동 > 실측 > 예측)이 정해진 뒤 누적을 다시 맞춤 */
     }
     /* ── 수동/실측/예측 배지는 반드시 병합(mergeRainData) 이후에 계산해야 함 ──
        병합 전에 계산하면, 강수량의 manual 보호가 실제로 적용되는지 알기 전에
@@ -5248,12 +5202,12 @@ function parseKmaRnDayText(txt){
    잘려서 오는 경우가 있어(강우량 정합성 검사에서 실제 발견됨: "기상청 합계 0.0mm"),
    월 단위로 나눠서 여러 번 요청 — 한 달 분량은 훨씬 안정적으로 옴. 특정 달이
    실패해도 그 달만 비고 나머지는 정상적으로 채워짐(전체가 통째로 실패하지 않음) */
-async function fetchYearRainRange(year){
+async function fetchYearRainRange(year,startMo){
   const now=new Date();
   const isCurYear=year===now.getFullYear();
   const lastMonth=isCurYear?now.getMonth():11; /* 0-index */
   const map={};
-  for(let mo=0;mo<=lastMonth;mo++){
+  for(let mo=(startMo||0);mo<=lastMonth;mo++){
     const isLastMo=isCurYear&&mo===lastMonth;
     const tm1=`${year}${String(mo+1).padStart(2,'0')}01`;
     const endDay=isLastMo?now.getDate():new Date(year,mo+1,0).getDate();
@@ -5268,6 +5222,62 @@ async function fetchYearRainRange(year){
   return map;
 }
 let _yearRainFetchBusy={};
+/* ══ 강우량 단일 기준 ══
+   월·연 누적강우량(일 통계 카드 / 강우 현황 / 연도별 비교)은 모두 같은 날짜별 강우량 표에서 합산한다.
+   날짜별 값의 우선순위:  ① 지금 작성 화면에 입력된 금일 강우량  ② 수동 입력값  ③ 저장된 일보의 강우량
+                          ④ 일보가 없는 날만 기상청 실촌(460) 실측값
+   → 일보의 금일 강우량만 정확하면 누적은 자동으로 맞고, 일보를 안 쓴 날의 비도 빠지지 않음 */
+const YEAR_RAIN_META_KEY='hist_rain_year_meta_v1';
+function _rainTodayISO(){const n=new Date();return`${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`;}
+function getRainYearMap(year){
+  const map={...(getYearRainCache()[year]||{}),...getYearlyRainFromRecords(year)};
+  const pre=year+'-';
+  const sm=loadStatManual();
+  Object.keys(sm).forEach(d=>{ if(d.startsWith(pre)&&Object.prototype.hasOwnProperty.call(sm[d],'rain')){ const v=parseFloat(sm[d].rain); if(!isNaN(v)) map[d]=v; } });
+  const cur=(typeof getPickerISO==='function'&&getPickerISO())||_rainTodayISO();
+  if(cur.startsWith(pre)){ const el=document.getElementById('inp-rain'); if(el&&el.value!==''){ const v=parseFloat(el.value); if(!isNaN(v)) map[cur]=v; } }
+  return map;
+}
+function getRainCum(iso){
+  const map=getRainYearMap(parseInt(iso.slice(0,4),10)), mp=iso.slice(0,7);
+  let year=0,month=0;
+  Object.keys(map).forEach(d=>{ if(d>iso) return; year+=map[d]; if(d.slice(0,7)===mp) month+=map[d]; });
+  return {year,month};
+}
+/* 일 통계 카드의 월·연 누적강우량을 위 기준으로 갱신(직접 고쳐둔 수동값이 있으면 그 값 유지) */
+function updateRainCumCard(){
+  try{
+    const iso=(typeof getPickerISO==='function'&&getPickerISO())||_rainTodayISO();
+    const c=getRainCum(iso);
+    const mEl=document.getElementById('w-month-rain'), yEl=document.getElementById('w-year-rain');
+    const mm=getStatManual(iso,'monthRain'), ym=getStatManual(iso,'yearRain');
+    if(mEl) mEl.textContent=(mm!==undefined)?mm:c.month.toFixed(1);
+    if(yEl) yEl.textContent=(ym!==undefined)?ym:c.year.toFixed(1);
+  }catch(e){}
+}
+/* 기상청 실측(일보 없는 날을 채우는 용도)을 연도별로 받아 기기에 보관.
+   지난 해는 한 번만, 올해는 하루에 한 번 마지막으로 받은 달부터 다시 받아 최신으로 유지 */
+let _yearRainTried={};
+function ensureYearRain(year){
+  const today=_rainTodayISO(), curYear=parseInt(today.slice(0,4),10);
+  if(!year||year>curYear) return Promise.resolve(false);
+  let meta={}; try{meta=JSON.parse(localStorage.getItem(YEAR_RAIN_META_KEY)||'{}');}catch(e){}
+  const cached=getYearRainCache()[year];
+  if(year<curYear){ if((cached&&Object.keys(cached).length)||meta[year]) return Promise.resolve(false); }
+  else if(meta[year]===today) return Promise.resolve(false);
+  if(_yearRainFetchBusy[year]) return _yearRainFetchBusy[year];
+  if(_yearRainTried[year]===today) return Promise.resolve(false);
+  _yearRainTried[year]=today;
+  const startMo=(year===curYear&&meta[year]&&cached)?Math.max(0,parseInt(String(meta[year]).slice(5,7),10)-1):0;
+  const pr=fetchYearRainRange(year,startMo).then(map=>{
+    if(!Object.keys(map).length) return false;
+    const c=getYearRainCache(); c[year]={...(c[year]||{}),...map}; setYearRainCache(c);
+    let m2={}; try{m2=JSON.parse(localStorage.getItem(YEAR_RAIN_META_KEY)||'{}');}catch(e){}
+    m2[year]=today; try{localStorage.setItem(YEAR_RAIN_META_KEY,JSON.stringify(m2));}catch(e){}
+    return true;
+  }).catch(()=>false).finally(()=>{ delete _yearRainFetchBusy[year]; });
+  _yearRainFetchBusy[year]=pr; return pr;
+}
 
 /* ── 강우량 정합성 검사 (관리자 · 설정) ──
    저장된 각 날짜의 weather.rain 값과, 기상청 실측(같은 endpoint/기준)을
@@ -5354,22 +5364,14 @@ function renderRainYearlyChart(){
   const years=[curYear-2,curYear-1,curYear];
   const cache=getYearRainCache();
   const dataByYear={};
-  const needFetch=[];
+  const loading=[];
   years.forEach(y=>{
-    const local=getYearlyRainFromRecords(y);
-    const cached=cache[y];
-    dataByYear[y]=cached?{...cached,...local}:local; /* 로컬 기록이 더 정확·최신이므로 캐시보다 우선 덮어씀 */
-    if(!cached && Object.keys(local).length===0) needFetch.push(y);
+    dataByYear[y]=getRainYearMap(y);
+    if(!cache[y] && Object.keys(dataByYear[y]).length===0) loading.push(y);
   });
-  el.innerHTML=buildRainYearlyChartSVG(dataByYear,years,needFetch);
-  needFetch.forEach(y=>{
-    if(_yearRainFetchBusy[y])return;
-    _yearRainFetchBusy[y]=true;
-    fetchYearRainRange(y)
-      .then(map=>{ const c=getYearRainCache(); c[y]=map; setYearRainCache(c); })
-      .catch(()=>{ const c=getYearRainCache(); c[y]={}; setYearRainCache(c); }) /* 실패해도 빈 값으로 캐시해 무한 재조회 방지 */
-      .finally(()=>{ _yearRainFetchBusy[y]=false; renderRainYearlyChart(); });
-  });
+  el.innerHTML=buildRainYearlyChartSVG(dataByYear,years,loading.filter(y=>_yearRainTried[y]!==_rainTodayISO()||_yearRainFetchBusy[y]));
+  /* 일보가 없는 날을 채울 기상청 실측을 필요할 때만 받아오고, 새로 받았으면 다시 그림 */
+  years.forEach(y=>{ ensureYearRain(y).then(changed=>{ if(changed){ renderRainYearlyChart(); updateRainCumCard(); } }); });
 }
 function buildRainYearlyChartSVG(dataByYear,years,loadingYears){
   const isLeap=y=>(y%4===0&&y%100!==0)||y%400===0;
@@ -5611,6 +5613,7 @@ function renderRainChart(page){
   if(!wrap) return;
   if(typeof page==='number') _rainPage=page;
   renderRainYearlyChart(); /* 연도별 누적강우량 비교 차트도 함께 갱신 (강우 현황과 별개 데이터 소스라 독립적으로 그림) */
+  updateRainCumCard(); /* 일 통계 카드의 월·연 누적도 같은 기준으로 함께 갱신 */
 
   /* 요청으로 수정: "강우 현황" 차트는 rainData30(그리드모델 예측 API, "오늘"만
      실측으로 덮어씀)을 써서, 지난 날짜는 일통계·연도별 누적 비교(둘 다 실제
@@ -5618,9 +5621,12 @@ function renderRainChart(page){
      실제 저장된 기록이 있는 날짜는 그 값으로 덮어써서 항상 일치하게 함
      (사용자가 직접 수정(manual)한 값은 그대로 최우선 유지) */
   const _localRainMap=getLocalRainMapAll();
+  const _kmaYearCache=getYearRainCache(), _todayIsoRC=_rainTodayISO();
   rainData30.forEach(d=>{
     if(d.manual) return;
-    const rec=_localRainMap[d.date];
+    let rec=_localRainMap[d.date];
+    /* 일보가 없는 지난 날짜는 격자 예측값 대신 기상청 실측값으로 채움(누적 계산과 같은 기준) */
+    if(rec==null && d.date<_todayIsoRC){ const k=(_kmaYearCache[d.date.slice(0,4)]||{})[d.date]; if(k!=null) rec=k; }
     if(rec!=null && rec!==d.rain) d.rain=rec;
   });
 
@@ -5713,7 +5719,7 @@ function renderRainChart(page){
      기상청 캐시)를 재사용 */
   const pickerISO2=getPickerISO()||(()=>{const t=new Date();return`${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`;})();
   const [pY,pM]=pickerISO2.split('-').map(Number);
-  const yearMap=(()=>{const cache=getYearRainCache();const local=getYearlyRainFromRecords(pY);const cachedY=cache[pY]||{};return{...cachedY,...local};})();
+  const yearMap=getRainYearMap(pY); /* 일 통계 카드·연도별 비교와 같은 단일 기준 */
   let yearCum=0,monthCum=0;
   Object.keys(yearMap).forEach(iso=>{
     if(iso>pickerISO2)return;
