@@ -15525,11 +15525,13 @@ function showPdfGuide(ri){
     <button class="sk-btn sk-edit-only" data-sk-view="entry" onclick="skView('entry')">✏️ 입출고 등록</button>
     <button class="sk-btn" data-sk-view="log" onclick="skView('log')">📒 수불내역</button>
     <button class="sk-btn sk-edit-only" data-sk-view="items" onclick="skView('items')">🗂 품목관리</button>
+    <button class="sk-btn" data-sk-view="vendor" onclick="skView('vendor')">🏢 업체별 매출</button>
   </div>
 
   <!-- 재고현황 -->
   <div id="sk-v-stock">
     <div class="sk-sum" id="sk-summary"></div>
+    <div class="sk-card" id="sk-money"></div>
     <div class="sk-card">
       <div class="sk-tools">
         <input id="sk-q" placeholder="🔍 품목·규격·용도 검색" oninput="skRenderStock()" style="flex:1 1 180px;">
@@ -15581,6 +15583,17 @@ function showPdfGuide(ri){
         <input id="sk-log-q" placeholder="🔍 품목·사용처 검색" oninput="skRenderLog()" style="flex:1 1 160px;">
       </div>
       <div class="sk-tbl-wrap"><table class="sk-tbl" id="sk-log-tbl"></table></div>
+    </div>
+  </div>
+
+  <!-- 업체별 매출 -->
+  <div id="sk-v-vendor" style="display:none;">
+    <div class="sk-card">
+      <div class="sk-tools">
+        <b style="font-size:13px;color:#234;">🏢 업체별 매출 (입고금액)</b>
+        <select id="sk-vd-month" onchange="skRenderVendor()" style="margin-left:auto;"></select>
+      </div>
+      <div id="sk-vendor-body"></div>
     </div>
   </div>
 
@@ -15667,14 +15680,15 @@ function skItemById(id){return _skItems.find(i=>i.id===id);}
 /* ── 화면 전환 ── */
 function skView(v){
   _skViewName=v;
-  ['stock','entry','log','items'].forEach(n=>{const e=document.getElementById('sk-v-'+n); if(e)e.style.display=(n===v)?'':'none';});
+  ['stock','entry','log','items','vendor'].forEach(n=>{const e=document.getElementById('sk-v-'+n); if(e)e.style.display=(n===v)?'':'none';});
   document.querySelectorAll('[data-sk-view]').forEach(b=>b.classList.toggle('on',b.dataset.skView===v));
   if(v==='entry' && !document.getElementById('sk-e-date').value) skResetEntry();
   skRenderAll();
 }
 function skRenderAll(){
   if(!document.getElementById('panel-sk')) return;
-  if(_skViewName==='stock') skRenderStock();
+  if(_skViewName==='stock'){ skRenderStock(); skRenderMoney(); }
+  if(_skViewName==='vendor') skRenderVendor();
   if(_skViewName==='log') skRenderLog();
   if(_skViewName==='items') skRenderItems();
   skFillPlaces();
@@ -15735,7 +15749,7 @@ function skShowItem(id){
   document.getElementById('sk-modal').classList.toggle('sk-ro',!skCanEdit());
   document.getElementById('sk-modal-bg').style.display='flex';
 }
-function skCloseModal(){document.getElementById('sk-modal-bg').style.display='none';}
+function skCloseModal(){document.getElementById('sk-modal-bg').style.display='none';document.getElementById('sk-modal').style.maxWidth='';}
 function skQuickEntry(id,io){ skCloseModal(); skView('entry'); skResetEntry(); skSetIo(io); skPickItem(id); document.getElementById('sk-e-qty').focus(); }
 
 /* ── 입출고 등록 ── */
@@ -15782,6 +15796,7 @@ async function skSaveTx(){
   if(_skIo==='출고' && qty>avail && !confirm(`현재고(${skFmt(avail)})보다 많은 수량입니다. 그래도 저장할까요?`)) return;
   const data={date,itemId:it.id,itemName:it.name,spec:it.spec||'',unit:it.unit||'',io:_skIo,qty,
     place:document.getElementById('sk-e-place').value.trim(),note:document.getElementById('sk-e-note').value.trim(),
+    price:skNum(it.price),vendor:it.vendor||'',
     by:_fbUser.email,updatedAt:firebase.firestore.FieldValue.serverTimestamp()};
   const btn=document.getElementById('sk-e-save'); btn.disabled=true;
   try{
@@ -15867,6 +15882,84 @@ async function skDelItem(id){
   try{await _fbDb.collection(SK_COL_ITEMS).doc(id).delete(); skCloseModal(); showToast('삭제되었습니다');}catch(e){showToast('⚠️ 삭제 실패');}
 }
 
+
+/* ═══════════ 금액 집계 · 업체별 매출 ═══════════
+   금액 = 수량 × 단가. 단가·납품업체는 입출고 내역에 기록된 값(엑셀 일일수불대장의 단가·납품업체)을 우선 쓰고,
+   없으면 품목의 단가·납품업체를 쓴다 */
+function skTxPrice(t){ if(t.price!=null&&t.price!=='') return skNum(t.price); const it=skItemById(t.itemId); return it?skNum(it.price):0; }
+function skTxAmt(t){ return skNum(t.qty)*skTxPrice(t); }
+function skTxVendor(t){ const it=skItemById(t.itemId); return String(t.vendor||(it&&it.vendor)||'').trim()||'업체 미지정'; }
+function skWon(n){ return skFmt(Math.round(n))+'원'; }
+let _skListFilters={};
+/* 재고현황: 전체·월별 입고/출고 금액 (금액을 누르면 해당 내역 팝업) */
+function skRenderMoney(){
+  const el=document.getElementById('sk-money'); if(!el) return;
+  const m={}; let ti=0,to=0;
+  _skTx.forEach(t=>{ const ym=String(t.date||'').slice(0,7); const a=skTxAmt(t); const r=m[ym]||(m[ym]={i:0,o:0}); if(t.io==='입고'){r.i+=a;ti+=a;} else {r.o+=a;to+=a;} });
+  const months=Object.keys(m).filter(Boolean).sort().reverse();
+  const cell=(amt,ym,io)=>amt?`<a href="javascript:void 0" onclick="skShowTxList('${ym}','${io}','')" style="color:inherit;text-decoration:underline;text-decoration-color:#b8cfe6;text-underline-offset:3px;font-weight:700;">${skWon(amt)}</a>`:'<span class="sk-zero">-</span>';
+  el.innerHTML=`<div style="font-size:13px;font-weight:800;color:#234;margin-bottom:8px;">💰 입고·출고 금액 <span style="font-size:11px;font-weight:500;color:#889;">금액을 누르면 해당 내역을 볼 수 있습니다</span></div>
+    <div class="sk-tbl-wrap" style="max-height:260px;overflow:auto;"><table class="sk-tbl" style="min-width:0;">
+    <thead><tr><th>기간</th><th style="text-align:right;">입고금액</th><th style="text-align:right;">출고금액</th></tr></thead><tbody>
+    <tr style="background:#f4f8fc;"><td><b>전체</b></td><td style="text-align:right;">${cell(ti,'','입고')}</td><td style="text-align:right;">${cell(to,'','출고')}</td></tr>
+    ${months.map(ym=>`<tr><td>${ym.slice(0,4)}년 ${parseInt(ym.slice(5))}월</td><td style="text-align:right;">${cell(m[ym].i,ym,'입고')}</td><td style="text-align:right;">${cell(m[ym].o,ym,'출고')}</td></tr>`).join('')||'<tr><td colspan="3" style="color:#999;padding:14px;">입출고 내역이 없습니다</td></tr>'}
+    </tbody></table></div>`;
+}
+/* 내역 팝업: 기간(ym, ''=전체) · 입출고 · 업체(''=전체, '__etc__'=기타 묶음) */
+function skShowTxList(ym,io,vendor){
+  const etc=_skListFilters.etcSet||new Set();
+  const list=_skTx.filter(t=>(!ym||String(t.date).startsWith(ym))&&(!io||t.io===io)&&(!vendor||(vendor==='__etc__'?etc.has(skTxVendor(t)):skTxVendor(t)===vendor)))
+    .sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.ts||0)-(a.ts||0));
+  const tot=list.reduce((s,t)=>s+skTxAmt(t),0);
+  const title=[ym?`${ym.slice(0,4)}년 ${parseInt(ym.slice(5))}월`:'전체 기간', vendor?(vendor==='__etc__'?'기타 업체':vendor):'', io?io+' 내역':'입출고 내역'].filter(Boolean).join(' · ');
+  const md=document.getElementById('sk-modal'); md.style.maxWidth='900px';
+  md.innerHTML=`<h3>${skEsc(title)}</h3>
+    <div style="font-size:13px;margin-bottom:8px;">합계 <b style="font-size:16px;color:#185FA5;">${skWon(tot)}</b> <span style="color:#889;">(${list.length}건)</span></div>
+    <div class="sk-tbl-wrap" style="max-height:60vh;overflow:auto;"><table class="sk-tbl">
+    <thead><tr><th>일자</th><th>제품명</th><th>규격</th><th>구분</th><th>수량</th><th>단가</th><th>금액</th><th>사용처</th><th>납품업체</th></tr></thead><tbody>
+    ${list.map(t=>{const it=skItemById(t.itemId);return `<tr><td style="white-space:nowrap;">${skEsc(t.date)}</td><td class="l"><b>${skEsc(it?it.name:t.itemName)}</b></td><td>${skEsc((it&&it.spec)||t.spec||'')}</td>
+      <td><span class="sk-tag ${t.io==='입고'?'in':'out'}">${t.io}</span></td><td>${skFmt(skNum(t.qty))}</td><td style="text-align:right;">${skFmt(skTxPrice(t))}</td><td style="text-align:right;"><b>${skFmt(skTxAmt(t))}</b></td>
+      <td class="l">${skEsc(t.place||'')}</td><td style="font-size:11px;">${skEsc(skTxVendor(t))}</td></tr>`;}).join('')||'<tr><td colspan="9" style="color:#999;padding:16px;">내역이 없습니다</td></tr>'}
+    </tbody></table></div>
+    <div style="text-align:right;margin-top:10px;"><button class="sk-btn" onclick="skCloseModal()">닫기</button></div>`;
+  document.getElementById('sk-modal-bg').style.display='flex';
+}
+/* 업체별 매출(=업체에서 입고한 금액) 원형 차트.
+   색은 전체 기간 순위로 업체마다 고정 — 월을 바꿔도 같은 업체는 같은 색. 6번째부터는 '기타'로 묶음 */
+const SK_PIE_COLORS=['#2a78d6','#eb6834','#1baf7a','#eda100','#e87ba4'], SK_PIE_ETC='#9a9a94';
+function skRenderVendor(){
+  const wrap=document.getElementById('sk-vendor-body'); if(!wrap) return;
+  const sel=document.getElementById('sk-vd-month');
+  const months=[...new Set(_skTx.filter(t=>t.io==='입고').map(t=>String(t.date||'').slice(0,7)).filter(Boolean))].sort().reverse();
+  const prev=sel.value; sel.innerHTML='<option value="">전체 기간</option>'+months.map(x=>`<option value="${x}">${x.slice(0,4)}년 ${parseInt(x.slice(5))}월</option>`).join(''); sel.value=months.includes(prev)?prev:'';
+  const ym=sel.value;
+  const all={}; _skTx.forEach(t=>{ if(t.io==='입고'){const v=skTxVendor(t); all[v]=(all[v]||0)+skTxAmt(t);} });
+  const rank=Object.keys(all).sort((a,b)=>all[b]-all[a]); const top=rank.slice(0,5); const etcSet=new Set(rank.slice(5)); _skListFilters.etcSet=etcSet;
+  const color=v=>{const i=top.indexOf(v); return i>=0?SK_PIE_COLORS[i]:SK_PIE_ETC;};
+  const cur={}; let cnt={}; _skTx.forEach(t=>{ if(t.io==='입고'&&(!ym||String(t.date).startsWith(ym))){ let v=skTxVendor(t); if(etcSet.has(v)) v='__etc__'; cur[v]=(cur[v]||0)+skTxAmt(t); cnt[v]=(cnt[v]||0)+1; } });
+  const segs=[...top,'__etc__'].filter(v=>cur[v]>0).map(v=>({v,label:v==='__etc__'?`기타 (${etcSet.size}개 업체)`:v,amt:cur[v],n:cnt[v],c:v==='__etc__'?SK_PIE_ETC:color(v)}));
+  const total=segs.reduce((s,x)=>s+x.amt,0);
+  if(!total){ wrap.innerHTML='<div style="padding:30px;text-align:center;color:#999;">해당 기간에 금액이 있는 입고 내역이 없습니다 (단가가 입력된 입고만 집계됩니다)</div>'; return; }
+  const R=100,r=58,C=110; let a0=-Math.PI/2;
+  const pt=(rad,a)=>`${(C+rad*Math.cos(a)).toFixed(2)} ${(C+rad*Math.sin(a)).toFixed(2)}`;
+  const paths=segs.map(s=>{ const frac=s.amt/total, a1=a0+frac*2*Math.PI; let d;
+    if(frac>0.9999) d=`M ${pt(R,0)} A ${R} ${R} 0 1 1 ${pt(R,Math.PI)} A ${R} ${R} 0 1 1 ${pt(R,0)} Z M ${pt(r,0)} A ${r} ${r} 0 1 0 ${pt(r,Math.PI)} A ${r} ${r} 0 1 0 ${pt(r,0)} Z`;
+    else { const lg=frac>0.5?1:0; d=`M ${pt(R,a0)} A ${R} ${R} 0 ${lg} 1 ${pt(R,a1)} L ${pt(r,a1)} A ${r} ${r} 0 ${lg} 0 ${pt(r,a0)} Z`; }
+    a0=a1;
+    return `<path d="${d}" fill="${s.c}" fill-rule="evenodd" stroke="#fff" stroke-width="2" style="cursor:pointer;transition:opacity .12s;" onmouseover="this.style.opacity=.8" onmouseout="this.style.opacity=1" onclick="skShowTxList('${ym}','입고','${s.v.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;')}')"><title>${skEsc(s.label)} · ${skWon(s.amt)} (${(frac*100).toFixed(1)}%)</title></path>`; }).join('');
+  wrap.innerHTML=`<div style="display:flex;flex-wrap:wrap;gap:18px;align-items:center;justify-content:center;">
+    <svg viewBox="0 0 220 220" role="img" aria-label="업체별 입고금액 비율" style="width:240px;max-width:70vw;flex:0 0 auto;">${paths}
+      <text x="110" y="104" text-anchor="middle" font-size="11" fill="#52514e">입고금액 합계</text>
+      <text x="110" y="124" text-anchor="middle" font-size="15" font-weight="800" fill="#0b0b0b">${skFmt(Math.round(total))}</text></svg>
+    <div class="sk-tbl-wrap" style="flex:1 1 300px;"><table class="sk-tbl" style="min-width:0;">
+      <thead><tr><th style="text-align:left;">업체</th><th style="text-align:right;">입고금액</th><th style="text-align:right;">비율</th><th>건수</th></tr></thead><tbody>
+      ${segs.map(s=>`<tr class="click" onclick="skShowTxList('${ym}','입고','${s.v.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;')}')"><td class="l"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${s.c};margin-right:7px;"></span><b>${skEsc(s.label)}</b></td>
+        <td style="text-align:right;font-weight:700;">${skWon(s.amt)}</td><td style="text-align:right;">${(s.amt/total*100).toFixed(1)}%</td><td>${s.n}</td></tr>`).join('')}
+      <tr style="background:#f4f8fc;font-weight:800;"><td class="l">합계</td><td style="text-align:right;">${skWon(total)}</td><td style="text-align:right;">100%</td><td>${segs.reduce((s,x)=>s+x.n,0)}</td></tr>
+      </tbody></table></div></div>
+    <div class="sk-note">차트 조각이나 업체 줄을 누르면 그 업체의 입고 내역을 볼 수 있습니다. 매출은 업체에서 입고한 금액(수량 × 단가) 기준입니다.</div>`;
+}
+
 /* ── 엑셀 라이브러리(SheetJS) 필요할 때만 불러오기 ── */
 function skLoadXlsx(){
   if(window.XLSX) return Promise.resolve();
@@ -15897,7 +15990,7 @@ async function skImportFile(inp){
         const hs=r.map(H);
         const idx=(...names)=>hs.findIndex(h=>names.some(n=>h===n||h.startsWith(n)));
         if(hs.includes('제품명') && hs.some(h=>h.startsWith('전년도'))){ mode='ledger'; col={name:idx('제품명'),spec:idx('규격'),use:idx('용도'),unit:idx('단위'),carry:idx('전년도'),price:idx('단가'),vendor:idx('비고')}; return; }
-        if(hs.includes('일자') && hs.includes('제품명')){ hasDaily=true; mode='daily'; col={date:idx('일자'),name:idx('제품명'),spec:idx('규격'),place:idx('사용처'),io:idx('입출고'),unit:idx('단위'),qty:idx('수량'),note:idx('비고')}; return; }
+        if(hs.includes('일자') && hs.includes('제품명')){ hasDaily=true; mode='daily'; col={date:idx('일자'),name:idx('제품명'),spec:idx('규격'),place:idx('사용처'),io:idx('입출고'),unit:idx('단위'),qty:idx('수량'),note:idx('비고'),price:idx('단가'),vendor:idx('비고납품업체')}; return; }
         if(hs[0]==='구분' && hs.includes('규격') && hs.includes('단위') && !hs.includes('제품명')){ mode='master'; col={name:0,spec:idx('규격'),unit:idx('단위'),price:idx('단가'),use:idx('용도'),vendor:idx('비고납품업체','비고')}; return; }
         if(!mode) return;
         const v=i=>i>=0?r[i]:'';
@@ -15917,7 +16010,7 @@ async function skImportFile(inp){
           let d=v(col.date); if(d instanceof Date) d=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
           else if(typeof d==='number'){const p=XLSX.SSF.parse_date_code(d); d=`${p.y}-${String(p.m).padStart(2,'0')}-${String(p.d).padStart(2,'0')}`;}
           else { const m=String(d).match(/(\d{2,4})\D+(\d{1,2})\D+(\d{1,2})/); if(!m) return; const y=m[1].length===2?'20'+m[1]:m[1]; d=`${y}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`; }
-          txs.push({date:d,name,spec:String(v(col.spec)).trim(),io:/입/.test(String(v(col.io)))?'입고':'출고',qty:q,place:String(v(col.place)).trim(),note:String(v(col.note)).trim(),unit:String(v(col.unit)).trim()});
+          txs.push({date:d,name,spec:String(v(col.spec)).trim(),io:/입/.test(String(v(col.io)))?'입고':'출고',qty:q,place:String(v(col.place)).trim(),note:String(v(col.note)).trim(),unit:String(v(col.unit)).trim(),price:col.price>=0&&v(col.price)!==''?skNum(v(col.price)):null,vendor:col.vendor>=0?String(v(col.vendor)).trim().replace(/^0$/,''):''});
         }
       });
     });
@@ -15962,6 +16055,9 @@ async function skImportFile(inp){
     const TS=firebase.firestore.FieldValue.serverTimestamp();
     /* 중복 품목 정리: 입출고 내역을 남길 품목으로 옮기고 나머지는 삭제 */
     txDel.forEach(t=>op(b=>b.delete(_fbDb.collection(SK_COL_TX).doc(t.id))));
+    /* 이미 들어있는 내역에도 엑셀의 단가·납품업체를 맞춰 넣음(금액·업체별 매출 집계용) */
+    { const used={}; txs.forEach(t=>{ const i=used[t._sig]=(used[t._sig]||0)+1; const ex=(haveSig[t._sig]||[])[i-1]; if(!ex||txDelIds.has(ex.id)) return;
+        const pr=t.price==null?null:t.price; if((ex.price==null?null:skNum(ex.price))!==pr || (ex.vendor||'')!==t.vendor) op(b=>b.set(_fbDb.collection(SK_COL_TX).doc(ex.id),{price:pr,vendor:t.vendor},{merge:true})); }); }
     _skTx.forEach(t=>{ if(remap[t.itemId] && !txDelIds.has(t.id)){ const k=skItemById(remap[t.itemId]); op(b=>b.set(_fbDb.collection(SK_COL_TX).doc(t.id),{itemId:k.id,itemName:k.name},{merge:true})); } });
     dupDel.forEach(it=>op(b=>b.delete(_fbDb.collection(SK_COL_ITEMS).doc(it.id))));
     itemDel.forEach(it=>op(b=>b.delete(_fbDb.collection(SK_COL_ITEMS).doc(it.id))));
@@ -15987,7 +16083,7 @@ async function skImportFile(inp){
     txAdd.forEach(t=>{
       let it=exist[key(t.name)];
       if(!it){ const ref=_fbDb.collection(SK_COL_ITEMS).doc(); it={id:ref.id,name:t.name,spec:t.spec,unit:t.unit}; exist[key(t.name)]=it; op(b=>b.set(ref,{name:t.name,spec:t.spec,unit:t.unit,use:'',vendor:'',price:0,carry:0,updatedAt:TS})); }
-      const d={date:t.date,itemId:it.id,itemName:it.name,spec:it.spec||'',unit:it.unit||'',io:t.io,qty:t.qty,place:t.place,note:t.note,by:_fbUser.email,ts:ts++,createdAt:TS};
+      const d={date:t.date,itemId:it.id,itemName:it.name,spec:it.spec||'',unit:it.unit||'',io:t.io,qty:t.qty,place:t.place,note:t.note,price:t.price,vendor:t.vendor,by:_fbUser.email,ts:ts++,createdAt:TS};
       op(b=>b.set(_fbDb.collection(SK_COL_TX).doc(),d));
     });
     commits.push(batch.commit()); await Promise.all(commits);
@@ -16007,7 +16103,7 @@ async function skExportXlsx(){
     const tx=[..._skTx].sort((a,b)=>(a.date||'').localeCompare(b.date||'')||(a.ts||0)-(b.ts||0));
     const run={}; _skItems.forEach(it=>run[it.id]=skNum(it.carry));
     const daily=[[`S/K 일일수불대장(${yr}년도)`],['일자','제  품  명','규격','사 용 처','입출고','단 위','수량','비 고','현재고','단가','금액','입력자']];
-    tx.forEach(t=>{const it=skItemById(t.itemId)||{};const q=skNum(t.qty); if(run[t.itemId]!=null) run[t.itemId]+= t.io==='입고'?q:-q; const p=skNum(it.price);
+    tx.forEach(t=>{const it=skItemById(t.itemId)||{};const q=skNum(t.qty); if(run[t.itemId]!=null) run[t.itemId]+= t.io==='입고'?q:-q; const p=skTxPrice(t);
       daily.push([t.date,it.name||t.itemName,it.spec||t.spec||'',t.place||'',t.io,it.unit||t.unit||'',q,t.note||'',run[t.itemId]??'',p||'',p?p*q:'',String(t.by||'').split('@')[0]]);});
     const mst=[['S/K 품목 관리'],['구 분','규 격','단 위','단 가','용  도','비 고(납품업체)']];
     [..._skItems].sort((a,b)=>a.name.localeCompare(b.name,'ko')).forEach(it=>mst.push([it.name,it.spec||'',it.unit||'',skNum(it.price)||'',it.use||'',it.vendor||'']));
