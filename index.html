@@ -15887,7 +15887,7 @@ async function skImportFile(inp){
   try{
     await skLoadXlsx();
     const wb=XLSX.read(await file.arrayBuffer(),{type:'array',cellDates:true});
-    const items={}, txs=[];
+    const items={}, txs=[]; let hasDaily=false;
     const key=skNameKey;
     const H=v=>skNorm(v).replace(/[()]/g,'');
     wb.SheetNames.forEach(sn=>{
@@ -15897,7 +15897,7 @@ async function skImportFile(inp){
         const hs=r.map(H);
         const idx=(...names)=>hs.findIndex(h=>names.some(n=>h===n||h.startsWith(n)));
         if(hs.includes('제품명') && hs.some(h=>h.startsWith('전년도'))){ mode='ledger'; col={name:idx('제품명'),spec:idx('규격'),use:idx('용도'),unit:idx('단위'),carry:idx('전년도'),price:idx('단가'),vendor:idx('비고')}; return; }
-        if(hs.includes('일자') && hs.includes('제품명')){ mode='daily'; col={date:idx('일자'),name:idx('제품명'),spec:idx('규격'),place:idx('사용처'),io:idx('입출고'),unit:idx('단위'),qty:idx('수량'),note:idx('비고')}; return; }
+        if(hs.includes('일자') && hs.includes('제품명')){ hasDaily=true; mode='daily'; col={date:idx('일자'),name:idx('제품명'),spec:idx('규격'),place:idx('사용처'),io:idx('입출고'),unit:idx('단위'),qty:idx('수량'),note:idx('비고')}; return; }
         if(hs[0]==='구분' && hs.includes('규격') && hs.includes('단위') && !hs.includes('제품명')){ mode='master'; col={name:0,spec:idx('규격'),unit:idx('단위'),price:idx('단가'),use:idx('용도'),vendor:idx('비고납품업체','비고')}; return; }
         if(!mode) return;
         const v=i=>i>=0?r[i]:'';
@@ -15937,16 +15937,35 @@ async function skImportFile(inp){
       maxCarry[k]=Math.max(...arr.map(it=>skNum(it.carry)));
       sorted.slice(1).forEach(it=>{remap[it.id]=keep.id; dupDel.push(it);});
     });
+    /* ── 입출고 내역 중복 방지 ──
+       같은 파일을 여러 번 가져오면 내역이 그대로 또 추가되어 입고·출고가 2배, 3배로 불어나던 문제.
+       (일자+제품명+입출고+수량+사용처+비고)가 같은 내역은 같은 건으로 보고, 파일에 있는 건수만큼만 남긴다 */
+    const txSig=(date,name,io,qty,place,note)=>[date,key(name),io,skNum(qty),skNorm(place),skNorm(note)].join('|');
+    const fileSig={}; txs.forEach(t=>{t._sig=txSig(t.date,t.name,t.io,t.qty,t.place,t.note); fileSig[t._sig]=(fileSig[t._sig]||0)+1;});
+    const haveSig={}; [..._skTx].sort((a,b)=>(a.ts||0)-(b.ts||0)).forEach(t=>{ const it=skItemById(t.itemId); const sg=txSig(t.date,it?it.name:t.itemName,t.io,t.qty,t.place,t.note); (haveSig[sg]=haveSig[sg]||[]).push(t); });
+    /* 엑셀 기준 동기화: 파일에 일일수불대장이 있으면, 파일에 없는 입출고 내역(앱에서 직접 입력한 건 포함)은 모두 삭제.
+       일일수불대장 표가 없는 파일(품목만 있는 파일)에서는 내역을 건드리지 않음 */
+    const txDel=[]; if(hasDaily) Object.keys(haveSig).forEach(sg=>{ const ex=haveSig[sg], keepN=fileSig[sg]||0; if(ex.length>keepN) txDel.push(...ex.slice(keepN)); });
+    const txDelIds=new Set(txDel.map(t=>t.id));
+    const txDelDup=txDel.filter(t=>{const it=skItemById(t.itemId);return fileSig[txSig(t.date,it?it.name:t.itemName,t.io,t.qty,t.place,t.note)];}).length;
+    /* 파일에 없는 품목도 삭제(남는 입출고 내역이 걸려 있는 품목은 유지) */
+    const txNameKeys=new Set(txs.map(t=>key(t.name)));
+    const aliveItemIds=new Set(_skTx.filter(t=>!txDelIds.has(t.id)).map(t=>remap[t.itemId]||t.itemId));
+    const itemDel=list.length?Object.keys(exist).filter(k=>!items[k]&&!txNameKeys.has(k)&&!aliveItemIds.has(exist[k].id)).map(k=>exist[k]):[];
+    itemDel.forEach(it=>delete exist[key(it.name)]);
+    const seen={}; const txAdd=txs.filter(t=>{ seen[t._sig]=(seen[t._sig]||0)+1; return seen[t._sig]>((haveSig[t._sig]||[]).length); });
     const newCnt=list.filter(o=>!exist[key(o.name)]).length, updCnt=list.length-newCnt;
-    if(!confirm(`엑셀에서 품목 ${list.length}개, 입출고 내역 ${txs.length}건을 찾았습니다.\n\n· 신규 품목 ${newCnt}개 추가\n· 제품명이 같은 기존 품목 ${updCnt}개는 이 파일 내용(규격·단가·납품업체 등)으로 갱신\n· 제품명이 중복된 기존 품목 ${dupDel.length}개는 하나로 합침 (입출고 내역은 유지)\n· 입출고 내역은 그대로 추가\n\n가져올까요?`)) return;
+    if(!confirm(`엑셀에서 품목 ${list.length}개, 입출고 내역 ${txs.length}건을 찾았습니다.\n\n· 신규 품목 ${newCnt}개 추가\n· 제품명이 같은 기존 품목 ${updCnt}개는 이 파일 내용(규격·단가·납품업체 등)으로 갱신\n· 제품명이 중복된 기존 품목 ${dupDel.length}개는 하나로 합침 (입출고 내역은 유지)\n· 입출고 내역: 새로 추가 ${txAdd.length}건, 이미 들어있어 건너뜀 ${txs.length-txAdd.length}건\n· 중복된 입출고 내역 ${txDelDup}건 삭제\n· 엑셀에 없는 입출고 내역 ${txDel.length-txDelDup}건 삭제 (앱에서 직접 입력한 건 포함)\n· 엑셀에 없는 품목 ${itemDel.length}개 삭제\n\n※ 가져온 뒤에는 앱 자료가 이 엑셀과 똑같아집니다. 가져올까요?`)) return;
 
     let batch=_fbDb.batch(), n=0; const commits=[];
     const op=fn=>{fn(batch); if(++n%400===0){commits.push(batch.commit()); batch=_fbDb.batch();}};
     const TS=firebase.firestore.FieldValue.serverTimestamp();
     /* 중복 품목 정리: 입출고 내역을 남길 품목으로 옮기고 나머지는 삭제 */
-    _skTx.forEach(t=>{ if(remap[t.itemId]){ const k=skItemById(remap[t.itemId]); op(b=>b.set(_fbDb.collection(SK_COL_TX).doc(t.id),{itemId:k.id,itemName:k.name},{merge:true})); } });
+    txDel.forEach(t=>op(b=>b.delete(_fbDb.collection(SK_COL_TX).doc(t.id))));
+    _skTx.forEach(t=>{ if(remap[t.itemId] && !txDelIds.has(t.id)){ const k=skItemById(remap[t.itemId]); op(b=>b.set(_fbDb.collection(SK_COL_TX).doc(t.id),{itemId:k.id,itemName:k.name},{merge:true})); } });
     dupDel.forEach(it=>op(b=>b.delete(_fbDb.collection(SK_COL_ITEMS).doc(it.id))));
-    Object.entries(groups).forEach(([k,arr])=>{ /* 파일에 없는 중복 품목은 이월재고가 사라지지 않게 가장 큰 값을 유지 */
+    itemDel.forEach(it=>op(b=>b.delete(_fbDb.collection(SK_COL_ITEMS).doc(it.id))));
+    Object.entries(groups).forEach(([k,arr])=>{ if(!exist[k]) return; /* 파일에 없는 중복 품목은 이월재고가 사라지지 않게 가장 큰 값을 유지 */
       if(arr.length>1 && !(items[k]&&items[k].carry!=null) && skNum(exist[k].carry)!==maxCarry[k]) op(b=>b.set(_fbDb.collection(SK_COL_ITEMS).doc(exist[k].id),{carry:maxCarry[k]},{merge:true}));
     });
     /* 파일 내용 반영: 제품명이 같으면 덮어쓰기(파일에 값이 있는 항목만), 없으면 새로 추가 */
@@ -15966,14 +15985,14 @@ async function skImportFile(inp){
       }
     });
     let ts=Date.now();
-    txs.forEach(t=>{
+    txAdd.forEach(t=>{
       let it=exist[key(t.name)];
       if(!it){ const ref=_fbDb.collection(SK_COL_ITEMS).doc(); it={id:ref.id,name:t.name,spec:t.spec,unit:t.unit}; exist[key(t.name)]=it; op(b=>b.set(ref,{name:t.name,spec:t.spec,unit:t.unit,use:'',vendor:'',price:0,carry:0,updatedAt:TS})); }
       const d={date:t.date,itemId:it.id,itemName:it.name,spec:it.spec||'',unit:it.unit||'',io:t.io,qty:t.qty,place:t.place,note:t.note,by:_fbUser.email,ts:ts++,createdAt:TS};
       op(b=>b.set(_fbDb.collection(SK_COL_TX).doc(),d));
     });
     commits.push(batch.commit()); await Promise.all(commits);
-    showToast(`✅ 신규 ${newCnt}개 · 갱신 ${updCnt}개 · 중복 정리 ${dupDel.length}개 · 입출고 ${txs.length}건 완료`);
+    showToast(`✅ 신규 ${newCnt}개 · 갱신 ${updCnt}개 · 중복 정리 ${dupDel.length}개 · 입출고 추가 ${txAdd.length}건 · 내역 삭제 ${txDel.length}건 · 품목 삭제 ${itemDel.length}개 — 엑셀 기준으로 맞춤`);
   }catch(e){console.warn(e);showToast('⚠️ 가져오기 실패: '+(e.message||e));}
 }
 
