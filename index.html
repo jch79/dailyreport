@@ -705,6 +705,7 @@ html.fb-was-logged-in #fb-login-modal{display:none !important;}
     const data=JSON.parse(raw);
     if(!data||typeof data!=='object')return;
     Object.entries(data).forEach(([k,v])=>{
+      if(k==='golf_sk_backup_v1') return; /* S/K자재 백업은 「가져오기」로만 클라우드에 복원 */
       try{localStorage.setItem(k,typeof v==='string'?v:JSON.stringify(v));}catch(e){}
     });
     console.log('[작업일보] 내장 데이터 복원 완료:', Object.keys(data).length+'개 항목');
@@ -10501,8 +10502,14 @@ function exportDataFile(){
   const now=new Date();
   const dateStr=`${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`;
 
+  /* S/K자재(클라우드 전용 데이터)도 백업에 포함 — 조회에 실패해도 일보 내보내기는 계속 진행 */
+  let _skBkInfo='';
+  const _skBkStep=(typeof skBackupForExport==='function'?skBackupForExport():Promise.resolve(null))
+    .then(bk=>{ if(bk){ exportObj['golf_sk_backup_v1']=JSON.stringify(bk); _skBkInfo=` + S/K자재 품목 ${bk.items.length}개·입출고 ${bk.tx.length}건`; } })
+    .catch(e=>console.warn('[내보내기] S/K자재 백업 실패',e));
+
   /* 현재 HTML 파일에 데이터를 내장시켜 새 HTML로 다운로드 */
-  fetch(location.href)
+  _skBkStep.then(()=>fetch(location.href))
     .then(r=>{
       if(!r.ok) throw new Error(`페이지를 다시 불러오지 못했습니다 (HTTP ${r.status})`);
       return r.text();
@@ -10526,7 +10533,7 @@ function exportDataFile(){
       a.click();
       setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1000);
       localStorage.setItem(LAST_EXPORT_KEY, new Date().toISOString());
-      showToast(`📁 "${courseName}" ${recordCount}건 내보내기 완료 (HTML)`);
+      showToast(`📁 "${courseName}" ${recordCount}건${_skBkInfo} 내보내기 완료 (HTML)`,4000);
     })
     .catch(err=>{
       console.error('[내보내기] HTML 방식 실패:', err);
@@ -10544,7 +10551,7 @@ function exportDataFile(){
         a.click();
         setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1000);
         localStorage.setItem(LAST_EXPORT_KEY, new Date().toISOString());
-        showToast(`📁 JSON으로 내보내기 완료 (${recordCount}건)`);
+        showToast(`📁 JSON으로 내보내기 완료 (${recordCount}건${_skBkInfo})`,4000);
       }catch(err2){
         console.error('[내보내기] JSON 대체 방식도 실패:', err2);
         alert(`❌ 내보내기에 완전히 실패했습니다.\n오류: ${err2.message||err2}\n\n이 화면을 캡처해서 알려주시면 원인을 찾는 데 도움이 됩니다.`);
@@ -10589,11 +10596,14 @@ function importDataFile(event){
 
       /* 새 데이터 적재 */
       importedKeys.forEach(k=>{
+        if(k==='golf_sk_backup_v1') return; /* S/K자재 백업은 기기 저장소가 아니라 클라우드로 복원(아래) */
         try{localStorage.setItem(k,data[k]);}catch(e){}
       });
 
-      showToast('✅ 가져오기 완료! 페이지를 새로 고침합니다...');
-      setTimeout(()=>location.reload(),1200);
+      const _finishImport=()=>{ showToast('✅ 가져오기 완료! 페이지를 새로 고침합니다...'); setTimeout(()=>location.reload(),1200); };
+      if(data['golf_sk_backup_v1'] && typeof skRestoreBackup==='function'){
+        skRestoreBackup(data['golf_sk_backup_v1']).then(msg=>{ if(msg) alert(msg); }).catch(e=>console.warn(e)).then(_finishImport);
+      } else _finishImport();
     }catch(err){
       console.error(err);
       showToast('파일 읽기 오류: '+err.message);
@@ -16026,6 +16036,45 @@ function skRenderVendor(){
       <tr style="background:#f4f8fc;font-weight:800;"><td class="l">합계</td><td style="text-align:right;">${skWon(total)}</td><td style="text-align:right;">100%</td><td>${segs.reduce((s,x)=>s+x.n,0)}</td></tr>
       </tbody></table></div></div>
     <div class="sk-note">차트 조각이나 업체 줄을 누르면 그 업체의 입고 내역을 볼 수 있습니다. 매출은 업체에서 입고한 금액(수량 × 단가) 기준입니다.</div>`;
+}
+
+
+/* ═══════════ S/K자재 백업 (일보 「내보내기/가져오기」에 포함) ═══════════
+   S/K자재는 클라우드(Firestore)에만 있어서 예전 내보내기 파일에는 들어가지 않았음.
+   내보낼 때 품목·입출고 내역 전체를 'golf_sk_backup_v1' 항목으로 함께 담고,
+   가져올 때 확인을 받은 뒤 클라우드의 S/K자재를 그 내용으로 되돌린다 */
+const SK_BACKUP_KEY='golf_sk_backup_v1';
+function _skPlain(d){ const c={...d}; delete c.createdAt; delete c.updatedAt; return c; }
+async function skBackupForExport(){
+  let items=_skItems, tx=_skTx, src='cache';
+  if(_fbUser){
+    try{
+      const [a,b]=await Promise.all([_fbDb.collection(SK_COL_ITEMS).get(),_fbDb.collection(SK_COL_TX).get()]);
+      items=a.docs.map(d=>({id:d.id,...d.data()})); tx=b.docs.map(d=>({id:d.id,...d.data()})); src='cloud';
+    }catch(e){ console.warn('[S/K 백업] 클라우드 조회 실패 — 이 기기에 저장된 사본으로 백업',e); }
+  }
+  if(!items.length && !tx.length) return null;
+  return {v:1,exportedAt:new Date().toISOString(),src,items:items.map(_skPlain),tx:tx.map(_skPlain)};
+}
+/* 반환값: 사용자에게 알릴 안내문(없으면 '') */
+async function skRestoreBackup(raw){
+  let bk; try{ bk=typeof raw==='string'?JSON.parse(raw):raw; }catch(e){ return 'S/K자재 백업을 읽지 못해 복원하지 않았습니다. (일보는 정상 복원됩니다)'; }
+  if(!bk || !Array.isArray(bk.items) || !Array.isArray(bk.tx)) return '';
+  if(!_fbUser) return `이 파일에는 S/K자재 백업(품목 ${bk.items.length}개·입출고 ${bk.tx.length}건)이 들어 있지만, 로그인 상태가 아니라 복원하지 못했습니다.\n로그인한 뒤 다시 가져오기를 해 주세요. (일보는 정상 복원됩니다)`;
+  if(!skCanMaster()) return 'S/K자재 복원은 관리자/팀원만 할 수 있어 건너뛰었습니다. (일보는 정상 복원됩니다)';
+  try{
+    const [a,b]=await Promise.all([_fbDb.collection(SK_COL_ITEMS).get(),_fbDb.collection(SK_COL_TX).get()]);
+    const when=bk.exportedAt?new Date(bk.exportedAt).toLocaleString('ko-KR'):'알 수 없음';
+    if(!confirm(`이 파일에 S/K자재 백업이 들어 있습니다. (백업 시각: ${when})\n\n· 파일: 품목 ${bk.items.length}개 · 입출고 ${bk.tx.length}건\n· 현재 클라우드: 품목 ${a.size}개 · 입출고 ${b.size}건\n\n복원하면 클라우드의 S/K자재가 파일 내용으로 완전히 교체됩니다.\n(백업 이후에 입력한 S/K 입출고는 사라지고, 팀원 화면에도 바로 반영됩니다)\n\n[확인] S/K자재도 복원   [취소] S/K자재는 그대로 두고 일보만 복원`)) return '';
+    const ops=[];
+    const keepI=new Set(bk.items.map(x=>x.id)), keepT=new Set(bk.tx.map(x=>x.id));
+    a.docs.forEach(d=>{ if(!keepI.has(d.id)) ops.push(bt=>bt.delete(d.ref)); });
+    b.docs.forEach(d=>{ if(!keepT.has(d.id)) ops.push(bt=>bt.delete(d.ref)); });
+    bk.items.forEach(x=>{ if(!x||!x.id) return; const {id,...d}=x; ops.push(bt=>bt.set(_fbDb.collection(SK_COL_ITEMS).doc(id),d)); });
+    bk.tx.forEach(x=>{ if(!x||!x.id) return; const {id,...d}=x; ops.push(bt=>bt.set(_fbDb.collection(SK_COL_TX).doc(id),d)); });
+    for(let i=0;i<ops.length;i+=400){ const bt=_fbDb.batch(); ops.slice(i,i+400).forEach(f=>f(bt)); await bt.commit(); }
+    return `S/K자재 복원 완료: 품목 ${bk.items.length}개 · 입출고 ${bk.tx.length}건`;
+  }catch(e){ console.warn(e); return 'S/K자재 복원 중 오류가 발생했습니다: '+(e.message||e)+'\n(일보는 정상 복원됩니다. S/K자재는 일부만 반영됐을 수 있으니 다시 가져오기를 해 주세요)'; }
 }
 
 /* ── 엑셀 라이브러리(SheetJS) 필요할 때만 불러오기 ── */
