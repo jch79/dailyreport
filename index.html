@@ -15530,7 +15530,6 @@ function showPdfGuide(ri){
 
   <!-- 재고현황 -->
   <div id="sk-v-stock">
-    <div class="sk-sum" id="sk-summary"></div>
     <div class="sk-card" id="sk-money"></div>
     <div class="sk-card">
       <div class="sk-tools">
@@ -15709,11 +15708,6 @@ function skRenderStock(){
   let tIn=0,tOut=0,mIn=0,mOut=0,amt=0;
   _skTx.forEach(t=>{const q2=skNum(t.qty); if(t.io==='입고'){tIn+=q2; if(String(t.date).startsWith(ym))mIn+=q2;} else {tOut+=q2; if(String(t.date).startsWith(ym))mOut+=q2;}});
   _skItems.forEach(it=>amt+=Math.max(0,st[it.id].stock)*skNum(it.price));
-  document.getElementById('sk-summary').innerHTML=`
-    <div><b>${_skItems.length}</b><span>등록 품목</span></div>
-    <div><b>${_skItems.filter(it=>st[it.id].stock>0).length}</b><span>재고 보유 품목</span></div>
-    <div><b>${skFmt(mIn)} / ${skFmt(mOut)}</b><span>이번 달 입고 / 출고</span></div>
-`;
   const rows=list.map(it=>{const s=st[it.id];
     return `<tr class="click" onclick="skShowItem('${it.id}')">
       <td class="l"><b>${skEsc(it.name)}</b><div style="font-size:10.5px;color:#889;">${skEsc(it.use||'')}</div></td>
