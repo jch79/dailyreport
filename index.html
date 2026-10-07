@@ -15713,7 +15713,7 @@ function skRenderStock(){
     <div><b>${_skItems.length}</b><span>등록 품목</span></div>
     <div><b>${_skItems.filter(it=>st[it.id].stock>0).length}</b><span>재고 보유 품목</span></div>
     <div><b>${skFmt(mIn)} / ${skFmt(mOut)}</b><span>이번 달 입고 / 출고</span></div>
-    <div><b>${amt?skFmt(amt)+'원':'-'}</b><span>재고금액(단가 입력분)</span></div>`;
+`;
   const rows=list.map(it=>{const s=st[it.id];
     return `<tr class="click" onclick="skShowItem('${it.id}')">
       <td class="l"><b>${skEsc(it.name)}</b><div style="font-size:10.5px;color:#889;">${skEsc(it.use||'')}</div></td>
@@ -15730,6 +15730,7 @@ function skRenderStock(){
 /* ── 품목 상세(내역) ── */
 function skShowItem(id){
   const it=skItemById(id); if(!it) return;
+  document.getElementById('sk-modal').style.maxWidth='';
   const s=skStats()[id];
   const tx=_skTx.filter(t=>t.itemId===id).sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.ts||0)-(a.ts||0));
   document.getElementById('sk-modal').innerHTML=`
@@ -15891,19 +15892,58 @@ function skTxAmt(t){ return skNum(t.qty)*skTxPrice(t); }
 function skTxVendor(t){ const it=skItemById(t.itemId); return String(t.vendor||(it&&it.vendor)||'').trim()||'업체 미지정'; }
 function skWon(n){ return skFmt(Math.round(n))+'원'; }
 let _skListFilters={};
-/* 재고현황: 전체·월별 입고/출고 금액 (금액을 누르면 해당 내역 팝업) */
+let _skMoneyOpen='';
+function skToggleMoney(io){ _skMoneyOpen=(_skMoneyOpen===io)?'':io; skRenderMoney(); }
+/* 재고현황: 입고금액 · 출고금액 · 재고금액 세 칸.
+   입고/출고금액을 누르면 아래에 월별 금액이 펼쳐지고, 월 금액을 누르면 세부 내역 팝업.
+   재고금액을 누르면 품목별 재고금액 팝업 */
 function skRenderMoney(){
   const el=document.getElementById('sk-money'); if(!el) return;
   const m={}; let ti=0,to=0;
-  _skTx.forEach(t=>{ const ym=String(t.date||'').slice(0,7); const a=skTxAmt(t); const r=m[ym]||(m[ym]={i:0,o:0}); if(t.io==='입고'){r.i+=a;ti+=a;} else {r.o+=a;to+=a;} });
-  const months=Object.keys(m).filter(Boolean).sort().reverse();
-  const cell=(amt,ym,io)=>amt?`<a href="javascript:void 0" onclick="skShowTxList('${ym}','${io}','')" style="color:inherit;text-decoration:underline;text-decoration-color:#b8cfe6;text-underline-offset:3px;font-weight:700;">${skWon(amt)}</a>`:'<span class="sk-zero">-</span>';
-  el.innerHTML=`<div style="font-size:13px;font-weight:800;color:#234;margin-bottom:8px;">💰 입고·출고 금액 <span style="font-size:11px;font-weight:500;color:#889;">금액을 누르면 해당 내역을 볼 수 있습니다</span></div>
-    <div class="sk-tbl-wrap" style="max-height:260px;overflow:auto;"><table class="sk-tbl" style="min-width:0;">
-    <thead><tr><th>기간</th><th style="text-align:right;">입고금액</th><th style="text-align:right;">출고금액</th></tr></thead><tbody>
-    <tr style="background:#f4f8fc;"><td><b>전체</b></td><td style="text-align:right;">${cell(ti,'','입고')}</td><td style="text-align:right;">${cell(to,'','출고')}</td></tr>
-    ${months.map(ym=>`<tr><td>${ym.slice(0,4)}년 ${parseInt(ym.slice(5))}월</td><td style="text-align:right;">${cell(m[ym].i,ym,'입고')}</td><td style="text-align:right;">${cell(m[ym].o,ym,'출고')}</td></tr>`).join('')||'<tr><td colspan="3" style="color:#999;padding:14px;">입출고 내역이 없습니다</td></tr>'}
-    </tbody></table></div>`;
+  _skTx.forEach(t=>{ const ym=String(t.date||'').slice(0,7); const a=skTxAmt(t); const r=m[ym]||(m[ym]={'입고':0,'출고':0}); r[t.io==='입고'?'입고':'출고']+=a; if(t.io==='입고')ti+=a; else to+=a; });
+  const st=skStats(); let stockAmt=0; _skItems.forEach(it=>stockAmt+=Math.max(0,st[it.id].stock)*skNum(it.price));
+  const tile=(label,amt,on,click,hint)=>`<button onclick="${click}" style="flex:1 1 150px;text-align:center;padding:10px 8px;border-radius:10px;cursor:pointer;border:1.5px solid ${on?'#185FA5':'#dfe9f3'};background:${on?'#e8f4ff':'#f4f8fc'};font-family:inherit;">
+      <span style="display:block;font-size:11px;color:#667;">${label}</span>
+      <b style="display:block;font-size:17px;color:#185FA5;margin:2px 0;">${skWon(amt)}</b>
+      <span style="font-size:10.5px;color:#889;">${hint}</span></button>`;
+  let detail='';
+  if(_skMoneyOpen){
+    const io=_skMoneyOpen, months=Object.keys(m).filter(ym=>ym&&m[ym][io]).sort().reverse();
+    const tot=io==='입고'?ti:to;
+    detail=`<div style="margin-top:10px;"><div style="font-size:12px;font-weight:800;color:#234;margin-bottom:6px;">월별 ${io}금액 <span style="font-weight:500;color:#889;">월 금액을 누르면 세부 내역을 볼 수 있습니다</span></div>
+      <div class="sk-tbl-wrap" style="max-height:300px;overflow:auto;"><table class="sk-tbl" style="min-width:0;">
+      <thead><tr><th>월</th><th style="text-align:right;">${io}금액</th><th style="text-align:right;">비율</th></tr></thead><tbody>
+      ${months.map(ym=>`<tr class="click" onclick="skShowTxList('${ym}','${io}','')"><td>${ym.slice(0,4)}년 ${parseInt(ym.slice(5))}월</td><td style="text-align:right;font-weight:700;text-decoration:underline;text-decoration-color:#b8cfe6;text-underline-offset:3px;">${skWon(m[ym][io])}</td><td style="text-align:right;color:#667;">${tot?(m[ym][io]/tot*100).toFixed(1):0}%</td></tr>`).join('')||`<tr><td colspan="3" style="color:#999;padding:14px;">${io} 내역이 없습니다</td></tr>`}
+      ${months.length?`<tr class="click" style="background:#f4f8fc;font-weight:800;" onclick="skShowTxList('','${io}','')"><td>전체</td><td style="text-align:right;">${skWon(tot)}</td><td style="text-align:right;">100%</td></tr>`:''}
+      </tbody></table></div></div>`;
+  }
+  el.innerHTML=`<div style="display:flex;flex-wrap:wrap;gap:8px;">
+      ${tile('입고금액',ti,_skMoneyOpen==='입고',"skToggleMoney('입고')",_skMoneyOpen==='입고'?'▲ 월별 접기':'▼ 월별 보기')}
+      ${tile('출고금액',to,_skMoneyOpen==='출고',"skToggleMoney('출고')",_skMoneyOpen==='출고'?'▲ 월별 접기':'▼ 월별 보기')}
+      ${tile('재고금액',stockAmt,false,'skShowStockValue()','세부 내역 보기')}
+    </div>${detail}`;
+}
+/* 재고금액 세부 내역: 품목별 현재고 × 단가 */
+function skShowStockValue(){
+  const st=skStats();
+  const rows=_skItems.map(it=>({it,stock:st[it.id].stock,price:skNum(it.price),amt:Math.max(0,st[it.id].stock)*skNum(it.price)})).filter(r=>r.stock>0);
+  const priced=rows.filter(r=>r.amt>0).sort((a,b)=>b.amt-a.amt), noPrice=rows.filter(r=>!r.amt).sort((a,b)=>b.stock-a.stock);
+  const tot=priced.reduce((s,r)=>s+r.amt,0);
+  const tr=r=>`<tr class="click" onclick="skShowItem('${r.it.id}')"><td class="l"><b>${skEsc(r.it.name)}</b></td><td>${skEsc(r.it.spec||'')}</td><td>${skFmt(r.stock)}</td><td>${skEsc(r.it.unit||'')}</td>
+    <td style="text-align:right;">${r.price?skFmt(r.price):'<span class="sk-zero">단가 없음</span>'}</td><td style="text-align:right;"><b>${r.amt?skFmt(r.amt):'-'}</b></td><td style="text-align:right;color:#667;">${r.amt&&tot?(r.amt/tot*100).toFixed(1)+'%':''}</td></tr>`;
+  const md=document.getElementById('sk-modal'); md.style.maxWidth='820px';
+  md.innerHTML=`<h3>재고금액 세부 내역</h3>
+    <div style="font-size:13px;margin-bottom:8px;">합계 <b style="font-size:16px;color:#185FA5;">${skWon(tot)}</b> <span style="color:#889;">(단가 있는 재고 ${priced.length}개 품목${noPrice.length?` · 단가 없는 재고 ${noPrice.length}개 품목은 금액 제외`:''})</span></div>
+    <div class="sk-tbl-wrap" style="max-height:60vh;overflow:auto;"><table class="sk-tbl" style="min-width:520px;">
+    <thead><tr><th>제품명</th><th>규격</th><th>현재고</th><th>단위</th><th style="text-align:right;">단가</th><th style="text-align:right;">재고금액</th><th style="text-align:right;">비율</th></tr></thead><tbody>
+    ${priced.map(tr).join('')}
+    ${priced.length?`<tr style="background:#f4f8fc;font-weight:800;"><td class="l" colspan="5">합계</td><td style="text-align:right;">${skFmt(tot)}</td><td style="text-align:right;">100%</td></tr>`:''}
+    ${noPrice.length?`<tr><td colspan="7" class="l" style="background:#fafafa;color:#667;font-weight:700;">단가가 없어 금액에 포함되지 않은 재고</td></tr>`+noPrice.map(tr).join(''):''}
+    ${rows.length?'':'<tr><td colspan="7" style="color:#999;padding:16px;">재고가 있는 품목이 없습니다</td></tr>'}
+    </tbody></table></div>
+    <div class="sk-note">재고금액 = 현재고 × 품목 단가. 품목 줄을 누르면 그 품목의 입출고 내역으로 이동합니다.</div>
+    <div style="text-align:right;margin-top:10px;"><button class="sk-btn" onclick="skCloseModal()">닫기</button></div>`;
+  document.getElementById('sk-modal-bg').style.display='flex';
 }
 /* 내역 팝업: 기간(ym, ''=전체) · 입출고 · 업체(''=전체, '__etc__'=기타 묶음) */
 function skShowTxList(ym,io,vendor){
