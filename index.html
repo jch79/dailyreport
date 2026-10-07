@@ -15955,7 +15955,7 @@ async function skImportFile(inp){
     itemDel.forEach(it=>delete exist[key(it.name)]);
     const seen={}; const txAdd=txs.filter(t=>{ seen[t._sig]=(seen[t._sig]||0)+1; return seen[t._sig]>((haveSig[t._sig]||[]).length); });
     const newCnt=list.filter(o=>!exist[key(o.name)]).length, updCnt=list.length-newCnt;
-    if(!confirm(`엑셀에서 품목 ${list.length}개, 입출고 내역 ${txs.length}건을 찾았습니다.\n\n· 신규 품목 ${newCnt}개 추가\n· 제품명이 같은 기존 품목 ${updCnt}개는 이 파일 내용(규격·단가·납품업체 등)으로 갱신\n· 제품명이 중복된 기존 품목 ${dupDel.length}개는 하나로 합침 (입출고 내역은 유지)\n· 입출고 내역: 새로 추가 ${txAdd.length}건, 이미 들어있어 건너뜀 ${txs.length-txAdd.length}건\n· 중복된 입출고 내역 ${txDelDup}건 삭제\n· 엑셀에 없는 입출고 내역 ${txDel.length-txDelDup}건 삭제 (앱에서 직접 입력한 건 포함)\n· 엑셀에 없는 품목 ${itemDel.length}개 삭제\n\n※ 가져온 뒤에는 앱 자료가 이 엑셀과 똑같아집니다. 가져올까요?`)) return;
+    if(!confirm(`엑셀에서 품목 ${list.length}개, 입출고 내역 ${txs.length}건을 찾았습니다.\n\n· 신규 품목 ${newCnt}개 추가\n· 제품명이 같은 기존 품목 ${updCnt}개는 이 파일 내용(규격·단가·납품업체 등)으로 갱신 (엑셀에서 빈 칸은 앱에서도 비움)\n· 제품명이 중복된 기존 품목 ${dupDel.length}개는 하나로 합침 (입출고 내역은 유지)\n· 입출고 내역: 새로 추가 ${txAdd.length}건, 이미 들어있어 건너뜀 ${txs.length-txAdd.length}건\n· 중복된 입출고 내역 ${txDelDup}건 삭제\n· 엑셀에 없는 입출고 내역 ${txDel.length-txDelDup}건 삭제 (앱에서 직접 입력한 건 포함)\n· 엑셀에 없는 품목 ${itemDel.length}개 삭제\n\n※ 가져온 뒤에는 앱 자료가 이 엑셀과 똑같아집니다. 가져올까요?`)) return;
 
     let batch=_fbDb.batch(), n=0; const commits=[];
     const op=fn=>{fn(batch); if(++n%400===0){commits.push(batch.commit()); batch=_fbDb.batch();}};
@@ -15972,9 +15972,8 @@ async function skImportFile(inp){
     list.forEach(o=>{
       const k=key(o.name), ex=exist[k];
       if(ex){
-        const patch={name:o.name,updatedAt:TS};
-        ['spec','unit','use','vendor'].forEach(f=>{if(o[f])patch[f]=o[f];});
-        if(o.price) patch.price=o.price;
+        /* 엑셀 기준: 엑셀에서 비어 있는 칸(단가·납품업체 등)은 앱에서도 비움 — 예전 값이 남아 재고금액이 달라지던 문제 수정 */
+        const patch={name:o.name,spec:o.spec||'',unit:o.unit||'',use:o.use||'',vendor:o.vendor||'',price:o.price||0,updatedAt:TS};
         if(o.carry!=null) patch.carry=o.carry;
         Object.assign(ex,patch,{updatedAt:ex.updatedAt});
         op(b=>b.set(_fbDb.collection(SK_COL_ITEMS).doc(ex.id),patch,{merge:true}));
