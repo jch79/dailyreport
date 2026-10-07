@@ -15857,7 +15857,7 @@ async function skSaveItem(id){
   const g=k=>document.getElementById('sk-i-'+k).value.trim();
   const data={name:g('name'),spec:g('spec'),unit:g('unit'),price:skNum(g('price')),carry:skNum(g('carry')),vendor:g('vendor'),use:g('use'),updatedAt:firebase.firestore.FieldValue.serverTimestamp()};
   if(!data.name){showToast('제품명을 입력해 주세요');return;}
-  if(_skItems.some(it=>it.id!==id && skNorm(it.name)===skNorm(data.name) && skNorm(it.spec)===skNorm(data.spec))){showToast('같은 제품명·규격의 품목이 이미 있습니다');return;}
+  if(_skItems.some(it=>it.id!==id && skNameKey(it.name)===skNameKey(data.name))){showToast('같은 제품명의 품목이 이미 있습니다');return;}
   try{ if(id) await _fbDb.collection(SK_COL_ITEMS).doc(id).set(data,{merge:true}); else await _fbDb.collection(SK_COL_ITEMS).add(data);
     skCloseModal(); showToast('품목이 저장되었습니다'); }catch(e){showToast('⚠️ 저장 실패');}
 }
@@ -15877,15 +15877,18 @@ function skLoadXlsx(){
    · 수불대장 표(구분/제품명/규격/용도/단위/…/전년도 이월재고/단가/…/비고) → 품목 + 이월재고
    · 품목 시트(구분=제품명/규격/단위/단가/용도/비고) → 수불대장에 없는 품목 보충
    · 일일수불대장 표(일자/제품명/규격/사용처/입출고/단위/수량/비고) → 입출고 내역
-   이미 같은 제품명·규격이 있으면 덮어쓰지 않고 비어있는 값만 채움 */
+   제품명이 같으면 같은 품목 — 마지막에 가져온 파일 내용으로 덮어쓰고, 기존 중복 품목은 하나로 합침 */
 function skImportPick(){ if(!skCanMaster()){showToast('관리자/팀원만 가져올 수 있습니다');return;} document.getElementById('sk-import-file').click(); }
+/* 품목 중복 판정 키 — 제품명만 사용(공백·대소문자·괄호 차이는 무시).
+   규격·단가·납품업체가 달라도 제품명이 같으면 같은 품목으로 본다 */
+function skNameKey(n){return skNorm(n).replace(/[()（）\[\]]/g,'');}
 async function skImportFile(inp){
   const file=inp.files[0]; inp.value=''; if(!file) return;
   try{
     await skLoadXlsx();
     const wb=XLSX.read(await file.arrayBuffer(),{type:'array',cellDates:true});
     const items={}, txs=[];
-    const key=(n,s)=>skNorm(n)+'|'+skNorm(s);
+    const key=skNameKey;
     const H=v=>skNorm(v).replace(/[()]/g,'');
     wb.SheetNames.forEach(sn=>{
       const rows=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,defval:'',raw:true});
@@ -15900,13 +15903,15 @@ async function skImportFile(inp){
         const v=i=>i>=0?r[i]:'';
         if(mode==='ledger'||mode==='master'){
           const name=String(v(col.name)).trim(); if(!name||/관리|대장/.test(name)) return;
-          const vendor=String(v(col.vendor)).trim(); const k=key(name,v(col.spec));
-          const o=items[k]||(items[k]={name,spec:String(v(col.spec)).trim(),unit:'',use:'',vendor:'',price:0,carry:0});
-          if(!o.unit) o.unit=String(v(col.unit)).trim();
-          if(!o.use) o.use=String(v(col.use)).trim();
-          if(!o.vendor && vendor && vendor!=='0') o.vendor=vendor;
-          if(!o.price) o.price=skNum(v(col.price));
-          if(mode==='ledger') o.carry=skNum(v(col.carry));
+          const k=key(name);
+          /* 같은 파일 안에서 제품명이 같은 줄은 한 품목으로 합침 — 품목 시트(마스터)의 값이 우선,
+             수불대장은 마스터에 없는 값만 채우고 이월재고를 담당 */
+          const o=items[k]||(items[k]={name,spec:'',unit:'',use:'',vendor:'',price:0,carry:null,_m:{}});
+          const put=(f,val)=>{ if(val===''||val===0||val==='0') return; if(mode==='master'){o[f]=val;o._m[f]=1;} else if(!o._m[f]) o[f]=val; };
+          if(mode==='master') o.name=name;
+          put('spec',String(v(col.spec)).trim()); put('unit',String(v(col.unit)).trim()); put('use',String(v(col.use)).trim());
+          put('vendor',String(v(col.vendor)).trim()); put('price',skNum(v(col.price)));
+          if(mode==='ledger') o.carry=(o.carry||0)+skNum(v(col.carry));
         } else if(mode==='daily'){
           const name=String(v(col.name)).trim(); const q=skNum(v(col.qty)); if(!name||!q) return;
           let d=v(col.date); if(d instanceof Date) d=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -15918,27 +15923,60 @@ async function skImportFile(inp){
     });
     const list=Object.values(items);
     if(!list.length && !txs.length){showToast('가져올 품목을 찾지 못했습니다 (사용장부 형식을 확인해 주세요)');return;}
-    const exist={}; _skItems.forEach(it=>exist[key(it.name,it.spec)]=it);
-    const newItems=list.filter(o=>!exist[key(o.name,o.spec)]);
-    if(!confirm(`엑셀에서 품목 ${list.length}개(신규 ${newItems.length}개), 입출고 내역 ${txs.length}건을 찾았습니다.\n\n· 이미 있는 품목은 비어있는 정보만 채우고 이월재고는 그대로 둡니다\n· 입출고 내역은 그대로 추가됩니다\n\n가져올까요?`)) return;
+
+    /* ── 이미 등록된 품목 중 제품명이 같은 것끼리 묶어서 하나만 남김 ──
+       남길 품목: 이번 파일과 규격이 같은 것 > 가장 최근에 수정된 것 > 입출고 내역이 많은 것 */
+    const groups={}; _skItems.forEach(it=>(groups[key(it.name)]=groups[key(it.name)]||[]).push(it));
+    const txCnt={}; _skTx.forEach(t=>txCnt[t.itemId]=(txCnt[t.itemId]||0)+1);
+    const exist={}, remap={}, maxCarry={}; const dupDel=[];
+    Object.entries(groups).forEach(([k,arr])=>{
+      const f=items[k];
+      const score=it=>[(f&&f.spec&&skNorm(it.spec)===skNorm(f.spec))?1:0,(it.updatedAt&&it.updatedAt.seconds)||0,txCnt[it.id]||0];
+      const sorted=[...arr].sort((a,b)=>{const x=score(a),y=score(b);return (y[0]-x[0])||(y[1]-x[1])||(y[2]-x[2]);});
+      const keep=sorted[0]; exist[k]=keep;
+      maxCarry[k]=Math.max(...arr.map(it=>skNum(it.carry)));
+      sorted.slice(1).forEach(it=>{remap[it.id]=keep.id; dupDel.push(it);});
+    });
+    const newCnt=list.filter(o=>!exist[key(o.name)]).length, updCnt=list.length-newCnt;
+    if(!confirm(`엑셀에서 품목 ${list.length}개, 입출고 내역 ${txs.length}건을 찾았습니다.\n\n· 신규 품목 ${newCnt}개 추가\n· 제품명이 같은 기존 품목 ${updCnt}개는 이 파일 내용(규격·단가·납품업체 등)으로 갱신\n· 제품명이 중복된 기존 품목 ${dupDel.length}개는 하나로 합침 (입출고 내역은 유지)\n· 입출고 내역은 그대로 추가\n\n가져올까요?`)) return;
+
     let batch=_fbDb.batch(), n=0; const commits=[];
-    const push=(ref,data,opt)=>{opt?batch.set(ref,data,opt):batch.set(ref,data); if(++n%400===0){commits.push(batch.commit()); batch=_fbDb.batch();}};
+    const op=fn=>{fn(batch); if(++n%400===0){commits.push(batch.commit()); batch=_fbDb.batch();}};
+    const TS=firebase.firestore.FieldValue.serverTimestamp();
+    /* 중복 품목 정리: 입출고 내역을 남길 품목으로 옮기고 나머지는 삭제 */
+    _skTx.forEach(t=>{ if(remap[t.itemId]){ const k=skItemById(remap[t.itemId]); op(b=>b.set(_fbDb.collection(SK_COL_TX).doc(t.id),{itemId:k.id,itemName:k.name},{merge:true})); } });
+    dupDel.forEach(it=>op(b=>b.delete(_fbDb.collection(SK_COL_ITEMS).doc(it.id))));
+    Object.entries(groups).forEach(([k,arr])=>{ /* 파일에 없는 중복 품목은 이월재고가 사라지지 않게 가장 큰 값을 유지 */
+      if(arr.length>1 && !(items[k]&&items[k].carry!=null) && skNum(exist[k].carry)!==maxCarry[k]) op(b=>b.set(_fbDb.collection(SK_COL_ITEMS).doc(exist[k].id),{carry:maxCarry[k]},{merge:true}));
+    });
+    /* 파일 내용 반영: 제품명이 같으면 덮어쓰기(파일에 값이 있는 항목만), 없으면 새로 추가 */
     list.forEach(o=>{
-      const ex=exist[key(o.name,o.spec)];
-      if(ex){ const patch={}; ['unit','use','vendor'].forEach(f=>{if(!ex[f]&&o[f])patch[f]=o[f];}); if(!skNum(ex.price)&&o.price)patch.price=o.price;
-        if(Object.keys(patch).length) push(_fbDb.collection(SK_COL_ITEMS).doc(ex.id),patch,{merge:true}); }
-      else { const ref=_fbDb.collection(SK_COL_ITEMS).doc(); o.id=ref.id; exist[key(o.name,o.spec)]=o; push(ref,{name:o.name,spec:o.spec,unit:o.unit,use:o.use,vendor:o.vendor,price:o.price,carry:o.carry}); }
+      const k=key(o.name), ex=exist[k];
+      if(ex){
+        const patch={name:o.name,updatedAt:TS};
+        ['spec','unit','use','vendor'].forEach(f=>{if(o[f])patch[f]=o[f];});
+        if(o.price) patch.price=o.price;
+        if(o.carry!=null) patch.carry=o.carry;
+        Object.assign(ex,patch,{updatedAt:ex.updatedAt});
+        op(b=>b.set(_fbDb.collection(SK_COL_ITEMS).doc(ex.id),patch,{merge:true}));
+      } else {
+        const ref=_fbDb.collection(SK_COL_ITEMS).doc();
+        const d={name:o.name,spec:o.spec,unit:o.unit,use:o.use,vendor:o.vendor,price:o.price,carry:o.carry||0};
+        exist[k]={id:ref.id,...d}; op(b=>b.set(ref,{...d,updatedAt:TS}));
+      }
     });
     let ts=Date.now();
     txs.forEach(t=>{
-      let it=exist[key(t.name,t.spec)]||Object.values(exist).find(x=>skNorm(x.name)===skNorm(t.name));
-      if(!it){ const ref=_fbDb.collection(SK_COL_ITEMS).doc(); it={id:ref.id,name:t.name,spec:t.spec,unit:t.unit}; exist[key(t.name,t.spec)]=it; push(ref,{name:t.name,spec:t.spec,unit:t.unit,use:'',vendor:'',price:0,carry:0}); }
-      push(_fbDb.collection(SK_COL_TX).doc(),{date:t.date,itemId:it.id,itemName:it.name,spec:it.spec||'',unit:it.unit||'',io:t.io,qty:t.qty,place:t.place,note:t.note,by:_fbUser.email,ts:ts++,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+      let it=exist[key(t.name)];
+      if(!it){ const ref=_fbDb.collection(SK_COL_ITEMS).doc(); it={id:ref.id,name:t.name,spec:t.spec,unit:t.unit}; exist[key(t.name)]=it; op(b=>b.set(ref,{name:t.name,spec:t.spec,unit:t.unit,use:'',vendor:'',price:0,carry:0,updatedAt:TS})); }
+      const d={date:t.date,itemId:it.id,itemName:it.name,spec:it.spec||'',unit:it.unit||'',io:t.io,qty:t.qty,place:t.place,note:t.note,by:_fbUser.email,ts:ts++,createdAt:TS};
+      op(b=>b.set(_fbDb.collection(SK_COL_TX).doc(),d));
     });
     commits.push(batch.commit()); await Promise.all(commits);
-    showToast(`✅ 품목 ${newItems.length}개 추가, 입출고 ${txs.length}건 가져오기 완료`);
+    showToast(`✅ 신규 ${newCnt}개 · 갱신 ${updCnt}개 · 중복 정리 ${dupDel.length}개 · 입출고 ${txs.length}건 완료`);
   }catch(e){console.warn(e);showToast('⚠️ 가져오기 실패: '+(e.message||e));}
 }
+
 
 /* ── 엑셀 내보내기: 수불대장 / 일일수불대장 / 품목 시트 ── */
 async function skExportXlsx(){
