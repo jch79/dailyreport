@@ -16096,7 +16096,9 @@ async function skImportFile(inp){
   const file=inp.files[0]; inp.value=''; if(!file) return;
   try{
     await skLoadXlsx();
-    const wb=XLSX.read(await file.arrayBuffer(),{type:'array',cellDates:true});
+    /* ⚠ cellDates:true로 읽으면 SheetJS가 날짜를 자정 몇십 초 전 시각으로 만들어 전날로 저장되던 버그가 있었음
+       (엑셀 10/7 → 앱 10/6). 날짜는 엑셀 일련번호 그대로 읽어 parse_date_code로 변환한다 */
+    const wb=XLSX.read(await file.arrayBuffer(),{type:'array'});
     const items={}, txs=[]; let hasDaily=false;
     const key=skNameKey;
     const H=v=>skNorm(v).replace(/[()]/g,'');
