@@ -15571,6 +15571,7 @@ function showPdfGuide(ri){
     <button class="sk-btn" data-sk-ledger="sk" onclick="skSwitchLedger('sk')">🔧 S/K자재</button>
     <button class="sk-btn" data-sk-ledger="pest" onclick="skSwitchLedger('pest')">🧪 농약</button>
     <button class="sk-btn" data-sk-ledger="fert" onclick="skSwitchLedger('fert')">🌱 비료</button>
+    <button class="sk-btn" data-sk-ledger="sand" onclick="skSwitchLedger('sand')">🏖 모래</button>
   </div>
   <div class="sk-sub">
     <button class="sk-btn on" data-sk-view="stock" onclick="skView('stock')">📦 재고현황</button>
@@ -15672,7 +15673,7 @@ function showPdfGuide(ri){
 const SK_COL_ITEMS='sk_items', SK_COL_TX='sk_tx';
 const SK_CACHE_KEY='golf_sk_cache_v1';
 /* 자재입출고: 장부(S/K·농약·비료)는 같은 컬렉션에 ledger 값으로 구분해 저장(예전 S/K 자료는 ledger 없음 = S/K) */
-const SK_LEDGERS={sk:{label:'S/K자재',icon:'🔧',tpl:'sk_template'},pest:{label:'농약',icon:'🧪',tpl:'sk_template_pest'},fert:{label:'비료',icon:'🌱',tpl:'sk_template_fert'}};
+const SK_LEDGERS={sk:{label:'S/K자재',icon:'🔧',tpl:'sk_template'},pest:{label:'농약',icon:'🧪',tpl:'sk_template_pest'},fert:{label:'비료',icon:'🌱',tpl:'sk_template_fert'},sand:{label:'모래',icon:'🏖',tpl:'sk_template_sand'}};
 let _skLedger=(()=>{try{const v=localStorage.getItem('golf_sk_ledger_v1');return SK_LEDGERS[v]?v:'sk';}catch(e){return 'sk';}})();
 let _skAllItems=[], _skAllTx=[];
 let _skItems=[], _skTx=[], _skUnsubs=[], _skIo='입고', _skSelItemId=null, _skEditingTxId=null, _skViewName='stock';
@@ -16235,7 +16236,7 @@ async function skFillTemplate(buf,items,tx,XLSXlib,JSZipLib){
   if(!T_DAY) throw new Error('양식에서 입출고(일일수불) 표를 찾지 못했습니다');
   const twb=XLSXlib.read(buf,{type:'array'});
   const cellV=(shName,r,c)=>{ const ws=twb.Sheets[shName]; const x=ws&&ws[XLSXlib.utils.encode_cell({r:r-1,c:c-1})]; return x?x.v:''; };
-  const key=n=>String(n||'').replace(/\s+/g,'').toLowerCase().replace(/[()（）\[\]]/g,'');
+  const key=n=>String(n||'').replace(/\s+/g,'').toLowerCase();
   const byKey={}; items.forEach(it=>{ if(!byKey[key(it.name)]) byKey[key(it.name)]=it; });
   const num=v=>{const n=parseFloat(String(v==null?'':v).replace(/,/g,''));return isNaN(n)?0:n;};
   const geo=T=>{ const ref=_tplAttr(T.xml.match(/<table\b[^>]*>/)[0],'ref'); const [a,b]=ref.split(':'); return {c0:_tplColIdx(a.replace(/\d+/g,'')),r0:parseInt(a.replace(/[A-Z]+/g,''),10),end:parseInt(b.replace(/[A-Z]+/g,''),10)}; };
@@ -16281,7 +16282,8 @@ async function skFillTemplate(buf,items,tx,XLSXlib,JSZipLib){
     const hD=f('일자'),hN=H[ni],hP=f('사용처'),hIO=f('입출고'),hQ=f('수량'),hR=H.find(x=>hk(x)==='비고');
     const serial=d=>{ const m=String(d||'').match(/^(\d{4})-(\d{2})-(\d{2})/); return m?Math.round((Date.UTC(+m[1],+m[2]-1,+m[3])-Date.UTC(1899,11,30))/86400000):''; };
     const idName={}; items.forEach(it=>idName[it.id]=it.name);
-    const data=[...tx].sort((a,b)=>String(a.date||'9999').localeCompare(String(b.date||'9999'))||(a.ts||0)-(b.ts||0)).map(t=>{ const o={}; /* 일자 없는 줄은 엑셀처럼 맨 뒤 */
+    /* 줄 순서: 마지막으로 가져온 엑셀의 순서 그대로, 그 뒤 앱에서 입력한 내역은 입력 순서대로 이어 붙임 */
+    const data=[...tx].sort((a,b)=>(a.ts||0)-(b.ts||0)||String(a.date||'9999').localeCompare(String(b.date||'9999'))).map(t=>{ const o={};
       H.forEach(h=>{ const v=xv(t.x,h); if(v!==undefined) o[h]=v; });
       if(hD)o[hD]=serial(t.date); if(hN)o[hN]=idName[t.itemId]||t.itemName||''; if(hP)o[hP]=t.place||''; if(hIO)o[hIO]=t.io; if(hQ)o[hQ]=num(t.qty); if(hR)o[hR]=t.note||''; return o; });
     results.push({T:T_DAY,data,minTail:3});
@@ -16327,7 +16329,7 @@ function skLoadXlsx(){
 function skImportPick(){ if(!skCanMaster()){showToast('관리자/팀원만 가져올 수 있습니다');return;} document.getElementById('sk-import-file').click(); }
 /* 품목 중복 판정 키 — 제품명만 사용(공백·대소문자·괄호 차이는 무시).
    규격·단가·납품업체가 달라도 제품명이 같으면 같은 품목으로 본다 */
-function skNameKey(n){return skNorm(n).replace(/[()（）\[\]]/g,'');}
+function skNameKey(n){return skNorm(n);} /* 엑셀과 똑같이 맞추기 위해 띄어쓰기·대소문자만 무시(괄호 차이는 다른 품목) */
 async function skImportFile(inp){
   const file=inp.files[0]; inp.value=''; if(!file) return;
   try{
@@ -16337,7 +16339,7 @@ async function skImportFile(inp){
     const _srcBuf=await file.arrayBuffer();
     const wb=XLSX.read(_srcBuf,{type:'array'});
     /* 장부 종류 확인 — 농약 장부를 S/K 화면에서 가져오면 S/K 자료가 지워지므로 맞는 장부로 전환 */
-    { const sig=file.name+' '+wb.SheetNames.join(' '); const kind=/농약/.test(sig)?'pest':/비료/.test(sig)?'fert':/스프링클러|S\/?K/i.test(sig)?'sk':null;
+    { const sig=file.name+' '+wb.SheetNames.join(' '); const kind=/농약/.test(sig)?'pest':/비료/.test(sig)?'fert':/모래/.test(sig)?'sand':/스프링클러|S\/?K/i.test(sig)?'sk':null;
       if(kind&&kind!==_skLedger){ const L=SK_LEDGERS[kind]; if(!confirm(`이 파일은 「${L.label}」 장부로 보입니다.\n지금 보고 있는 「${SK_LEDGERS[_skLedger].label}」이 아니라 「${L.label}」 장부로 가져올까요?\n\n(취소하면 가져오기를 중단합니다)`)) return; skSwitchLedger(kind); } }
     const items={}, txs=[]; let hasDaily=false;
     const key=skNameKey;
@@ -16374,12 +16376,13 @@ async function skImportFile(inp){
         /* 앱 화면에 없는 칸(성분·사용량/㎡ 등)도 내보내기 때 되살릴 수 있게 함수가 아닌 입력값은 모두 보관 */
         const extra=skip=>{ const x={}; hk.forEach((h,ci)=>{ if(!h||skip.includes(ci)||isF(ri,ci)) return; const val=r[ci]; if(val===''||val==null) return; x[h]=(typeof val==='number'||typeof val==='boolean')?val:String(val); }); return x; };
         if(mode==='ledger'||mode==='master'){
-          const name=String(v(col.name)).trim(); if(!name||/관리|대장/.test(name)) return;
+          const name=String(v(col.name)).trim(); if(!name||/관리대장|품목관리|수불대장|재고현황/.test(name.replace(/\s/g,''))) return; /* 제목 줄만 건너뜀('대장군' 같은 품목은 유지) */
           const k=key(name);
           /* 같은 파일 안에서 이름이 같은 줄은 한 품목으로 합침 — 품목 시트(마스터)의 값이 우선,
              관리대장은 마스터에 없는 값만 채우고 이월재고를 담당 */
           const o=items[k]||(items[k]={name,spec:'',unit:'',use:'',vendor:'',price:0,carry:null,x:{},_m:{}});
-          const put=(f,val)=>{ if(val===''||val===0||val==='0') return; if(mode==='master'){o[f]=val;o._m[f]=1;} else if(!o._m[f]) o[f]=val; };
+          /* 품목 시트 값이 기준(빈 칸도 빈 칸 그대로) — 관리대장은 품목 시트에 없는 품목만 채움 */
+          const put=(f,val)=>{ if(mode==='master'){ o[f]=(val==='0'?'':val); o._m[f]=1; return; } if(val===''||val===0||val==='0') return; if(!o._m[f]) o[f]=val; };
           if(mode==='master'){ o.name=name; o.x=extra([]); }
           put('spec',String(v(col.spec)).trim()); put('unit',String(v(col.unit)).trim()); put('use',String(v(col.use)).trim());
           put('vendor',String(v(col.vendor)).trim()); put('price',skNum(v(col.price)));
@@ -16389,7 +16392,7 @@ async function skImportFile(inp){
           let d=v(col.date); if(d instanceof Date) d=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
           else if(typeof d==='number'){const p=XLSX.SSF.parse_date_code(d); d=`${p.y}-${String(p.m).padStart(2,'0')}-${String(p.d).padStart(2,'0')}`;}
           else { const m=String(d).match(/(\d{2,4})\D+(\d{1,2})\D+(\d{1,2})/); if(m){ const y=m[1].length===2?'20'+m[1]:m[1]; d=`${y}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`; } else d=''; /* 일자를 비워 둔 줄도 엑셀처럼 그대로 보관 */ }
-          txs.push({date:d,name,spec:String(v(col.spec)).trim(),io:/입/.test(String(v(col.io)))?'입고':'출고',qty:q,place:String(v(col.place)).trim(),note:String(v(col.note)).trim(),unit:String(v(col.unit)).trim(),price:col.price>=0&&v(col.price)!==''?skNum(v(col.price)):null,vendor:col.vendor>=0?String(v(col.vendor)).trim().replace(/^0$/,''):'',x:extra([col.date,col.name,col.io,col.qty,col.place,col.note,col.price,col.vendor].filter(i=>i>=0))});
+          txs.push({date:d,name,spec:String(v(col.spec)).trim(),io:/입/.test(String(v(col.io)))?'입고':'출고',qty:q,place:String(v(col.place)),note:String(v(col.note)),unit:String(v(col.unit)).trim(),price:col.price>=0&&v(col.price)!==''?skNum(v(col.price)):null,vendor:col.vendor>=0?String(v(col.vendor)).trim().replace(/^0$/,''):'',x:extra([col.date,col.name,col.io,col.qty,col.place,col.note,col.price,col.vendor].filter(i=>i>=0))});
         }
       });
     });
@@ -16413,6 +16416,7 @@ async function skImportFile(inp){
        같은 파일을 여러 번 가져오면 내역이 그대로 또 추가되어 입고·출고가 2배, 3배로 불어나던 문제.
        (일자+제품명+입출고+수량+사용처+비고)가 같은 내역은 같은 건으로 보고, 파일에 있는 건수만큼만 남긴다 */
     const txSig=(date,name,io,qty,place,note)=>[date,key(name),io,skNum(qty),skNorm(place),skNorm(note)].join('|');
+    const _ordBase=Date.now(); txs.forEach((t,i)=>t._ord=_ordBase+i); /* 엑셀 줄 순서 — 내보낼 때 같은 순서로 */
     const fileSig={}; txs.forEach(t=>{t._sig=txSig(t.date,t.name,t.io,t.qty,t.place,t.note); fileSig[t._sig]=(fileSig[t._sig]||0)+1;});
     const haveSig={}; [..._skTx].sort((a,b)=>(a.ts||0)-(b.ts||0)).forEach(t=>{ const it=skItemById(t.itemId); const sg=txSig(t.date,it?it.name:t.itemName,t.io,t.qty,t.place,t.note); (haveSig[sg]=haveSig[sg]||[]).push(t); });
     /* 엑셀 기준 동기화: 파일에 일일수불대장이 있으면, 파일에 없는 입출고 내역(앱에서 직접 입력한 건 포함)은 모두 삭제.
@@ -16436,7 +16440,7 @@ async function skImportFile(inp){
     txDel.forEach(t=>op(b=>b.delete(_fbDb.collection(SK_COL_TX).doc(t.id))));
     /* 이미 들어있는 내역에도 엑셀의 단가·납품업체를 맞춰 넣음(금액·업체별 매출 집계용) */
     { const used={}; txs.forEach(t=>{ const i=used[t._sig]=(used[t._sig]||0)+1; const ex=(haveSig[t._sig]||[])[i-1]; if(!ex||txDelIds.has(ex.id)) return;
-        const pr=t.price==null?null:t.price; if((ex.price==null?null:skNum(ex.price))!==pr || (ex.vendor||'')!==t.vendor || JSON.stringify(ex.x||{})!==JSON.stringify(t.x||{}) || ex.ledger!==_skLedger) op(b=>b.set(_fbDb.collection(SK_COL_TX).doc(ex.id),{price:pr,vendor:t.vendor,x:t.x||{},ledger:_skLedger},{merge:true})); }); }
+        const pr=t.price==null?null:t.price; if((ex.price==null?null:skNum(ex.price))!==pr || (ex.vendor||'')!==t.vendor || JSON.stringify(ex.x||{})!==JSON.stringify(t.x||{}) || ex.ledger!==_skLedger || ex.ts!==t._ord) op(b=>b.set(_fbDb.collection(SK_COL_TX).doc(ex.id),{price:pr,vendor:t.vendor,x:t.x||{},ledger:_skLedger,ts:t._ord},{merge:true})); }); }
     _skTx.forEach(t=>{ if(remap[t.itemId] && !txDelIds.has(t.id)){ const k=skItemById(remap[t.itemId]); op(b=>b.set(_fbDb.collection(SK_COL_TX).doc(t.id),{itemId:k.id,itemName:k.name},{merge:true})); } });
     dupDel.forEach(it=>op(b=>b.delete(_fbDb.collection(SK_COL_ITEMS).doc(it.id))));
     itemDel.forEach(it=>op(b=>b.delete(_fbDb.collection(SK_COL_ITEMS).doc(it.id))));
@@ -16462,7 +16466,7 @@ async function skImportFile(inp){
     txAdd.forEach(t=>{
       let it=exist[key(t.name)];
       if(!it){ const ref=_fbDb.collection(SK_COL_ITEMS).doc(); it={id:ref.id,name:t.name,spec:t.spec,unit:t.unit}; exist[key(t.name)]=it; op(b=>b.set(ref,{name:t.name,spec:t.spec,unit:t.unit,use:'',vendor:'',price:0,carry:0,x:{},ledger:_skLedger,updatedAt:TS})); }
-      const d={date:t.date,itemId:it.id,itemName:it.name,spec:it.spec||'',unit:it.unit||'',io:t.io,qty:t.qty,place:t.place,note:t.note,price:t.price,vendor:t.vendor,x:t.x||{},ledger:_skLedger,by:_fbUser.email,ts:ts++,createdAt:TS};
+      const d={date:t.date,itemId:it.id,itemName:it.name,spec:it.spec||'',unit:it.unit||'',io:t.io,qty:t.qty,place:t.place,note:t.note,price:t.price,vendor:t.vendor,x:t.x||{},ledger:_skLedger,by:_fbUser.email,ts:t._ord,createdAt:TS};
       op(b=>b.set(_fbDb.collection(SK_COL_TX).doc(),d));
     });
     commits.push(batch.commit()); await Promise.all(commits);
