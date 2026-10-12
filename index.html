@@ -43,13 +43,14 @@ _fbAuth.setPersistence(firebase.auth.Auth.Persistence.SESSION);
 /* ─── 현재 로그인 사용자 정보 ─── */
 let _fbUser    = null;   // firebase.User 객체
 let _fbRole    = null;   // 'admin' | 'member' | 'partial' | 'viewer'
+let _fbLedgerPerms = null; /* 자재입출고 장부별 수정 권한 {sk:true,pest:false,...} — 관리자가 팀 관리에서 계정마다 지정 */
 let _fbSectionPerms = null; // role이 'partial'일 때만 사용: {weather:true, irr:true, ...} 형태로 섹션별 수정 가능 여부
 let _fbReady   = false;  // Auth 초기화 완료 여부
 
 /* ── 작성 탭 섹션 정의 (팀 관리에서 부분편집 권한을 나눌 때도 이 목록/이름을 그대로 사용) ── */
 const WRITE_SEC_LABELS = {
   weather:'운영/날씨', ballspeed:'볼스피드', gp:'GP·질소시비', irr:'관수 기록', workers:'작업자',
-  tasks:'작업 내용', notes:'비고', materials_use:'비료·농약·모래 자재 사용', elapsed:'경과일 기록', sk:'S/K자재 입출고'
+  tasks:'작업 내용', notes:'비고', materials_use:'비료·농약·모래 자재 사용', elapsed:'경과일 기록'
 };
 
 /* ─── Firestore 컬렉션 경로 ─── */
@@ -80,6 +81,7 @@ _fbAuth.onAuthStateChanged(async user => {
         }
         _fbRole = snap.data().role || 'viewer';
         _fbSectionPerms = snap.data().sectionPerms || null;
+        _fbLedgerPerms = snap.data().ledgerPerms || null;
       } else {
         await _fbDb.collection(FB_COL_USERS).doc(user.uid).set({
           email: user.email,
@@ -573,6 +575,10 @@ async function fbLoadUserList(){
           <span style="font-size:10.5px;color:#888;font-weight:600;align-self:center;">수정 가능 섹션:</span>
           ${permChips}
         </div>
+        <div id="lperm-row-${uid}" style="width:100%;display:${(u.role==='member'||u.role==='partial')?'flex':'none'};flex-wrap:wrap;gap:5px;padding:4px 0 2px;">
+          <span style="font-size:10.5px;color:#888;font-weight:600;align-self:center;">📦 자재입출고 수정 가능 장부:</span>
+          ${fbLedgerPermChips(uid,u)}
+        </div>
       </div>`;
     }).join('');
   }catch(e){
@@ -587,6 +593,24 @@ function fbTogglePermRow(uid){
   const sel=document.getElementById('role-sel-'+uid);
   const row=document.getElementById('perm-row-'+uid);
   if(sel && row) row.style.display = (sel.value==='partial') ? 'flex' : 'none';
+  const lrow=document.getElementById('lperm-row-'+uid);
+  if(sel && lrow) lrow.style.display = (sel.value==='member'||sel.value==='partial') ? 'flex' : 'none';
+}
+/* 자재입출고 장부별(S/K·농약·비료·모래) 수정 권한 체크 칩
+   예전 계정(지정 기록 없음)의 기본값: 팀원 = 전체 허용 / 부분편집자 = 예전 'S/K자재 입출고' 섹션 권한을 모든 장부에 적용 */
+const FB_LEDGER_LABELS={sk:'🔧 S/K자재',pest:'🧪 농약',fert:'🌱 비료',sand:'🏖 모래'};
+function fbLedgerPermOf(u,l){
+  if(!u) return false;
+  if(u.role==='admin') return true;
+  if(u.role!=='member'&&u.role!=='partial') return false;
+  if(u.ledgerPerms && Object.prototype.hasOwnProperty.call(u.ledgerPerms,l)) return !!u.ledgerPerms[l];
+  if(u.role==='member') return true;
+  return !!(u.sectionPerms && u.sectionPerms.sk);
+}
+function fbLedgerPermChips(uid,u){
+  return Object.keys(FB_LEDGER_LABELS).map(l=>{ const on=fbLedgerPermOf(u,l)||(!u.ledgerPerms&&u.role!=='member'&&u.role!=='partial');
+    return `<label style="display:inline-flex;align-items:center;gap:3px;font-size:10.5px;background:${on?'#e8f4ff':'#f5f5f5'};border:1.5px solid ${on?'#185FA5':'#ddd'};color:${on?'#185FA5':'#888'};border-radius:100px;padding:2px 8px;cursor:pointer;">
+      <input type="checkbox" id="lperm-${uid}-${l}" ${on?'checked':''} style="width:11px;height:11px;margin:0;"> ${FB_LEDGER_LABELS[l]}</label>`; }).join('');
 }
 async function fbUpdateRole(uid){
   const sel = document.getElementById('role-sel-'+uid);
@@ -604,6 +628,10 @@ async function fbUpdateRole(uid){
     } else {
       update.sectionPerms = firebase.firestore.FieldValue.delete();
     }
+    if(newRole==='member'||newRole==='partial'){
+      const lp={}; Object.keys(FB_LEDGER_LABELS).forEach(l=>{ const chk=document.getElementById(`lperm-${uid}-${l}`); lp[l]=!!(chk&&chk.checked); });
+      update.ledgerPerms=lp;
+    } else update.ledgerPerms=firebase.firestore.FieldValue.delete();
     await _fbDb.collection(FB_COL_USERS).doc(uid).update(update);
     showToast('권한이 변경되었습니다.');
     fbLoadUserList();
@@ -15693,6 +15721,7 @@ function skSwitchLedger(l){
   skApplyLedger(); _skSelItemId=null; _skEditingTxId=null; _skMoneyOpen='';
   const L=SK_LEDGERS[l]; const t=document.getElementById('sk-ledger-title'); if(t) t.textContent=`${L.icon} ${L.label} 입출고`;
   document.querySelectorAll('[data-sk-ledger]').forEach(b=>b.classList.toggle('on',b.dataset.skLedger===l));
+  skApplyRole();
   const q=document.getElementById('sk-e-item'); if(q){ ['sk-e-item','sk-e-qty','sk-e-place','sk-e-note'].forEach(i=>{const e=document.getElementById(i); if(e) e.value='';}); }
   skRenderAll();
 }
@@ -15702,8 +15731,11 @@ function skNorm(s){return String(s||'').replace(/\s+/g,'').toLowerCase();}
 function skNum(v){const n=parseFloat(String(v==null?'':v).replace(/,/g,''));return isNaN(n)?0:n;}
 function skFmt(n){n=Math.round(n*100)/100;return n.toLocaleString('ko-KR');}
 function skToday(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
-function skCanEdit(){ if(!_fbUser) return false; if(_fbRole==='admin'||_fbRole==='member') return true; return _fbRole==='partial' && canEditSection('sk'); }
-function skCanMaster(){ return !!_fbUser && (_fbRole==='admin'||_fbRole==='member'); }
+/* 장부별 권한: 관리자 = 전체 / 팀원·부분편집자 = 관리자가 지정한 장부에서 입출고·품목관리·엑셀 가져오기/내보내기
+   (팀원은 지정 전엔 전체) / 열람자 = 조회·내보내기만 */
+function skLedgerAllowed(l){ if(!_fbUser) return false; if(_fbRole==='admin') return true; return fbLedgerPermOf({role:_fbRole,ledgerPerms:_fbLedgerPerms,sectionPerms:_fbSectionPerms},l||_skLedger); }
+function skCanEdit(){ return (_fbRole==='admin'||_fbRole==='member'||_fbRole==='partial') && skLedgerAllowed(_skLedger); }
+function skCanMaster(){ return !!_fbUser && (_fbRole==='admin'||((_fbRole==='member'||_fbRole==='partial')&&skLedgerAllowed(_skLedger))); } /* 부분편집자도 허용된 장부는 품목관리·엑셀 가져오기 가능 */
 
 /* ── 실시간 구독 ── */
 function skInit(){
@@ -15723,12 +15755,15 @@ function skInit(){
 }
 function skAfterSync(){
   try{ localStorage.setItem(SK_CACHE_KEY, JSON.stringify({items:_skAllItems,tx:_skAllTx.map(t=>{const c={...t};delete c.createdAt;delete c.updatedAt;return c;})})); }catch(e){}
-  const el=document.getElementById('sk-sync-state'); if(el) el.textContent='· ☁️ 실시간 동기화 중';
+  const el=document.getElementById('sk-sync-state'); if(el) el.textContent='· ☁️ 실시간 동기화 중'+(skCanEdit()?'':' · 🔒 조회 전용');
   skRenderAll();
 }
 function skStopSync(){ _skUnsubs.forEach(u=>{try{u();}catch(e){}}); _skUnsubs=[]; }
 function skApplyRole(){
   const p=document.getElementById('panel-sk'); if(!p) return;
+  /* 장부 칩: 수정 권한이 없는 장부는 🔒 표시(조회는 가능) */
+  document.querySelectorAll('[data-sk-ledger]').forEach(b=>{ const l=b.dataset.skLedger, L=SK_LEDGERS[l]; const lock=_fbUser&&!skLedgerAllowed(l); b.textContent=`${L.icon} ${L.label}${lock?' 🔒':''}`; b.title=lock?'이 장부는 조회만 가능합니다(수정 권한 없음)':''; });
+  const st=document.getElementById('sk-sync-state'); if(st&&_fbUser&&_skUnsubs.length) st.textContent='· ☁️ 실시간 동기화 중'+(skCanEdit()?'':' · 🔒 조회 전용');
   p.classList.toggle('sk-ro', !skCanEdit());
   if(!skCanEdit() && (_skViewName==='entry'||_skViewName==='items')) skView('stock');
   if(!skCanMaster() && _skViewName==='items') skView('stock');
@@ -15925,7 +15960,7 @@ function skRenderItems(){
       <td><button class="sk-btn" style="padding:3px 8px;font-size:11px;" onclick="skEditItem('${it.id}')">편집</button></td></tr>`).join('')||'<tr><td colspan="9" style="padding:20px;color:#999;">품목이 없습니다</td></tr>'}</tbody>`;
 }
 function skEditItem(id){
-  if(!skCanMaster()){showToast('품목 관리는 관리자/팀원만 가능합니다');return;}
+  if(!skCanMaster()){showToast('이 장부의 품목 관리 권한이 없습니다');return;}
   const it=id?skItemById(id):{name:'',spec:'',unit:'EA',price:'',use:'',vendor:'',carry:0};
   const used=id&&_skTx.some(t=>t.itemId===id);
   const f=(k,l,t='text')=>`<label>${l}<input id="sk-i-${k}" type="${t}" value="${skEsc(it[k]??'')}"></label>`;
@@ -16092,7 +16127,7 @@ async function skRestoreBackup(raw){
   let bk; try{ bk=typeof raw==='string'?JSON.parse(raw):raw; }catch(e){ return 'S/K자재 백업을 읽지 못해 복원하지 않았습니다. (일보는 정상 복원됩니다)'; }
   if(!bk || !Array.isArray(bk.items) || !Array.isArray(bk.tx)) return '';
   if(!_fbUser) return `이 파일에는 S/K자재 백업(품목 ${bk.items.length}개·입출고 ${bk.tx.length}건)이 들어 있지만, 로그인 상태가 아니라 복원하지 못했습니다.\n로그인한 뒤 다시 가져오기를 해 주세요. (일보는 정상 복원됩니다)`;
-  if(!skCanMaster()) return 'S/K자재 복원은 관리자/팀원만 할 수 있어 건너뛰었습니다. (일보는 정상 복원됩니다)';
+  if(!(_fbRole==='admin'||(_fbRole==='member'&&Object.keys(SK_LEDGERS).every(l=>skLedgerAllowed(l))))) return '자재입출고 복원은 관리자(또는 모든 장부 권한이 있는 팀원)만 할 수 있어 건너뛰었습니다. (일보는 정상 복원됩니다)';
   try{
     const [a,b]=await Promise.all([_fbDb.collection(SK_COL_ITEMS).get(),_fbDb.collection(SK_COL_TX).get()]);
     const when=bk.exportedAt?new Date(bk.exportedAt).toLocaleString('ko-KR'):'알 수 없음';
@@ -16334,7 +16369,7 @@ function skLoadXlsx(){
    · 품목 시트(구분=제품명/규격/단위/단가/용도/비고) → 수불대장에 없는 품목 보충
    · 일일수불대장 표(일자/제품명/규격/사용처/입출고/단위/수량/비고) → 입출고 내역
    제품명이 같으면 같은 품목 — 마지막에 가져온 파일 내용으로 덮어쓰고, 기존 중복 품목은 하나로 합침 */
-function skImportPick(){ if(!skCanMaster()){showToast('관리자/팀원만 가져올 수 있습니다');return;} document.getElementById('sk-import-file').click(); }
+function skImportPick(){ if(!skCanMaster()){showToast('이 장부의 엑셀 가져오기 권한이 없습니다');return;} document.getElementById('sk-import-file').click(); }
 /* 품목 중복 판정 키 — 제품명만 사용(공백·대소문자·괄호 차이는 무시).
    규격·단가·납품업체가 달라도 제품명이 같으면 같은 품목으로 본다 */
 function skNameKey(n){return skNorm(n);} /* 엑셀과 똑같이 맞추기 위해 띄어쓰기·대소문자만 무시(괄호 차이는 다른 품목) */
@@ -16348,7 +16383,8 @@ async function skImportFile(inp){
     const wb=XLSX.read(_srcBuf,{type:'array'});
     /* 장부 종류 확인 — 농약 장부를 S/K 화면에서 가져오면 S/K 자료가 지워지므로 맞는 장부로 전환 */
     { const sig=file.name+' '+wb.SheetNames.join(' '); const kind=/농약/.test(sig)?'pest':/비료/.test(sig)?'fert':/모래/.test(sig)?'sand':/스프링클러|S\/?K/i.test(sig)?'sk':null;
-      if(kind&&kind!==_skLedger){ const L=SK_LEDGERS[kind]; if(!confirm(`이 파일은 「${L.label}」 장부로 보입니다.\n지금 보고 있는 「${SK_LEDGERS[_skLedger].label}」이 아니라 「${L.label}」 장부로 가져올까요?\n\n(취소하면 가져오기를 중단합니다)`)) return; skSwitchLedger(kind); } }
+      if(kind&&kind!==_skLedger){ const L=SK_LEDGERS[kind]; if(!confirm(`이 파일은 「${L.label}」 장부로 보입니다.\n지금 보고 있는 「${SK_LEDGERS[_skLedger].label}」이 아니라 「${L.label}」 장부로 가져올까요?\n\n(취소하면 가져오기를 중단합니다)`)) return; skSwitchLedger(kind); }
+      if(!skCanMaster()){ alert(`「${SK_LEDGERS[_skLedger].label}」 장부의 수정 권한이 없어 가져올 수 없습니다.\n관리자에게 권한을 요청해 주세요.`); return; } }
     const items={}, txs=[]; let hasDaily=false;
     const key=skNameKey;
     const H=v=>skNorm(v).replace(/[()（）]/g,'');
