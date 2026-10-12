@@ -908,6 +908,8 @@ textarea{resize:vertical;min-height:55px;}
 .task-cell input[type=checkbox].chk-night{accent-color:#7F77DD;}
 .task-cell input[type=text]{font-size:11px;padding:3px 5px;border:1px solid transparent;background:transparent;width:100%;}
 .task-cell input[type=text]:focus{border-color:#999;background:#fff;border-radius:4px;}
+.task-cell textarea.task-ta{font:inherit;font-size:11px;line-height:1.45;padding:3px 5px;border:1px solid transparent;background:transparent;width:100%;resize:none;overflow:hidden;min-height:22px;white-space:pre-wrap;word-break:break-all;field-sizing:content;box-sizing:border-box;display:block;}
+.task-cell textarea.task-ta:focus{border-color:#999;background:#fff;border-radius:4px;outline:none;}
 .task-name-cell{padding:6px 8px;font-size:12px;font-weight:700;border-right:1.5px solid #d8d8d8;align-self:stretch;display:flex;align-items:center;}
 .task-block.mowing .task-name-cell{color:#0C447C;background:#edf5fc;}
 .task-block.work   .task-name-cell{color:#27500A;background:#edf5e5;}
@@ -2490,8 +2492,8 @@ function buildTaskRow(si,ti,task,cls){
     <div class="task-cell" style="justify-content:center;"><input type="checkbox" class="chk-early" ${earlyVal?'checked':''} onchange="setTask(${si},${ti},'early',this.checked)"></div>
     <div class="task-cell" style="justify-content:center;"><input type="checkbox" class="chk-day"   ${dayVal?'checked':''}   onchange="setTask(${si},${ti},'day',this.checked)"></div>
     <div class="task-cell" style="justify-content:center;"><input type="checkbox" class="chk-night" ${nightVal?'checked':''} onchange="setTask(${si},${ti},'night',this.checked)"></div>
-    <div class="task-cell"><input type="text" value="${task.detail}" placeholder="약품명, 수량 등" onchange="setTask(${si},${ti},'detail',this.value)" style="width:100%;"></div>
-    <div class="task-cell"><input type="text" value="${task.equip}" placeholder="장비/자재" onchange="setTask(${si},${ti},'equip',this.value)" style="width:100%;"></div>
+    <div class="task-cell"><textarea class="task-ta" rows="${taskTaRows(task.detail)}" placeholder="약품명, 수량 등" oninput="taskTaFit(this)" onchange="setTask(${si},${ti},'detail',this.value)">${matEscHtml(task.detail||'')}</textarea></div>
+    <div class="task-cell"><textarea class="task-ta" rows="${taskTaRows(task.equip)}" placeholder="장비/자재" oninput="taskTaFit(this)" onchange="setTask(${si},${ti},'equip',this.value)">${matEscHtml(task.equip||'')}</textarea></div>
     <div class="task-cell" style="padding:3px 4px;">
       <div class="workers-inline">
         ${workersHtml}
@@ -2499,13 +2501,18 @@ function buildTaskRow(si,ti,task,cls){
       </div>
     </div>
     <div class="task-cell"><button class="task-del-btn" onclick="removeTaskRow(${si},${ti})">&#10005;</button></div>
-    <div class="task-cell task-remark-cell"><input type="text" value="${matEscHtml(task.remark||'')}" onchange="setTask(${si},${ti},'remark',this.value)" style="width:100%;"></div>`;
+    <div class="task-cell task-remark-cell"><textarea class="task-ta" rows="${taskTaRows(task.remark)}" oninput="taskTaFit(this)" onchange="setTask(${si},${ti},'remark',this.value)">${matEscHtml(task.remark||'')}</textarea></div>`;
   return row;
 }
 
+/* 작업내용·장비·비고 칸: 줄바꿈(Enter / Shift+Enter)한 내용과 긴 내용이 잘리지 않도록 내용 길이만큼 칸 높이를 늘림 */
+function taskTaRows(v){ return Math.max(1,String(v||'').split('\n').length); }
+function taskTaFit(el){ if(!el) return; el.style.height='auto'; if(el.scrollHeight) el.style.height=(el.scrollHeight+2)+'px'; }
+function taskTaFitAll(root){ (root||document).querySelectorAll('textarea.task-ta').forEach(taskTaFit); }
 function refreshSection(si){
   const c=document.getElementById(`sec-${si}`);c.innerHTML='';
   curTasks[si].tasks.forEach((task,ti)=>c.appendChild(buildTaskRow(si,ti,task,curTasks[si].cls)));
+  requestAnimationFrame(()=>taskTaFitAll(c));
 }
 function setTask(si,ti,k,v){markDirty();curTasks[si].tasks[ti][k]=v;}
 /* ── 작업 항목 이름 수정 ──
@@ -6292,7 +6299,7 @@ function showSearchDetail(idx){
         ${t.early?'<span style="font-size:10px;background:#FEF0E3;color:#E67E22;white-space:nowrap;border-radius:100px;padding:1px 5px;margin-left:3px;">[조출]</span>':''}
         ${t.day?'<span style="font-size:10px;color:#888;margin-left:3px;">[주간]</span>':''}
         ${t.night?'<span style="font-size:10px;background:#EEEDFE;color:#7F77DD;white-space:nowrap;border-radius:100px;padding:1px 5px;margin-left:3px;">[야간]</span>':''}
-        ${t.detail?`<div style="margin-top:2px;color:#333;">${t.detail}</div>`:''}
+        ${t.detail?`<div style="margin-top:2px;color:#333;white-space:pre-wrap;">${t.detail}</div>`:''}
         ${ws?`<div style="font-size:11px;color:#888;">작업자: ${ws}</div>`:''}
       </div>`;}).join(''):'<div style="color:#888;font-size:12px;">없음</div>'}
     ${(r.matUseRows||[]).some(b=>(b.items||[]).length)?buildMatUseDetailHTML(r.matUseRows):''}
@@ -6817,7 +6824,7 @@ function showHistDetail(idx){
         ${t.early?'<span style="font-size:10px;background:#FEF0E3;color:#E67E22;white-space:nowrap;border-radius:100px;padding:1px 5px;margin-left:3px;">[조출]</span>':''}
         ${t.day?'<span style="font-size:10px;color:#888;margin-left:3px;">[주간]</span>':''}
         ${t.night?'<span style="font-size:10px;background:#EEEDFE;color:#7F77DD;white-space:nowrap;border-radius:100px;padding:1px 5px;margin-left:3px;">[야간]</span>':''}
-        ${t.detail?`<div style="margin-top:2px;color:#555;">${t.detail}</div>`:''}
+        ${t.detail?`<div style="margin-top:2px;color:#555;white-space:pre-wrap;">${t.detail}</div>`:''}
         ${ws?`<div style="font-size:11px;color:#888;">작업자: ${ws}</div>`:''}
       </div>`;}).join('')}`:''}
     ${(r.matUseRows||[]).some(b=>(b.items||[]).length)?buildMatUseDetailHTML(r.matUseRows):''}
@@ -6907,7 +6914,7 @@ function showDetail(idx){
         ${(t.early||(t.am&&t.day===undefined))?'<span style="font-size:10px;background:#FEF0E3;color:#E67E22;white-space:nowrap;border-radius:100px;padding:1px 5px;margin-left:3px;font-weight:700;">[조출]</span>':''}
         ${(t.day||(t.am&&t.day===undefined)||(t.pm&&t.day===undefined))?'<span style="font-size:10px;color:#888;margin-left:3px;">[주간]</span>':''}
         ${(t.night)?'<span style="font-size:10px;background:#EEEDFE;color:#7F77DD;white-space:nowrap;border-radius:100px;padding:1px 5px;margin-left:3px;font-weight:700;">[야간]</span>':''}
-        ${t.detail?`<div style="margin-top:2px;">${t.detail}</div>`:''}
+        ${t.detail?`<div style="margin-top:2px;white-space:pre-wrap;">${t.detail}</div>`:''}
         ${t.equip?`<div style="font-size:11px;color:#888;">장비: ${t.equip}</div>`:''}
         ${ws?`<div style="font-size:11px;color:#888;">작업자: ${ws}</div>`:''}
       </div>`;}).join(''):'<div style="color:#888;font-size:12px;">없음</div>'}
@@ -10618,6 +10625,7 @@ function showPanel(id,tab){
     const el=document.getElementById('bs-write-chart');if(el)renderBsChartInto('bs-write-chart',gd(),true);
     renderTempChart();
     renderRainChart();
+    if(typeof taskTaFitAll==='function') taskTaFitAll(document.getElementById('panel-write'));
   },50);}
   document.querySelectorAll('.panel').forEach(p=>{p.style.display='none';p.classList.remove('active');});
   document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
