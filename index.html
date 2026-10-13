@@ -5562,10 +5562,7 @@ function buildRainMonthCalendar(year,mm,highlightDd,color){
   const first=new Date(year,mm-1,1);
   const daysInMonth=new Date(year,mm,0).getDate();
   const startWeekday=first.getDay(); /* 0=일 */
-  const local=getYearlyRainFromRecords(year);
-  const cache=getYearRainCache();
-  const cachedY=cache[year]||{};
-  const map={...cachedY,...local};
+  const map=getRainYearMap(year); /* 차트·누적과 같은 기준(작성 중 값 > 수동 > 일보 > 기상청) */
   const wdNames=['일','월','화','수','목','금','토'];
   let cells='';
   for(let i=0;i<startWeekday;i++) cells+=`<div></div>`;
@@ -5657,6 +5654,10 @@ function renderRainChart(page){
      실제 저장된 기록이 있는 날짜는 그 값으로 덮어써서 항상 일치하게 함
      (사용자가 직접 수정(manual)한 값은 그대로 최우선 유지) */
   const _localRainMap=getLocalRainMapAll();
+  /* 작성 화면에 지금 입력돼 있는 금일 강우량(자동 불러오기·직접 입력, 아직 저장 전 포함)이 그 날짜의 최신 값 —
+     예전엔 저장된 일보 값으로 덮어써서, 저장 전에 불러온 실측(예: 31)이 차트·달력에는 예전 저장값(21)으로 보였음 */
+  { const _pk=(typeof getPickerISO==='function'&&getPickerISO())||_rainTodayISO(); const _el=document.getElementById('inp-rain');
+    if(_el&&_el.value!==''){ const _v=parseFloat(_el.value); if(!isNaN(_v)) _localRainMap[_pk]=_v; } }
   const _kmaYearCache=getYearRainCache(), _todayIsoRC=_rainTodayISO();
   rainData30.forEach(d=>{
     if(d.manual) return;
@@ -8028,7 +8029,7 @@ function renderTempChart(){
       const cache=getYearRainCache();
       const local=getYearlyRainFromRecords(y);
       const cached=cache[y];
-      rainMaps[y]=cached?{...cached,...local}:local;
+      rainMaps[y]=getRainYearMap(y);
       if(!cached && Object.keys(local).length===0) rainNeedFetch.push(y);
     });
     if(rainNeedFetch.length){
