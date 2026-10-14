@@ -15960,13 +15960,66 @@ function skRenderItems(){
       <td class="l" style="font-size:11px;">${skEsc(it.use||'')}</td><td style="font-size:11px;">${skEsc(it.vendor||'')}</td><td>${skFmt(skNum(it.carry))}</td><td class="sk-stock">${skFmt(st[it.id].stock)}</td>
       <td><button class="sk-btn" style="padding:3px 8px;font-size:11px;" onclick="skEditItem('${it.id}')">편집</button></td></tr>`).join('')||'<tr><td colspan="9" style="padding:20px;color:#999;">품목이 없습니다</td></tr>'}</tbody>`;
 }
+/* ── 품목 추가: 자재정보(농약·비료·모래)에서 불러오기 ──
+   자재정보 탭의 마스터 목록에서 고르면 제품명·규격·단가 등이 채워지고, 엑셀 품목 시트의 나머지 칸(주성분·FRAC·성분비 등)도
+   함께 보관해 「엑셀 내보내기」 때 그대로 들어감. 목록에 없는 것은 그냥 직접 입력하면 됨 */
+let _skPickedX=null;
+function skMasterList(){
+  try{ if(_skLedger==='pest') return getPestList(); if(_skLedger==='fert') return getFertList(); if(_skLedger==='sand') return getSandList(); }catch(e){}
+  return [];
+}
+function skMasterToItem(m){
+  const nv=v=>{ const s=String(v==null?'':v).trim(); return /^-?\d+(\.\d+)?$/.test(s)?Number(s):s; };
+  const x={}; const put=(k,v)=>{ const val=nv(v); if(val!==''&&val!=null) x[k]=val; };
+  let it={name:String(m.name||'').trim(),spec:String(m.size||'').trim(),unit:'',price:skNum(m.price),use:'',vendor:''};
+  if(_skLedger==='pest'){
+    it.use=m.type||m.category||'';
+    put('상표명',m.name);put('종류',m.type);put('품목명',m.product);put('제형',m.form);put('규격',m.size);put('단가',m.price);put('주성분',m.active);
+    put('사용량/㎡',m.usage);put('실사용량',m.realUsage);put('주성분함량',m.content);put('제조회사',m.maker);put('원산지',m.origin);put('비고',m.target);
+    put('예방및치료',m.effect);put('흡수이행',m.absorption);put('작용기작',m.moa);put('분류',m.category);put('frac/irac/hrac',m.frac);put('계열',m.series);put('요약',m.summary);
+  } else if(_skLedger==='fert'){
+    it.use=m.category||'';
+    put('상표명',m.name);put('제형',m.form);put('분류',m.category);put('규격',m.size);put('사용량/㎡',m.usage);put('단가',m.price);put('변환규격kg',m.kgUnit);
+    ['N','P','K','Ca','Mg','Mn','Fe','Si','S'].forEach(k=>put(k.toLowerCase(),m[k]));
+  } else if(_skLedger==='sand'){
+    it.use=m.category||'';
+    put('구분',m.name);put('규격',m.size);put('단가',m.price);put('용도',m.category);
+  }
+  return {it,x};
+}
+function skPickSuggest(){
+  const box=document.getElementById('sk-pick-sugg'), q=skNorm(document.getElementById('sk-pick-q').value);
+  const have=new Set(_skItems.map(i=>skNameKey(i.name)));
+  const list=skMasterList().filter(m=>m&&m.name&&(!q||skNorm([m.name,m.product,m.type,m.category,m.active].join(' ')).includes(q))).slice(0,60);
+  box.innerHTML=list.map((m,i)=>`<div onmousedown="event.preventDefault();skPickMaster(${skMasterList().indexOf(m)})"><b>${skEsc(m.name)}</b> <span style="color:#889;">${skEsc(m.size||'')} ${skEsc(m.type||m.category||'')}</span>${have.has(skNameKey(m.name))?' <span style="float:right;color:#c0392b;font-size:11px;">이미 등록됨</span>':(m.price?` <span style="float:right;color:#185FA5;">${skFmt(skNum(m.price))}원</span>`:'')}</div>`).join('')||'<div style="color:#999;">자재정보에 일치하는 품목이 없습니다 — 아래에 직접 입력하세요</div>';
+  box.style.display='block';
+}
+function skPickMaster(i){
+  const m=skMasterList()[i]; if(!m) return;
+  const {it,x}=skMasterToItem(m); _skPickedX=x;
+  const set=(k,v)=>{ const e=document.getElementById('sk-i-'+k); if(e) e.value=v==null?'':v; };
+  set('name',it.name); set('spec',it.spec); set('unit',it.unit); set('price',it.price||''); set('use',it.use); set('vendor',it.vendor);
+  document.getElementById('sk-pick-q').value=it.name; document.getElementById('sk-pick-sugg').style.display='none';
+  const n=document.getElementById('sk-pick-note'); if(n) n.textContent=`✓ 자재정보의 「${it.name}」 정보를 불러왔습니다. 필요하면 아래 칸을 고친 뒤 저장하세요.`;
+}
+document.addEventListener('click',e=>{const b=document.getElementById('sk-pick-sugg'); if(b && !e.target.closest('#sk-pick-q') && !e.target.closest('#sk-pick-sugg')) b.style.display='none';});
+
 function skEditItem(id){
   if(!skCanMaster()){showToast('이 장부의 품목 관리 권한이 없습니다');return;}
   const it=id?skItemById(id):{name:'',spec:'',unit:'EA',price:'',use:'',vendor:'',carry:0};
   const used=id&&_skTx.some(t=>t.itemId===id);
   const f=(k,l,t='text')=>`<label>${l}<input id="sk-i-${k}" type="${t}" value="${skEsc(it[k]??'')}"></label>`;
-  document.getElementById('sk-modal').innerHTML=`<h3>${id?'품목 편집':'품목 추가'}</h3>
-    <div class="sk-form">${f('name','제품명')}${f('spec','규격')}${f('unit','단위')}${f('price','단가(원)','number')}${f('carry','전년도 이월재고','number')}${f('vendor','납품업체')}
+  _skPickedX=null;
+  const canPick=!id&&['pest','fert','sand'].includes(_skLedger);
+  const nameLbl=(_skLedger==='pest'||_skLedger==='fert')?'상표명':'제품명';
+  document.getElementById('sk-modal').innerHTML=`<h3>${id?'품목 편집':'품목 추가'} <span style="font-size:12px;color:#889;">${SK_LEDGERS[_skLedger].icon} ${SK_LEDGERS[_skLedger].label}</span></h3>
+    ${canPick?`<div style="background:#f4f8fc;border:1.5px solid #dfe9f3;border-radius:10px;padding:10px;margin-bottom:10px;">
+      <div style="font-size:12px;font-weight:800;color:#234;margin-bottom:6px;">📚 자재정보에서 불러오기 <span style="font-weight:500;color:#889;">(선택 — 목록에 없으면 아래에 직접 입력)</span></div>
+      <div style="position:relative;"><input id="sk-pick-q" placeholder="상표명·품목명·성분으로 검색" autocomplete="off" oninput="skPickSuggest()" onfocus="skPickSuggest()" style="width:100%;font-size:13px;padding:7px 9px;border:1.5px solid #cfdcea;border-radius:8px;box-sizing:border-box;">
+        <div class="sk-sugg" id="sk-pick-sugg" style="display:none;"></div></div>
+      <div id="sk-pick-note" style="font-size:11px;color:#2d6a1e;margin-top:5px;"></div>
+    </div>`:''}
+    <div class="sk-form">${f('name',nameLbl)}${f('spec','규격')}${f('unit','단위')}${f('price','단가(원)','number')}${f('carry','전년도 이월재고','number')}${f('vendor','납품업체')}
     <label class="full">용도<input id="sk-i-use" value="${skEsc(it.use||'')}"></label></div>
     <div style="display:flex;gap:6px;justify-content:space-between;margin-top:12px;">
       <div>${id?`<button class="sk-btn" style="color:#c0392b;border-color:#e6b0aa;" ${used?'disabled title="입출고 내역이 있어 삭제할 수 없습니다"':''} onclick="skDelItem('${id}')">삭제</button>`:''}</div>
@@ -15976,7 +16029,9 @@ function skEditItem(id){
 }
 async function skSaveItem(id){
   const g=k=>document.getElementById('sk-i-'+k).value.trim();
-  const data={name:g('name'),spec:g('spec'),unit:g('unit'),price:skNum(g('price')),carry:skNum(g('carry')),vendor:g('vendor'),use:g('use'),ledger:_skLedger,updatedAt:firebase.firestore.FieldValue.serverTimestamp()};
+  const data={name:g('name'),spec:g('spec'),unit:g('unit'),price:skNum(g('price')),carry:skNum(g('carry')),vendor:g('vendor'),use:g('use'),ledger:_skLedger,
+    ...(!id?{x:(()=>{ const x={...(_skPickedX||{})}; /* 화면에서 고친 값이 엑셀 품목 시트에도 반영되도록 */ if(Object.keys(x).length){ const nk=_skLedger==='sand'?'구분':'상표명'; x[nk]=g('name'); if(g('spec'))x['규격']=g('spec'); if(skNum(g('price')))x['단가']=skNum(g('price')); } return x; })()}:{}),
+    updatedAt:firebase.firestore.FieldValue.serverTimestamp()};
   if(!data.name){showToast('제품명을 입력해 주세요');return;}
   if(_skItems.some(it=>it.id!==id && skNameKey(it.name)===skNameKey(data.name))){showToast('같은 제품명의 품목이 이미 있습니다');return;}
   try{ if(id) await _fbDb.collection(SK_COL_ITEMS).doc(id).set(data,{merge:true}); else await _fbDb.collection(SK_COL_ITEMS).add(data);
@@ -16284,7 +16339,7 @@ async function skFillTemplate(buf,items,tx,XLSXlib,JSZipLib){
   const byKey={}; items.forEach(it=>{ if(!byKey[key(it.name)]) byKey[key(it.name)]=it; });
   const num=v=>{const n=parseFloat(String(v==null?'':v).replace(/,/g,''));return isNaN(n)?0:n;};
   const geo=T=>{ const ref=_tplAttr(T.xml.match(/<table\b[^>]*>/)[0],'ref'); const [a,b]=ref.split(':'); return {c0:_tplColIdx(a.replace(/\d+/g,'')),r0:parseInt(a.replace(/[A-Z]+/g,''),10),end:parseInt(b.replace(/[A-Z]+/g,''),10)}; };
-  const xv=(obj,h)=>{ if(!obj) return undefined; const k=hk(h); return Object.prototype.hasOwnProperty.call(obj,k)?obj[k]:undefined; };
+  const xv=(obj,h)=>{ if(!obj) return undefined; const k=hk(h).toLowerCase(); const kk=Object.keys(obj).find(z=>String(z).replace(/[()（）\s]/g,'').toLowerCase()===k); return kk!==undefined?obj[kk]:undefined; };
   const results=[];
   /* 1) 품목 표: 양식 순서 유지 + 값 갱신, 앱에서 지운 품목 제외, 새 품목은 끝에 추가.
         앱에서 고칠 수 있는 칸(이름·규격·단위·단가·용도·납품업체)은 앱 값, 나머지 칸은 가져올 때 보관한 엑셀 값 */
