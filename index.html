@@ -3763,6 +3763,20 @@ function guardAdminOnly(actionLabel){
   return true;
 }
 /* 자재정보(약품/비료 마스터 DB) 수정은 열람자·부분편집자는 불가, 관리자/팀원만 가능 */
+/* 자재정보(농약·비료·모래) 추가·수정·삭제 권한
+   관리자·팀원은 전체, 부분편집자는 팀 관리에서 체크한 자재입출고 장부(농약/비료/모래)와 같은 종류만 허용 */
+function canEditMat(type){
+  if(!_fbUser) return true;
+  if(_fbRole==='admin'||_fbRole==='member') return true;
+  if(_fbRole==='partial') return fbLedgerPermOf({role:_fbRole,ledgerPerms:_fbLedgerPerms,sectionPerms:_fbSectionPerms}, type||'pest');
+  return false;
+}
+function guardMatEdit(type, actionLabel){
+  if(canEditMat(type)) return true;
+  const lab=type==='pest'?'농약':type==='sand'?'모래':'비료';
+  showToast(`⚠️ "${actionLabel}"(${lab}) 권한이 없습니다 — 관리자에게 ${lab} 권한을 요청하세요`);
+  return false;
+}
 function guardMemberOrAdmin(actionLabel){
   if(_fbUser && !(_fbRole==='admin'||_fbRole==='member')){
     showToast(`⚠️ "${actionLabel}"은(는) 관리자/팀원만 수정할 수 있습니다`);
@@ -11393,7 +11407,7 @@ function openMatInfoModal(type, idx){
    이 상태에서 "저장"을 누르면 matEditIdx===-1(추가 모드)이라 새 카드로 등록되고,
    원본 카드는 전혀 건드리지 않는다. */
 function duplicateMatItem(){
-  if(!guardMemberOrAdmin('자재정보 복사'))return;
+  if(!guardMatEdit(matEditType,'자재정보 복사'))return;
   if(matEditIdx===-1){ showToast('먼저 복사할 자재를 열어주세요'); return; }
   const list = getListByType(matEditType);
   const item = list[matEditIdx];
@@ -11504,7 +11518,7 @@ function autoGrowTA(el){
    문제가 있었음. 이제는 matEditIdx 값(-1이면 추가, 아니면 수정)만으로 동작을
    분기하고 버튼 onclick은 항상 이 함수 하나만 가리키도록 통일함. */
 function toggleMaterialEdit(){
-  if(!guardMemberOrAdmin('자재정보 수정')){ renderMaterialsTable(); return; }
+  if(!guardMatEdit(matEditType,'자재정보 수정')){ renderMaterialsTable(); return; }
   const body = document.getElementById('mat-modal-body');
   const collected = {};
   body.querySelectorAll('[data-field]').forEach(inp=>{ collected[inp.dataset.field]=inp.value; });
@@ -11531,10 +11545,8 @@ function toggleMaterialEdit(){
   renderAreaBlocks();
   showToast('저장했습니다');
 }
-function renderMatModalEdit(type, item){
-  const body = document.getElementById('mat-modal-body');
-
-  /* 기본 필드 정의 */
+/* 자재정보 농약/비료/모래 입력 항목 정의 — 자재정보 탭 팝업과 자재입출고 품목추가 팝업이 같이 씀 */
+function matFieldDefs(type){
   const pestBase = [
     ['name','상표명'],['type','종류'],['product','품목명'],['form','제형'],['size','규격'],
     ['price','단가'],['supplier','납품업체'],['supplierTel','납품업체 연락처'],
@@ -11576,9 +11588,15 @@ function renderMatModalEdit(type, item){
     size:'예) 1톤', usage:'예) 2mm', price:'예) 150000',
     supplier:'예) (주)골재상사', supplierTel:'예) 031-1234-5678'
   };
+  return { base: type==='pest' ? pestBase : type==='sand' ? sandBase : fertBase,
+           ph:   type==='pest' ? pestPlaceholder : type==='sand' ? sandPlaceholder : fertPlaceholder };
+}
+function renderMatModalEdit(type, item){
+  const body = document.getElementById('mat-modal-body');
+  const _defs = matFieldDefs(type);
 
   /* 커스텀 필드: item._customFields = [{key,label}] */
-  const baseFields = type==='pest' ? pestBase : type==='sand' ? sandBase : fertBase;
+  const baseFields = _defs.base;
   const baseKeys   = baseFields.map(([k])=>k);
   const customFields = (item._customFields||[]).filter(cf=>!baseKeys.includes(cf.key));
 
@@ -11586,7 +11604,7 @@ function renderMatModalEdit(type, item){
   const customFieldPairs = customFields.map(cf=>[cf.key, cf.label]);
   const allFields = [...baseFields, ...customFieldPairs];
 
-  const phMap = type==='pest' ? pestPlaceholder : type==='sand' ? sandPlaceholder : fertPlaceholder;
+  const phMap = _defs.ph;
   const rows = allFields.map(([k,label])=>{
     const isNameField=(k==='name'&&type==='pest'&&matEditIdx===-1);
     const ph = phMap[k] || '';
@@ -11697,7 +11715,7 @@ function guideApplyItem(name, alreadyInDB){
 }
 
 function addCustomMatField(){
-  if(!guardMemberOrAdmin('자재정보 수정'))return;
+  if(!guardMatEdit(matEditType,'자재정보 수정'))return;
   const labelInp = document.getElementById('mat-custom-label');
   const label = (labelInp?.value||'').trim();
   if(!label){ showToast('항목명을 입력하세요'); return; }
@@ -11742,7 +11760,7 @@ function addCustomMatField(){
 
 /* ── 커스텀 항목 삭제 ── */
 function removeCustomMatField(key){
-  if(!guardMemberOrAdmin('자재정보 수정'))return;
+  if(!guardMatEdit(matEditType,'자재정보 수정'))return;
   const list = getListByType(matEditType);
   const item = list[matEditIdx]||{};
   item._customFields = (item._customFields||[]).filter(cf=>cf.key!==key);
@@ -11756,7 +11774,7 @@ function removeCustomMatField(key){
 
 /* ── 삭제 ── */
 function deleteMatItem(type, idx){
-  if(!guardMemberOrAdmin('자재정보 삭제'))return;
+  if(!guardMatEdit(type,'자재정보 삭제'))return;
   if(!confirm('삭제하시겠습니까?')) return;
   const l=getListByType(type); l.splice(idx,1); saveListByType(type, l);
   renderMaterialsTable();
@@ -11765,7 +11783,7 @@ function deleteMatItem(type, idx){
 
 /* ── 추가 모달 ── */
 function openAddMaterialModal(type){
-  if(!guardMemberOrAdmin('자재정보 추가'))return;
+  if(!guardMatEdit(type||'pest','자재정보 추가'))return;
   const addType = type || 'pest';
   matEditMode=true; matEditIdx=-1; matEditType=addType;
   document.getElementById('mat-modal-title').textContent = addType==='pest'?'🌿 농약 추가':addType==='sand'?'🏖 모래 추가':'🌱 비료 추가';
@@ -16004,13 +16022,114 @@ function skPickMaster(i){
 }
 document.addEventListener('click',e=>{const b=document.getElementById('sk-pick-sugg'); if(b && !e.target.closest('#sk-pick-q') && !e.target.closest('#sk-pick-sugg')) b.style.display='none';});
 
+/* ── 농약·비료 품목 추가: 자재정보 탭의 「농약 추가/비료 추가」 팝업과 같은 항목으로 입력 ──
+   상표명 칸에서 자재정보(+농약은 사용지침서)를 검색해 채울 수 있고, 저장할 때
+   · 자재정보에 없는 상표명이면 → 자재정보에도 추가할지 묻고
+   · 자재정보에 있는데 규격·단가가 다르면 → 자재정보의 규격·단가도 갱신할지 묻는다 */
+let _skMatGuide=null;
+function skEditItemMat(){
+  const {base,ph}=matFieldDefs(_skLedger);
+  const L=SK_LEDGERS[_skLedger];
+  const tdL='padding:5px 8px;font-weight:700;color:#555;white-space:nowrap;border-bottom:1px solid #f0f0f0;width:110px;font-size:11px;';
+  const taS='width:100%;padding:4px 6px;border:1px solid #ccc;border-radius:5px;font-size:12px;box-sizing:border-box;resize:vertical;overflow:hidden;line-height:1.4;min-height:26px;font-family:inherit;';
+  const rows=base.map(([k,l])=>{
+    const inp=k==='name'
+      ?`<div style="position:relative;"><input data-field="name" id="sk-mat-name" autocomplete="off" oninput="skMatSearch(this.value)" onfocus="skMatSearch(this.value)" placeholder="입력하면 자재정보${_skLedger==='pest'?'·지침서':''}에서 자동검색..." style="width:100%;padding:4px 6px;border:1.5px solid #185FA5;border-radius:5px;font-size:12px;box-sizing:border-box;"><div class="sk-sugg" id="sk-mat-dd" style="display:none;"></div></div>`
+      :`<textarea data-field="${k}" placeholder="${ph[k]||''}" rows="1" oninput="autoGrowTA(this)" style="${taS}"></textarea>`;
+    return `<tr><td style="${tdL}">${l}</td><td style="padding:3px 8px;border-bottom:1px solid #f0f0f0;">${inp}</td></tr>`;
+  }).join('');
+  _skMatGuide=null;
+  document.getElementById('sk-modal').innerHTML=`<h3>${L.icon} ${_skLedger==='pest'?'농약 추가':'비료 추가'} <span style="font-size:12px;color:#889;">자재입출고 · ${L.label}</span></h3>
+    <div id="sk-mat-note" style="font-size:11px;color:#2d6a1e;margin-bottom:6px;"></div>
+    <div id="sk-mat-form"><table style="width:100%;border-collapse:collapse;font-size:12px;">${rows}</table></div>
+    <div style="margin-top:10px;padding-top:10px;border-top:2px dashed #e0e0e0;">
+      <div style="font-size:11px;color:#888;font-weight:700;margin-bottom:6px;">입출고 장부 전용</div>
+      <div class="sk-form"><label>단위<input id="sk-i-unit" value="EA"></label><label>전년도 이월재고<input id="sk-i-carry" type="number" value="0"></label></div>
+    </div>
+    <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:12px;">
+      <button class="sk-btn" onclick="skCloseModal()">취소</button><button class="sk-btn pri" onclick="skSaveItemMat()">저장</button></div>`;
+  document.getElementById('sk-modal').classList.remove('sk-ro');
+  document.getElementById('sk-modal-bg').style.display='flex';
+}
+function skMatSearch(val){
+  const dd=document.getElementById('sk-mat-dd'); if(!dd) return;
+  const kw=skNorm(val||''); if(!kw){ dd.style.display='none'; return; }
+  const have=new Set(_skItems.map(i=>skNameKey(i.name)));
+  const out=[], seen=new Set();
+  skMasterList().forEach((m,i)=>{ if(m&&m.name&&skNorm([m.name,m.product,m.type,m.category,m.active].join(' ')).includes(kw)){
+    out.push({src:'db',key:i,name:m.name,sub:[m.size,m.type||m.category].filter(Boolean).join(' '),price:m.price}); seen.add(skNameKey(m.name)); }});
+  if(_skLedger==='pest' && typeof PEST_GUIDE_DATA!=='undefined') Object.keys(PEST_GUIDE_DATA).forEach(n=>{
+    if(!seen.has(skNameKey(n)) && skNorm(n).includes(kw)) out.push({src:'guide',key:n,name:n,sub:((PEST_GUIDE_DATA[n]||[])[0]||{})['적용병해충']||''}); });
+  if(!out.length){ dd.innerHTML='<div style="color:#999;">일치하는 자재가 없습니다 — 직접 입력하세요</div>'; dd.style.display='block'; return; }
+  const badge=(t,c,b)=>`<span style="font-size:9.5px;background:${b};color:${c};padding:1px 5px;border-radius:3px;margin-left:4px;">${t}</span>`;
+  dd.innerHTML=out.slice(0,40).map(o=>`<div onmousedown="event.preventDefault();skMatApply('${o.src}',${o.src==='db'?o.key:`'${skEsc(String(o.key).replace(/\\/g,'\\\\').replace(/'/g,"\\'"))}'`})">
+    <b>${skEsc(o.name)}</b> <span style="color:#889;font-size:11px;">${skEsc(o.sub||'')}</span>
+    <span style="float:right;">${have.has(skNameKey(o.name))?badge('이미 등록됨','#c0392b','#fdecea'):''}${o.src==='db'?badge('자재정보','#2d7a1a','#e8f5e9'):badge('지침서만','#e65100','#fff3e0')}</span></div>`).join('');
+  dd.style.display='block';
+}
+function skMatApply(src,key){
+  const form=document.getElementById('sk-mat-form'); if(!form) return;
+  const dd=document.getElementById('sk-mat-dd'); if(dd) dd.style.display='none';
+  const setAll=obj=>form.querySelectorAll('[data-field]').forEach(e=>{ const v=obj[e.dataset.field]; if(v!==undefined&&v!==null&&v!==''){ e.value=v; if(e.tagName==='TEXTAREA') autoGrowTA(e); } });
+  const note=document.getElementById('sk-mat-note');
+  if(src==='db'){
+    const m=skMasterList()[key]; if(!m) return;
+    form.querySelectorAll('[data-field]').forEach(e=>{ e.value=''; });
+    setAll(m);
+    if(note) note.textContent=`✓ 자재정보의 「${m.name}」 정보를 불러왔습니다. 고친 뒤 저장하면 자재정보 갱신 여부를 묻습니다.`;
+    return;
+  }
+  /* 지침서만 있는 농약 — 자재정보 탭과 같은 방식으로 기본 정보 채움 */
+  const rows=PEST_GUIDE_DATA[key]||[], first=rows[0]||{};
+  const fill={name:key, product:first['_품목명']||'', form:first['_제형']||'', active:first['_일반명']||'', content:first['_주성분함량']||'',
+    maker:first['_회사명']||'', origin:first['_구분']||'', target:rows.map(r=>r['적용병해충']).filter(Boolean).join(', ')};
+  if(first['_일반명']){ const same=getPestList().find(p=>p.active===first['_일반명']);
+    if(same) ['effect','absorption','moa','category','frac','series','summary'].forEach(k=>{ if(!fill[k]&&same[k]) fill[k]=same[k]; }); }
+  setAll(fill);
+  if(note) note.textContent=`📋 지침서에서 「${key}」 기본 정보를 불러왔습니다. 규격·단가 등 누락 항목은 직접 입력하세요.`;
+}
+document.addEventListener('click',e=>{const b=document.getElementById('sk-mat-dd'); if(b && !e.target.closest('#sk-mat-name') && !e.target.closest('#sk-mat-dd')) b.style.display='none';});
+async function skSaveItemMat(){
+  const form=document.getElementById('sk-mat-form'); if(!form) return;
+  const c={}; form.querySelectorAll('[data-field]').forEach(e=>{ c[e.dataset.field]=String(e.value||'').trim(); });
+  if(!c.name){ showToast('상표명을 입력해 주세요'); return; }
+  if(_skItems.some(it=>skNameKey(it.name)===skNameKey(c.name))){ showToast('같은 제품명의 품목이 이미 있습니다'); return; }
+  const lt=_skLedger, lab=SK_LEDGERS[lt].label;
+  const {x}=skMasterToItem(c);
+  const data={name:c.name,spec:c.size||'',unit:document.getElementById('sk-i-unit').value.trim(),price:skNum(c.price),
+    carry:skNum(document.getElementById('sk-i-carry').value),vendor:c.supplier||'',
+    use:(lt==='pest'?(c.type||c.category):c.category)||'',ledger:lt,x,updatedAt:firebase.firestore.FieldValue.serverTimestamp()};
+  /* 자재정보 반영 여부를 먼저 물어봄 */
+  const list=getListByType(lt);
+  const idx=list.findIndex(m=>m&&skNameKey(m.name)===skNameKey(c.name));
+  let act=null;
+  if(idx<0){
+    if(confirm(`「${c.name}」은(는) 자재정보(${lab})에 없습니다.\n자재정보에도 추가할까요?`)) act='add';
+  } else {
+    const m=list[idx], diffs=[];
+    if(String(m.size||'').trim()!==c.size) diffs.push(`규격: ${m.size||'-'} → ${c.size||'-'}`);
+    if(skNum(m.price)!==skNum(c.price)) diffs.push(`단가: ${m.price?skFmt(skNum(m.price))+'원':'-'} → ${c.price?skFmt(skNum(c.price))+'원':'-'}`);
+    if(diffs.length && confirm(`자재정보(${lab})에 등록된 「${m.name}」의 규격·단가가 입력값과 다릅니다.\n\n${diffs.join('\n')}\n\n자재정보의 단가·규격도 갱신할까요?`)) act='upd';
+  }
+  try{ await _fbDb.collection(SK_COL_ITEMS).add(data); }catch(e){ showToast('⚠️ 저장 실패'); return; }
+  let msg='품목이 저장되었습니다';
+  try{
+    const l=getListByType(lt), i2=l.findIndex(m=>m&&skNameKey(m.name)===skNameKey(c.name));
+    if(act==='add' && i2<0){ l.push({...c}); saveListByType(lt,l); msg+=' · 자재정보에도 추가됨'; }
+    else if(act==='upd' && i2>=0){ l[i2].size=c.size; l[i2].price=c.price; saveListByType(lt,l); msg+=' · 자재정보 단가·규격 갱신됨'; }
+    if(act && typeof renderMaterialsTable==='function') renderMaterialsTable();
+  }catch(e){ console.warn(e); }
+  skCloseModal(); showToast(msg);
+}
+
 function skEditItem(id){
   if(!skCanMaster()){showToast('이 장부의 품목 관리 권한이 없습니다');return;}
+  if(!id && (_skLedger==='pest'||_skLedger==='fert')) return skEditItemMat();
   const it=id?skItemById(id):{name:'',spec:'',unit:'EA',price:'',use:'',vendor:'',carry:0};
   const used=id&&_skTx.some(t=>t.itemId===id);
   const f=(k,l,t='text')=>`<label>${l}<input id="sk-i-${k}" type="${t}" value="${skEsc(it[k]??'')}"></label>`;
   _skPickedX=null;
-  const canPick=!id&&['pest','fert','sand'].includes(_skLedger);
+  const canPick=!id&&_skLedger==='sand';
   const nameLbl=(_skLedger==='pest'||_skLedger==='fert')?'상표명':'제품명';
   document.getElementById('sk-modal').innerHTML=`<h3>${id?'품목 편집':'품목 추가'} <span style="font-size:12px;color:#889;">${SK_LEDGERS[_skLedger].icon} ${SK_LEDGERS[_skLedger].label}</span></h3>
     ${canPick?`<div style="background:#f4f8fc;border:1.5px solid #dfe9f3;border-radius:10px;padding:10px;margin-bottom:10px;">
