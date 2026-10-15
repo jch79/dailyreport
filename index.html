@@ -15647,7 +15647,7 @@ function showPdfGuide(ri){
           <option value="all">전체</option><option value="has">재고 있음</option><option value="zero">재고 없음</option><option value="moved">올해 입출고 있음</option>
         </select>
         <select id="sk-sort" onchange="skRenderStock()">
-          <option value="stock">현재고 많은순</option><option value="name">이름순</option><option value="recent">최근 입출고순</option>
+          <option value="stock">현재고 많은순</option><option value="amt">재고금액 많은순</option><option value="inAmt">입고금액 많은순</option><option value="outAmt">출고금액 많은순</option><option value="name">이름순</option><option value="recent">최근 입출고순</option>
         </select>
       </div>
       <div class="sk-tbl-wrap"><table class="sk-tbl" id="sk-stock-tbl"></table></div>
@@ -15833,6 +15833,11 @@ function skRenderStock(){
   if(f==='has') list=list.filter(it=>st[it.id].stock>0);
   if(f==='zero') list=list.filter(it=>st[it.id].stock<=0);
   if(f==='moved') list=list.filter(it=>st[it.id].in||st[it.id].out);
+  /* 품목별 금액: 재고금액 = 현재고×단가, 입고/출고금액 = 입출고 내역의 수량×단가 합계 */
+  const am={}; _skItems.forEach(it=>am[it.id]={amt:Math.max(0,st[it.id].stock)*skNum(it.price),inAmt:0,outAmt:0});
+  _skTx.forEach(t=>{ const r=am[t.itemId]; if(r) r[t.io==='입고'?'inAmt':'outAmt']+=skTxAmt(t); });
+  const amtCol={amt:'재고금액',inAmt:'입고금액',outAmt:'출고금액'}[so]||'';
+  if(amtCol) list.sort((a,b)=>am[b.id][so]-am[a.id][so]||a.name.localeCompare(b.name,'ko')); else
   list.sort(so==='name'?(a,b)=>a.name.localeCompare(b.name,'ko'):so==='recent'?(a,b)=>(st[b.id].last||'').localeCompare(st[a.id].last||'')||a.name.localeCompare(b.name,'ko'):(a,b)=>st[b.id].stock-st[a.id].stock||a.name.localeCompare(b.name,'ko'));
   /* 요약 */
   let tIn=0,tOut=0,mIn=0,mOut=0,amt=0;
@@ -15843,12 +15848,13 @@ function skRenderStock(){
       <td class="l"><b>${skEsc(it.name)}</b><div style="font-size:10.5px;color:#889;">${skEsc(it.use||'')}</div></td>
       <td>${skEsc(it.spec||'')}</td><td>${skEsc(it.unit||'')}</td>
       <td class="sk-stock ${s.stock<=0?'sk-low':''}">${skFmt(s.stock)}</td>
+      ${amtCol?`<td style="font-weight:700;color:#185FA5;white-space:nowrap;">${skFmt(Math.round(am[it.id][so]))}</td>`:''}
       <td>${skFmt(skNum(it.carry))}</td>
       <td class="${s.in?'':'sk-zero'}">${skFmt(s.in)}</td><td class="${s.out?'':'sk-zero'}">${skFmt(s.out)}</td>
       <td style="font-size:11px;">${s.lastIn?s.lastIn.slice(5):''}</td><td style="font-size:11px;">${s.lastOut?s.lastOut.slice(5):''}</td>
       <td style="font-size:11px;">${skEsc(it.vendor||'')}</td></tr>`;}).join('');
-  document.getElementById('sk-stock-tbl').innerHTML=`<thead><tr><th>제품명</th><th>규격</th><th>단위</th><th>현재고</th><th>이월</th><th>입고</th><th>출고</th><th>최종입고</th><th>최종출고</th><th>납품업체</th></tr></thead>
-    <tbody>${rows||`<tr><td colspan="10" style="padding:22px;color:#999;">${_skItems.length?'검색 결과가 없습니다':'등록된 품목이 없습니다. 상단 「📥 엑셀 가져오기」로 기존 사용장부를 불러오세요.'}</td></tr>`}</tbody>`;
+  document.getElementById('sk-stock-tbl').innerHTML=`<thead><tr><th>제품명</th><th>규격</th><th>단위</th><th>현재고</th>${amtCol?`<th>${amtCol}(원)</th>`:''}<th>이월</th><th>입고</th><th>출고</th><th>최종입고</th><th>최종출고</th><th>납품업체</th></tr></thead>
+    <tbody>${rows||`<tr><td colspan="${amtCol?11:10}" style="padding:22px;color:#999;">${_skItems.length?'검색 결과가 없습니다':'등록된 품목이 없습니다. 상단 「📥 엑셀 가져오기」로 기존 사용장부를 불러오세요.'}</td></tr>`}</tbody>`;
 }
 
 /* ── 품목 상세(내역) ── */
