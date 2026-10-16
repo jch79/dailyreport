@@ -110,6 +110,8 @@ _fbAuth.onAuthStateChanged(async user => {
     try{ sessionStorage.removeItem('golf_fb_logged_in'); }catch(e){}
   }
   if(user){ setTimeout(fbFullSyncFromCloud, 800); }
+  if(_fbUser && _fbRole==='admin' && typeof checkWeeklyAdminBackup==='function') setTimeout(checkWeeklyAdminBackup, 2500);
+  if(typeof noticeSubscribe==='function') noticeSubscribe();
 });
 
 /* ════════════════════════════════════════════
@@ -1101,6 +1103,7 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
     <div class="nav-tab" onclick="showPanel('materials',this)">🌿 자재정보</div>
     <div class="nav-tab" onclick="showPanel('matuse',this);renderMatUsePanel()">🧪 자재사용량</div>
     <div class="nav-tab" onclick="showPanel('sk',this)">📦 자재입출고</div>
+    <div class="nav-tab" id="nav-tab-notice" onclick="showPanel('notice',this)">📢 공지<span class="nt-dot" style="display:none;width:7px;height:7px;border-radius:50%;background:#e74c3c;margin-left:1px;"></span></div>
     <!-- ☁️ Firebase 인증 바 -->
     <div id="fb-auth-bar" style="display:flex;align-items:center;gap:5px;flex-shrink:0;padding-right:4px;">
       <span style="font-size:11px;color:#aaa;">☁️ 초기화 중...</span>
@@ -10509,6 +10512,154 @@ function checkBackupReminder(){
   }catch(e){ /* 리마인더 실패는 조용히 무시 (핵심 기능 아님) */ }
 }
 
+/* ═══════════ 📢 공지 탭 ═══════════
+   · 관리자 공지: Firestore shared/notices 문서의 items 배열(모든 기기 실시간 공유). 관리자만 작성·수정·삭제. 항상 맨 위 고정
+   · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
+const APP_CHANGELOG=[
+  {date:'2026-10-16',items:[
+    '📢 공지 탭 추가 — 관리자 공지(상단 고정)와 앱 업데이트 내역을 한곳에서 확인',
+    '💾 매주 월요일 관리자 로그인 시 백업(내보내기) 안내 팝업',
+    '💾 상단 「내보내기」 백업에 자재입출고 엑셀 양식(S/K·농약·비료·모래)도 포함, 안내 문구를 「자재입출고」로 통일',
+    '🧪 자재사용량 월별 차트: 막대 위 숫자를 차트 아래 성분별 목록(N·P·K·Ca… 순)으로 옮기고, 막대 폭을 줄여 모든 성분이 보이게 함',
+    '🧪 월별 차트를 원형으로 바꿔 봤다가 다시 막대그래프로 되돌림']},
+  {date:'2026-10-15',items:[
+    '📦 자재입출고 재고현황 정렬에 「재고금액·입고금액·출고금액 많은순」 추가 (선택 시 금액 열 표시)']},
+  {date:'2026-10-14',items:[
+    '📦 자재입출고 농약·비료 품목추가 팝업을 자재정보 탭의 「농약 추가/비료 추가」와 같은 항목으로 통일 (자재정보·지침서 자동검색)',
+    '📦 품목추가 저장 시 자재정보에 없으면 「자재정보에도 추가할까요?」, 규격·단가가 다르면 「자재정보도 갱신할까요?」 확인',
+    '🌿 부분편집자도 권한이 있는 종류(농약·비료·모래)는 자재정보 탭에서 추가·수정·삭제 가능']},
+  {date:'10월 초',items:[
+    '📦 자재입출고 탭 신설 — S/K자재·농약·비료·모래 장부, 엑셀 가져오기/「양식 그대로」 내보내기, 입고·출고·재고금액과 업체별 매출',
+    '🔑 팀 관리에서 계정별·장부별 자재입출고 수정 권한 지정',
+    '🌧 강우량: 수동 입력값 기기 간 동기화, 월·연 누적은 일보 강우량 우선(없는 날은 기상청 값)',
+    '✏️ 작업내용 칸 여러 줄 입력(Shift+Enter) 시 자동으로 늘어나고 기록에도 모두 표시',
+    '🧪 자재사용 캘린더: 10월 집계 누락 수정, 관수량 G/T/F 표시, 「대체로 맑음」을 맑음으로 표시']}
+];
+const NOTICE_DOC='notices', NOTICE_CACHE_KEY='golf_notices_cache_v1', NOTICE_SEEN_KEY='golf_notice_seen_v1';
+let _notices=[], _noticeUnsub=null, _noticeEditId=null;
+try{ _notices=JSON.parse(localStorage.getItem(NOTICE_CACHE_KEY)||'[]'); }catch(e){ _notices=[]; }
+function _ntEsc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function _ntDate(ms){ const d=new Date(ms); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; }
+function _ntLatest(){ return Math.max(0,...[..._notices.map(n=>n.at||0),Date.parse(APP_CHANGELOG[0]?.date)||0]); }
+function noticeUpdateBadge(){
+  const tab=document.getElementById('nav-tab-notice'); if(!tab) return;
+  let seen=0; try{ seen=parseInt(localStorage.getItem(NOTICE_SEEN_KEY)||'0')||0; }catch(e){}
+  const dot=tab.querySelector('.nt-dot'); if(dot) dot.style.display=_ntLatest()>seen?'inline-block':'none';
+}
+function noticeMarkSeen(){ try{ localStorage.setItem(NOTICE_SEEN_KEY,String(Date.now())); }catch(e){} noticeUpdateBadge(); }
+function noticeSubscribe(){
+  if(_noticeUnsub){ try{_noticeUnsub();}catch(e){} _noticeUnsub=null; }
+  if(!_fbUser) return;
+  try{
+    _noticeUnsub=_fbDb.collection(FB_COL_SHARED).doc(NOTICE_DOC).onSnapshot(snap=>{
+      _notices=(snap.exists&&Array.isArray(snap.data().items))?snap.data().items:[];
+      try{ localStorage.setItem(NOTICE_CACHE_KEY,JSON.stringify(_notices)); }catch(e){}
+      noticeUpdateBadge();
+      const p=document.getElementById('panel-notice'); if(p&&p.style.display==='block') renderNoticePanel();
+    },e=>console.warn('[공지] 구독 실패',e));
+  }catch(e){ console.warn('[공지]',e); }
+}
+function renderNoticePanel(){
+  const el=document.getElementById('panel-notice'); if(!el) return;
+  const isAdmin=_fbUser&&_fbRole==='admin';
+  const list=[..._notices].sort((a,b)=>(b.at||0)-(a.at||0));
+  const card=n=>`<div style="background:#fffdf3;border:1.5px solid #f1d27a;border-left:5px solid #e0a800;border-radius:10px;padding:12px 14px;margin-bottom:10px;">
+      <div style="display:flex;align-items:flex-start;gap:8px;">
+        <span style="font-size:11px;background:#e0a800;color:#fff;border-radius:5px;padding:2px 7px;font-weight:800;flex-shrink:0;">📌 공지</span>
+        <div style="flex:1;min-width:0;font-size:14px;font-weight:800;color:#5a4300;word-break:break-all;">${_ntEsc(n.title||'(제목 없음)')}</div>
+        ${isAdmin?`<button onclick="noticeEdit('${n.id}')" style="font-size:11px;padding:3px 8px;border:1px solid #ccc;border-radius:6px;background:#fff;cursor:pointer;flex-shrink:0;">수정</button>
+        <button onclick="noticeDelete('${n.id}')" style="font-size:11px;padding:3px 8px;border:1px solid #e6b0aa;color:#c0392b;border-radius:6px;background:#fff;cursor:pointer;flex-shrink:0;">삭제</button>`:''}
+      </div>
+      ${n.body?`<div style="margin-top:8px;font-size:13px;color:#333;line-height:1.7;white-space:pre-wrap;word-break:break-all;">${_ntEsc(n.body)}</div>`:''}
+      <div style="margin-top:8px;font-size:11px;color:#999;">${_ntDate(n.at||0)} · ${_ntEsc(n.by||'관리자')}${n.editedAt?' · 수정됨':''}</div>
+    </div>`;
+  const editing=_noticeEditId?_notices.find(n=>n.id===_noticeEditId):null;
+  el.innerHTML=`<div style="max-width:820px;margin:0 auto;">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+      <span style="font-size:16px;font-weight:800;color:#1a1a1a;">📢 공지</span>
+      <span style="font-size:11px;color:#999;">관리자 공지는 맨 위에 고정됩니다</span></div>
+    ${isAdmin?`<div style="background:#f4f8fc;border:1.5px solid #dfe9f3;border-radius:10px;padding:12px;margin-bottom:14px;">
+      <div style="font-size:12px;font-weight:800;color:#185FA5;margin-bottom:6px;">${editing?'✏️ 공지 수정':'✍️ 새 공지 작성 (관리자)'}</div>
+      <input id="nt-title" placeholder="제목" value="${_ntEsc(editing?editing.title:'')}" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #cfdcea;border-radius:8px;font-size:13px;margin-bottom:6px;">
+      <textarea id="nt-body" placeholder="내용 (줄바꿈 가능)" rows="4" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid #cfdcea;border-radius:8px;font-size:13px;font-family:inherit;resize:vertical;field-sizing:content;min-height:80px;">${_ntEsc(editing?editing.body:'')}</textarea>
+      <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:6px;">
+        ${editing?`<button onclick="_noticeEditId=null;renderNoticePanel()" style="padding:7px 14px;border-radius:8px;border:1.5px solid #ccc;background:#fff;font-size:12px;font-weight:700;cursor:pointer;">취소</button>`:''}
+        <button onclick="noticeSave()" style="padding:7px 16px;border-radius:8px;border:1.5px solid #185FA5;background:#185FA5;color:#fff;font-size:12px;font-weight:800;cursor:pointer;">${editing?'💾 수정 저장':'📢 공지 올리기'}</button>
+      </div></div>`:''}
+    ${list.length?list.map(card).join(''):`<div style="font-size:12px;color:#aaa;padding:10px 4px 16px;">등록된 관리자 공지가 없습니다.</div>`}
+    <div style="margin-top:18px;font-size:14px;font-weight:800;color:#2d6a1e;border-bottom:2px solid #e2ecd6;padding-bottom:6px;margin-bottom:10px;">🛠 앱 업데이트 내역</div>
+    ${APP_CHANGELOG.map(g=>`<div style="background:#fff;border:1.5px solid #e2ecd6;border-radius:10px;padding:10px 14px;margin-bottom:8px;">
+      <div style="font-size:12px;font-weight:800;color:#3B6D11;margin-bottom:4px;">${_ntEsc(g.date)}</div>
+      <ul style="margin:0;padding-left:18px;font-size:12.5px;color:#333;line-height:1.75;">${g.items.map(t=>`<li>${_ntEsc(t)}</li>`).join('')}</ul></div>`).join('')}
+  </div>`;
+  noticeMarkSeen();
+}
+async function noticeSave(){
+  if(!(_fbUser&&_fbRole==='admin')){ showToast('공지는 관리자만 작성할 수 있습니다'); return; }
+  const title=document.getElementById('nt-title').value.trim(), body=document.getElementById('nt-body').value.trim();
+  if(!title&&!body){ showToast('제목이나 내용을 입력하세요'); return; }
+  const ref=_fbDb.collection(FB_COL_SHARED).doc(NOTICE_DOC);
+  try{
+    const snap=await ref.get(); let items=(snap.exists&&Array.isArray(snap.data().items))?snap.data().items:[];
+    const by=_fbUser.displayName||_fbUser.email||'관리자';
+    if(_noticeEditId){ items=items.map(n=>n.id===_noticeEditId?{...n,title,body,editedAt:Date.now()}:n); }
+    else items.push({id:'n'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),title,body,at:Date.now(),by});
+    await ref.set({items,updatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true});
+    _notices=items; try{ localStorage.setItem(NOTICE_CACHE_KEY,JSON.stringify(items)); }catch(e){}
+    showToast(_noticeEditId?'공지를 수정했습니다':'공지를 올렸습니다'); _noticeEditId=null; renderNoticePanel();
+  }catch(e){ console.warn(e); showToast('⚠️ 공지 저장 실패 — Firestore 규칙(shared 쓰기 권한)을 확인하세요'); }
+}
+function noticeEdit(id){ _noticeEditId=id; renderNoticePanel(); window.scrollTo(0,0); }
+async function noticeDelete(id){
+  if(!(_fbUser&&_fbRole==='admin')) return;
+  if(!confirm('이 공지를 삭제할까요?')) return;
+  const ref=_fbDb.collection(FB_COL_SHARED).doc(NOTICE_DOC);
+  try{ const snap=await ref.get(); const items=((snap.exists&&snap.data().items)||[]).filter(n=>n.id!==id);
+    await ref.set({items,updatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true});
+    _notices=items; try{ localStorage.setItem(NOTICE_CACHE_KEY,JSON.stringify(items)); }catch(e){}
+    showToast('공지를 삭제했습니다'); renderNoticePanel(); }catch(e){ showToast('⚠️ 삭제 실패'); }
+}
+/* 공지 패널 자리 만들기 (자재입출고 패널 뒤) + 배지 */
+(function(){ const mk=()=>{ if(document.getElementById('panel-notice')) return; const sk=document.getElementById('panel-sk'); if(!sk) return;
+  const p=document.createElement('div'); p.className='panel'; p.id='panel-notice'; p.style.display='none'; sk.parentNode.insertBefore(p,sk.nextSibling); noticeUpdateBadge(); };
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',mk); else mk(); })();
+
+/* ── 매주 월요일 관리자 백업 안내 ──
+ * 관리자가 월요일에 로그인하면 「내보내기」 백업을 하라는 팝업을 띄움.
+ * 오늘(월요일) 이미 이 기기에서 내보내기를 했으면 띄우지 않고,
+ * 「나중에」를 누르면 같은 접속(탭) 동안은 다시 띄우지 않되 다음 로그인 때 다시 안내함. */
+function _localYmd(d){ d=d||new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function checkWeeklyAdminBackup(force){
+  try{
+    if(!_fbUser || _fbRole!=='admin') return;
+    const now=new Date();
+    if(!force && now.getDay()!==1) return;                       /* 월요일만 */
+    const today=_localYmd(now);
+    const last=localStorage.getItem(LAST_EXPORT_KEY);
+    if(!force && last && _localYmd(new Date(last))===today) return; /* 오늘 이미 백업함 */
+    if(!force){ try{ if(sessionStorage.getItem('golf_weekly_bk_later')===today) return; }catch(e){} }
+    if(document.getElementById('weekly-bk-wrap')) return;
+    const lastTxt = last ? `${_localYmd(new Date(last))} (${Math.floor((Date.now()-new Date(last).getTime())/86400000)}일 전)` : '기록 없음';
+    const wrap=document.createElement('div');
+    wrap.id='weekly-bk-wrap';
+    wrap.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10050;display:flex;align-items:center;justify-content:center;padding:16px;';
+    wrap.innerHTML=`<div style="background:#fff;border-radius:14px;max-width:360px;width:100%;box-shadow:0 10px 40px rgba(0,0,0,.3);overflow:hidden;">
+      <div style="background:linear-gradient(135deg,#0C447C,#185FA5);color:#fff;padding:14px 18px;font-size:15px;font-weight:800;">💾 주간 백업 안내</div>
+      <div style="padding:16px 18px;font-size:13px;line-height:1.7;color:#333;">
+        월요일입니다. 이번 주 백업(내보내기)을 해 주세요.<br>
+        <span style="font-size:12px;color:#667;">일보·자재정보·설정과 자재입출고(품목·입출고·엑셀양식)가 파일 하나로 저장됩니다.</span>
+        <div style="margin-top:10px;font-size:12px;background:#f4f8fc;border:1px solid #dfe9f3;border-radius:8px;padding:7px 10px;">이 기기의 마지막 백업: <b>${lastTxt}</b></div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;padding:0 18px 16px;">
+        <button id="weekly-bk-later" style="padding:8px 14px;border-radius:8px;border:1.5px solid #ccc;background:#fff;color:#555;font-size:13px;font-weight:700;cursor:pointer;">나중에</button>
+        <button id="weekly-bk-now" style="padding:8px 14px;border-radius:8px;border:1.5px solid #185FA5;background:#185FA5;color:#fff;font-size:13px;font-weight:800;cursor:pointer;">💾 지금 백업하기</button>
+      </div></div>`;
+    document.body.appendChild(wrap);
+    wrap.querySelector('#weekly-bk-later').onclick=()=>{ try{ sessionStorage.setItem('golf_weekly_bk_later',today); }catch(e){} wrap.remove(); };
+    wrap.querySelector('#weekly-bk-now').onclick=()=>{ wrap.remove(); exportDataFile(); };
+  }catch(e){ console.warn('[주간 백업 안내]',e); }
+}
+
 /* ── 데이터 내보내기 / 가져오기 ──
  * content://(안드로이드 파일앱 등에서 파일을 직접 열었을 때) 또는 file:// 로
  * 열린 경우, 브라우저 보안 정책상 다운로드/저장이 조용히 실패하거나
@@ -10555,8 +10706,8 @@ function exportDataFile(){
   /* S/K자재(클라우드 전용 데이터)도 백업에 포함 — 조회에 실패해도 일보 내보내기는 계속 진행 */
   let _skBkInfo='';
   const _skBkStep=(typeof skBackupForExport==='function'?skBackupForExport():Promise.resolve(null))
-    .then(bk=>{ if(bk){ exportObj['golf_sk_backup_v1']=JSON.stringify(bk); _skBkInfo=` + S/K자재 품목 ${bk.items.length}개·입출고 ${bk.tx.length}건`; } })
-    .catch(e=>console.warn('[내보내기] S/K자재 백업 실패',e));
+    .then(bk=>{ if(bk){ exportObj['golf_sk_backup_v1']=JSON.stringify(bk); _skBkInfo=` + 자재입출고 품목 ${bk.items.length}개·입출고 ${bk.tx.length}건${bk.tpl&&Object.keys(bk.tpl).length?`·엑셀양식 ${Object.keys(bk.tpl).length}개`:''}`; } })
+    .catch(e=>console.warn('[내보내기] 자재입출고 백업 실패',e));
 
   /* 현재 HTML 파일에 데이터를 내장시켜 새 HTML로 다운로드 */
   _skBkStep.then(()=>fetch(location.href))
@@ -10679,6 +10830,7 @@ function showPanel(id,tab){
   if(id==='search')renderRecentChips();
   if(id==='materials')renderMaterialsPanel();
   if(id==='sk' && typeof skInit==='function') skInit();
+  if(id==='notice' && typeof renderNoticePanel==='function') renderNoticePanel();
   /* 탭을 바꾸면 항상 그 탭의 맨 위(최근 항목)부터 보이도록 스크롤 리셋.
      예전 탭에서 스크롤을 많이 내려놨던 상태가 그대로 남아있으면, 다른
      탭으로 바꿔도 화면이 이미 아래쪽(과거 기록 등)에 가 있는 것처럼
@@ -16306,19 +16458,27 @@ async function skBackupForExport(){
       items=a.docs.map(d=>({id:d.id,...d.data()})); tx=b.docs.map(d=>({id:d.id,...d.data()})); src='cloud';
     }catch(e){ console.warn('[S/K 백업] 클라우드 조회 실패 — 이 기기에 저장된 사본으로 백업',e); }
   }
-  if(!items.length && !tx.length) return null;
-  return {v:1,exportedAt:new Date().toISOString(),src,items:items.map(_skPlain),tx:tx.map(_skPlain)};
+  /* 장부별 엑셀 양식(엑셀 「양식 그대로」 내보내기용)도 함께 백업 */
+  const tpl={};
+  if(_fbUser){
+    await Promise.all(Object.keys(SK_LEDGERS).map(async l=>{
+      try{ const d=await _fbDb.collection(FB_COL_SHARED).doc(SK_LEDGERS[l].tpl).get(); if(d.exists&&d.data().b64) tpl[l]=d.data(); }
+      catch(e){ console.warn('[자재입출고 백업] 엑셀 양식 조회 실패',l,e); }
+    }));
+  }
+  if(!items.length && !tx.length && !Object.keys(tpl).length) return null;
+  return {v:2,exportedAt:new Date().toISOString(),src,items:items.map(_skPlain),tx:tx.map(_skPlain),tpl};
 }
 /* 반환값: 사용자에게 알릴 안내문(없으면 '') */
 async function skRestoreBackup(raw){
-  let bk; try{ bk=typeof raw==='string'?JSON.parse(raw):raw; }catch(e){ return 'S/K자재 백업을 읽지 못해 복원하지 않았습니다. (일보는 정상 복원됩니다)'; }
+  let bk; try{ bk=typeof raw==='string'?JSON.parse(raw):raw; }catch(e){ return '자재입출고 백업을 읽지 못해 복원하지 않았습니다. (일보는 정상 복원됩니다)'; }
   if(!bk || !Array.isArray(bk.items) || !Array.isArray(bk.tx)) return '';
-  if(!_fbUser) return `이 파일에는 S/K자재 백업(품목 ${bk.items.length}개·입출고 ${bk.tx.length}건)이 들어 있지만, 로그인 상태가 아니라 복원하지 못했습니다.\n로그인한 뒤 다시 가져오기를 해 주세요. (일보는 정상 복원됩니다)`;
+  if(!_fbUser) return `이 파일에는 자재입출고 백업(품목 ${bk.items.length}개·입출고 ${bk.tx.length}건)이 들어 있지만, 로그인 상태가 아니라 복원하지 못했습니다.\n로그인한 뒤 다시 가져오기를 해 주세요. (일보는 정상 복원됩니다)`;
   if(!(_fbRole==='admin'||(_fbRole==='member'&&Object.keys(SK_LEDGERS).every(l=>skLedgerAllowed(l))))) return '자재입출고 복원은 관리자(또는 모든 장부 권한이 있는 팀원)만 할 수 있어 건너뛰었습니다. (일보는 정상 복원됩니다)';
   try{
     const [a,b]=await Promise.all([_fbDb.collection(SK_COL_ITEMS).get(),_fbDb.collection(SK_COL_TX).get()]);
     const when=bk.exportedAt?new Date(bk.exportedAt).toLocaleString('ko-KR'):'알 수 없음';
-    if(!confirm(`이 파일에 S/K자재 백업이 들어 있습니다. (백업 시각: ${when})\n\n· 파일: 품목 ${bk.items.length}개 · 입출고 ${bk.tx.length}건\n· 현재 클라우드: 품목 ${a.size}개 · 입출고 ${b.size}건\n\n복원하면 클라우드의 S/K자재가 파일 내용으로 완전히 교체됩니다.\n(백업 이후에 입력한 S/K 입출고는 사라지고, 팀원 화면에도 바로 반영됩니다)\n\n[확인] S/K자재도 복원   [취소] S/K자재는 그대로 두고 일보만 복원`)) return '';
+    if(!confirm(`이 파일에 자재입출고 백업이 들어 있습니다. (백업 시각: ${when})\n\n· 파일: 품목 ${bk.items.length}개 · 입출고 ${bk.tx.length}건${bk.tpl&&Object.keys(bk.tpl).length?` · 엑셀양식 ${Object.keys(bk.tpl).length}개`:''}\n· 현재 클라우드: 품목 ${a.size}개 · 입출고 ${b.size}건\n\n복원하면 클라우드의 자재입출고가 파일 내용으로 완전히 교체됩니다.\n(백업 이후에 입력한 자재입출고 입출고·품목는 사라지고, 팀원 화면에도 바로 반영됩니다)\n\n[확인] 자재입출고도 복원   [취소] 자재입출고는 그대로 두고 일보만 복원`)) return '';
     const ops=[];
     const keepI=new Set(bk.items.map(x=>x.id)), keepT=new Set(bk.tx.map(x=>x.id));
     a.docs.forEach(d=>{ if(!keepI.has(d.id)) ops.push(bt=>bt.delete(d.ref)); });
@@ -16326,8 +16486,14 @@ async function skRestoreBackup(raw){
     bk.items.forEach(x=>{ if(!x||!x.id) return; const {id,...d}=x; ops.push(bt=>bt.set(_fbDb.collection(SK_COL_ITEMS).doc(id),d)); });
     bk.tx.forEach(x=>{ if(!x||!x.id) return; const {id,...d}=x; ops.push(bt=>bt.set(_fbDb.collection(SK_COL_TX).doc(id),d)); });
     for(let i=0;i<ops.length;i+=400){ const bt=_fbDb.batch(); ops.slice(i,i+400).forEach(f=>f(bt)); await bt.commit(); }
-    return `S/K자재 복원 완료: 품목 ${bk.items.length}개 · 입출고 ${bk.tx.length}건`;
-  }catch(e){ console.warn(e); return 'S/K자재 복원 중 오류가 발생했습니다: '+(e.message||e)+'\n(일보는 정상 복원됩니다. S/K자재는 일부만 반영됐을 수 있으니 다시 가져오기를 해 주세요)'; }
+    /* 장부별 엑셀 양식 복원 (백업에 들어 있는 장부만 덮어씀) */
+    let nT=0;
+    for(const [l,t] of Object.entries(bk.tpl||{})){
+      if(!SK_LEDGERS[l]||!t||!t.b64) continue;
+      try{ await _fbDb.collection(FB_COL_SHARED).doc(SK_LEDGERS[l].tpl).set(t); nT++; }catch(e){ console.warn('[자재입출고 복원] 엑셀 양식 복원 실패',l,e); }
+    }
+    return `자재입출고 복원 완료: 품목 ${bk.items.length}개 · 입출고 ${bk.tx.length}건${nT?` · 엑셀양식 ${nT}개`:''}`;
+  }catch(e){ console.warn(e); return '자재입출고 복원 중 오류가 발생했습니다: '+(e.message||e)+'\n(일보는 정상 복원됩니다. 자재입출고는 일부만 반영됐을 수 있으니 다시 가져오기를 해 주세요)'; }
 }
 
 
