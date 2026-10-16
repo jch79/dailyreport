@@ -13066,38 +13066,31 @@ function renderMatUsePanel(page){
     const maxVal = moKeys.length ? Math.max(...moKeys.map(k=>d[k]||0), 0.001) : 0.001;
     const total  = moKeys.reduce((s,k)=>s+(d[k]||0), 0);
 
-    /* 원형(도넛) 차트 — 조각·범례를 누르면 해당 성분/품목 사용내역 (data 속성 + addEventListener, CSP 안전) */
-    const fmtV = v => v>=1000 ? (v/1000).toFixed(1)+'k' : v.toFixed(1);
-    let barItems;
-    if(moKeys.length && total>0){
-      const R=40, C=2*Math.PI*R; let acc=0;
-      const sorted = [...moKeys].sort((x,y)=>(d[y]||0)-(d[x]||0));   /* 많은 것부터 12시 방향에서 시계방향 */
-      const slices = sorted.map(k=>{
-        const val=d[k]||0, frac=val/total, len=frac*C;
-        const mid=(acc+frac/2)*2*Math.PI - Math.PI/2;
-        const seg=`<circle class="matu-bar-col" data-mo="${mo}" data-year="${selYear}" data-nutr="${k}" cx="60" cy="60" r="${R}" fill="none"
-            stroke="${colorMap[k]}" stroke-width="22" stroke-dasharray="${Math.max(len-(moKeys.length>1?0.6:0),0.01)} ${C}" stroke-dashoffset="${-acc*C}"
-            transform="rotate(-90 60 60)" style="cursor:pointer;"><title>${k}: ${val.toFixed(2)}${unit} (${(frac*100).toFixed(1)}%) — 클릭하여 사용내역 보기</title></circle>`;
-        const lab = '';
-        acc+=frac; return {seg,lab};
-      });
-      const legend = sorted.map(k=>{ const val=d[k]||0;
-        return `<div class="matu-bar-col" data-mo="${mo}" data-year="${selYear}" data-nutr="${k}" title="${k}: ${val.toFixed(2)}${unit} (${(val/total*100).toFixed(1)}%) — 클릭하여 사용내역 보기"
-          style="display:flex;align-items:center;gap:3px;font-size:10.5px;padding:1px 2px;border-radius:4px;cursor:pointer;min-width:0;white-space:nowrap;">
-          <span style="width:8px;height:8px;border-radius:2px;background:${colorMap[k]};flex-shrink:0;"></span>
-          <span style="font-weight:700;color:${colorMap[k]};overflow:hidden;text-overflow:ellipsis;min-width:0;">${k}</span>
-          <span style="color:#333;font-weight:600;margin-left:auto;padding-left:2px;">${fmtV(val)}</span></div>`; }).join('');
-      barItems = `<div style="display:flex;flex-direction:column;align-items:center;gap:6px;width:100%;">
-          <svg viewBox="0 0 120 120" style="width:100%;max-width:${CHART_H-30}px;height:auto;display:block;">
-            ${slices.map(x=>x.seg).join('')}${slices.map(x=>x.lab).join('')}
-            <text x="60" y="56" text-anchor="middle" style="font-size:9px;fill:#888;">합계</text>
-            <text x="60" y="69" text-anchor="middle" style="font-size:11px;font-weight:800;fill:#2d6a1e;">${fmtV(total)}${unit}</text>
-          </svg>
-          <div style="width:100%;display:grid;grid-template-columns:repeat(auto-fill,minmax(${selType==='fert'?'62px':'110px'},1fr));column-gap:8px;row-gap:1px;max-height:${selType==='fert'?'none':'96px'};overflow-y:auto;">${legend}</div>
-        </div>`;
-    } else {
-      barItems = `<div style="flex:1;display:flex;align-items:center;justify-content:center;height:${CHART_H}px;color:#ddd;font-size:11px;">데이터 없음</div>`;
-    }
+    /* Y축 (3 눈금) */
+    const ySteps = 3;
+    const yLabels = Array.from({length:ySteps+1},(_,i)=>{
+      const val = maxVal*(1-i/ySteps);
+      const lbl = val>=1000 ? (val/1000).toFixed(1)+'k' : val.toFixed(0);
+      return `<div style="font-size:8px;color:#bbb;text-align:right;padding-right:3px;line-height:1;height:${CHART_H/(ySteps+1)}px;display:flex;align-items:flex-start;">${lbl}</div>`;
+    }).join('');
+
+    /* 성분별 세로 막대 — data 속성으로 클릭 처리 (CSP 안전)
+       고정폭으로 렌더링하고, 개수가 많으면 부모 컨테이너를 가로 스크롤 */
+    const barItems = moKeys.length ? moKeys.map(k=>{
+      const val  = d[k]||0;
+      const hPct = maxVal>0 ? (val/maxVal*100) : 0;
+      const lbl  = val>=1000 ? (val/1000).toFixed(1)+'k' : val.toFixed(1);
+      return `<div style="display:flex;flex-direction:column;align-items:center;flex:0 0 34px;width:34px;gap:2px;">
+        <div style="font-size:8px;font-weight:700;color:#555;line-height:1;">${lbl}</div>
+        <div class="matu-bar-col" data-mo="${mo}" data-year="${selYear}" data-nutr="${k}"
+          style="width:100%;height:${CHART_H}px;display:flex;flex-direction:column;justify-content:flex-end;cursor:pointer;"
+          title="${k}: ${val.toFixed(2)}${unit} — 클릭하여 ${k} 성분 사용내역 보기">
+          <div style="width:100%;height:${hPct}%;background:${colorMap[k]};border-radius:3px 3px 0 0;min-height:${val>0?3:0}px;transition:height .35s;pointer-events:none;"></div>
+        </div>
+        <div style="font-size:9px;font-weight:700;color:${colorMap[k]};line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:34px;" title="${k}">${k}</div>
+      </div>`;
+    }).join('')
+    : `<div style="flex:1;display:flex;align-items:center;justify-content:center;height:${CHART_H}px;color:#ddd;font-size:11px;">데이터 없음</div>`;
 
     const totalAmtG = d._amt || 0;   /* 비료 실사용량(g) */
     const totalLabel = totalAmtG>0
@@ -13105,7 +13098,7 @@ function renderMatUsePanel(page){
       : (total>0 ? `<span style="font-size:10px;color:#aaa;font-weight:500;">(순성분 ${total.toFixed(1)}${unit})</span>` : '');
 
     chartBoxes.push(`
-      <div style="background:#fff;border:1.5px solid #dde8cc;border-radius:10px;padding:10px 8px 8px;display:flex;flex-direction:column;min-width:0;container-type:inline-size;">
+      <div style="background:#fff;border:1.5px solid #dde8cc;border-radius:10px;padding:10px 8px 8px;display:flex;flex-direction:column;min-width:0;">
         <!-- 월 타이틀 -->
         <div style="display:flex;align-items:baseline;gap:5px;margin-bottom:8px;border-bottom:1.5px solid #eef3e8;padding-bottom:6px;">
           <span style="font-size:13px;font-weight:800;color:#2d6a1e;">${mLabel}</span>
@@ -13114,8 +13107,15 @@ function renderMatUsePanel(page){
             style="margin-left:auto;font-size:10px;padding:2px 7px;border:1px solid #97C459;border-radius:5px;background:#f0f8e8;color:#3B6D11;cursor:pointer;font-weight:600;">상세</button>
         </div>
         <!-- 차트 본체 -->
-        <div style="display:flex;flex:1;align-items:flex-start;justify-content:center;">
-          ${barItems}
+        <div style="display:flex;gap:0;flex:1;">
+          <!-- Y축 -->
+          <div style="display:flex;flex-direction:column;justify-content:space-between;width:28px;padding-bottom:18px;flex-shrink:0;">
+            ${yLabels}
+          </div>
+          <!-- 막대 영역 (품목이 많으면 가로 스크롤) -->
+          <div style="flex:1;display:flex;align-items:flex-end;gap:5px;border-left:1.5px solid #e8e8e8;border-bottom:1.5px solid #e8e8e8;padding:0 3px 0 4px;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;">
+            ${barItems}
+          </div>
         </div>
       </div>`);
   }
@@ -13173,7 +13173,7 @@ function renderMatUsePanel(page){
 
   /* ── 차트 이벤트 바인딩: innerHTML 삽입 후 addEventListener ── */
   chartWrap.querySelectorAll(".matu-bar-col").forEach(function(el){
-    el.addEventListener("mouseenter", function(){ el.style.opacity=".7"; });
+    el.addEventListener("mouseenter", function(){ el.style.opacity=".75"; });
     el.addEventListener("mouseleave", function(){ el.style.opacity="1"; });
     el.addEventListener("click", function(){
       showMatUseMonthDetail(parseInt(el.dataset.mo), el.dataset.year, el.dataset.nutr||null);
