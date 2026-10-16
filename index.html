@@ -13080,14 +13080,13 @@ function renderMatUsePanel(page){
       const val  = d[k]||0;
       const hPct = maxVal>0 ? (val/maxVal*100) : 0;
       const lbl  = val>=1000 ? (val/1000).toFixed(1)+'k' : val.toFixed(1);
-      return `<div style="display:flex;flex-direction:column;align-items:center;flex:0 0 34px;width:34px;gap:2px;">
-        <div style="font-size:8px;font-weight:700;color:#555;line-height:1;">${lbl}</div>
+      return `<div style="display:flex;flex-direction:column;align-items:center;flex:1 1 0;min-width:${selType==='fert'?4:10}px;max-width:34px;gap:2px;">
         <div class="matu-bar-col" data-mo="${mo}" data-year="${selYear}" data-nutr="${k}"
           style="width:100%;height:${CHART_H}px;display:flex;flex-direction:column;justify-content:flex-end;cursor:pointer;"
           title="${k}: ${val.toFixed(2)}${unit} — 클릭하여 ${k} 성분 사용내역 보기">
           <div style="width:100%;height:${hPct}%;background:${colorMap[k]};border-radius:3px 3px 0 0;min-height:${val>0?3:0}px;transition:height .35s;pointer-events:none;"></div>
         </div>
-        <div style="font-size:9px;font-weight:700;color:${colorMap[k]};line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:34px;" title="${k}">${k}</div>
+        <div style="font-size:8.5px;font-weight:700;color:${colorMap[k]};line-height:1;white-space:nowrap;overflow:hidden;text-overflow:${selType==='fert'?'clip':'ellipsis'};max-width:100%;" title="${k}">${k}</div>
       </div>`;
     }).join('')
     : `<div style="flex:1;display:flex;align-items:center;justify-content:center;height:${CHART_H}px;color:#ddd;font-size:11px;">데이터 없음</div>`;
@@ -13113,10 +13112,17 @@ function renderMatUsePanel(page){
             ${yLabels}
           </div>
           <!-- 막대 영역 (품목이 많으면 가로 스크롤) -->
-          <div style="flex:1;display:flex;align-items:flex-end;gap:5px;border-left:1.5px solid #e8e8e8;border-bottom:1.5px solid #e8e8e8;padding:0 3px 0 4px;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;">
+          <div style="flex:1;display:flex;align-items:flex-end;gap:clamp(1px,1%,4px);border-left:1.5px solid #e8e8e8;border-bottom:1.5px solid #e8e8e8;padding:0 3px 0 4px;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;">
             ${barItems}
           </div>
         </div>
+        ${moKeys.length?`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(${selType==='fert'?'62px':'110px'},1fr));column-gap:8px;row-gap:1px;margin-top:6px;padding-top:5px;border-top:1px dashed #eef3e8;max-height:${selType==='fert'?'none':'96px'};overflow-y:auto;">
+          ${moKeys.map(k=>{ const v=d[k]||0; return `<div class="matu-bar-col" data-mo="${mo}" data-year="${selYear}" data-nutr="${k}" title="${k}: ${v.toFixed(2)}${unit} — 클릭하여 사용내역 보기"
+            style="display:flex;align-items:center;gap:3px;font-size:10.5px;padding:1px 2px;border-radius:4px;cursor:pointer;min-width:0;white-space:nowrap;">
+            <span style="width:8px;height:8px;border-radius:2px;background:${colorMap[k]};flex-shrink:0;"></span>
+            <span style="font-weight:700;color:${colorMap[k]};overflow:hidden;text-overflow:ellipsis;min-width:0;">${k}</span>
+            <span style="color:#333;font-weight:600;margin-left:auto;padding-left:2px;">${v>=1000?(v/1000).toFixed(1)+'k':v.toFixed(1)}</span></div>`; }).join('')}
+        </div>`:''}
       </div>`);
   }
 
