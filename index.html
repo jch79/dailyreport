@@ -758,6 +758,14 @@ body{font-family:'맑은 고딕','Apple SD Gothic Neo',sans-serif;font-size:14px
 .nav-title-txt{font-size:13px;font-weight:700;flex:1;color:#1a1a1a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .nav-tab{padding:6px 11px;font-size:12px;cursor:pointer;color:#888;white-space:nowrap;font-weight:600;border-radius:8px;margin:0 1px;display:flex;align-items:center;gap:4px;transition:background .15s,color .15s;flex-shrink:0;touch-action:manipulation;-webkit-tap-highlight-color:transparent;user-select:none;}
 .nav-tab:hover{background:#f0f0f0;color:#333;}
+/* ── 자재사용량 탭: 모바일 세로 화면 ── */
+#panel-matuse select{max-width:100%;min-width:0;}
+@media (max-width:600px){
+  .matu-filter-row{width:100%;}
+  .matu-filter-row select{flex:1 1 130px;}
+  .matu-month-grid{grid-template-columns:repeat(2,minmax(0,1fr)) !important;gap:8px !important;}
+  .matu-line-inner{min-width:0 !important;}
+}
 .nav-tab.active{background:#1a1a1a;color:#fff;border-radius:8px;}
 .nav-tab.active:hover{background:#333;}
 
@@ -10231,6 +10239,11 @@ function syncStickyTop(){
   });
 }
 window.addEventListener('resize', syncStickyTop);
+/* 자재사용량 탭: 휴대폰을 세로↔가로로 돌리면 차트를 화면 폭에 맞게 다시 그림 */
+(function(){ let narrow=window.innerWidth<600, t=null;
+  window.addEventListener('resize',()=>{ clearTimeout(t); t=setTimeout(()=>{ const n=window.innerWidth<600; if(n===narrow) return; narrow=n;
+    const p=document.getElementById('panel-matuse'); if(p&&p.style.display==='block'&&typeof renderMatUsePanel==='function') renderMatUsePanel(typeof _matuChartPage!=='undefined'?_matuChartPage:undefined); },250); });
+})();
 function renderQuickNavBar(){
   const bar=document.getElementById('quick-nav-bar');
   if(!bar)return;
@@ -10516,6 +10529,8 @@ function checkBackupReminder(){
    · 관리자 공지: Firestore shared/notices 문서의 items 배열(모든 기기 실시간 공유). 관리자만 작성·수정·삭제. 항상 맨 위 고정
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
+  {date:'2026-10-17',items:[
+    '📱 자재사용량 탭 모바일 세로 화면 개선 — 화면이 축소돼 보이던 문제 수정, 월별 차트 한 줄 2칸, 성분별 추이 차트를 화면 폭에 맞춤']},
   {date:'2026-10-16',items:[
     '📢 공지 탭 추가 — 관리자 공지(상단 고정)와 앱 업데이트 내역을 한곳에서 확인',
     '💾 매주 월요일 관리자 로그인 시 백업(내보내기) 안내 팝업',
@@ -13306,8 +13321,8 @@ function renderMatUsePanel(page){
           onmouseenter="if(!this.disabled)this.style.background='#eaf3de'" onmouseleave="this.style.background='#fff'">&#8250;</button>
       </div>
 
-      <!-- 6개 차트 그리드 -->
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">
+      <!-- 6개 차트 그리드 (모바일 세로: 2칸) -->
+      <div class="matu-month-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">
         ${chartBoxes.join('')}
       </div>
 
@@ -13446,7 +13461,7 @@ function renderMatUseLineChart(selType, selYear, areaLabel, monthData, keys, col
 
   /* ── SVG 생성 함수 (체크된 키만) ── */
   function buildSvg(activeKeys){
-    const SVG_W  = 800, SVG_H = 260;
+    const SVG_W  = (window.innerWidth<600 ? 480 : 800), SVG_H = 260; /* 모바일 세로: 좁게 그려 글자가 작아지지 않게 */
     const PAD_L  = 52, PAD_R = 16, PAD_T = 16, PAD_B = 42;
     const CHART_W = SVG_W - PAD_L - PAD_R;
     const CHART_H = SVG_H - PAD_T - PAD_B;
@@ -13539,7 +13554,7 @@ function renderMatUseLineChart(selType, selYear, areaLabel, monthData, keys, col
       </div>
       ${chkBarHtml}
       <div id="matu-line-svg-wrap" style="overflow-x:auto;">
-        <div style="min-width:520px;">${buildSvg(initActiveKeys)}</div>
+        <div class="matu-line-inner" style="min-width:520px;">${buildSvg(initActiveKeys)}</div>
       </div>
     </div>`;
 
@@ -13575,7 +13590,7 @@ function matuLineChkChange(chk){
   const activeKeys = (window._matuLineKeys||[]).filter(k2=>window._matuLineChecked[k2]);
   const svgWrap    = document.getElementById('matu-line-svg-wrap');
   if(svgWrap && window._matuLineBuildSvg){
-    svgWrap.innerHTML = `<div style="min-width:520px;">${window._matuLineBuildSvg(activeKeys)}</div>`;
+    svgWrap.innerHTML = `<div class="matu-line-inner" style="min-width:520px;">${window._matuLineBuildSvg(activeKeys)}</div>`;
   }
 }
 
@@ -13595,7 +13610,7 @@ function matuLineChkAll(state){
   const activeKeys = state ? keys : [];
   const svgWrap    = document.getElementById('matu-line-svg-wrap');
   if(svgWrap && window._matuLineBuildSvg){
-    svgWrap.innerHTML = `<div style="min-width:520px;">${window._matuLineBuildSvg(activeKeys)}</div>`;
+    svgWrap.innerHTML = `<div class="matu-line-inner" style="min-width:520px;">${window._matuLineBuildSvg(activeKeys)}</div>`;
   }
 }
 
@@ -15649,7 +15664,7 @@ function showPdfGuide(ri){
     </div>
     <!-- 처리지역(좌그린/우그린/티전면) 기준 N·P·K 순성분 요약 카드 -->
     <div id="matu-npk-summary-cards" style="flex:1 1 260px;min-width:208px;"></div>
-    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;flex-shrink:0;">
+    <div class="matu-filter-row" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;flex-shrink:0;max-width:100%;">
       <select id="matu-year" onchange="renderMatUsePanel()"
         style="padding:5px 10px;border:1.5px solid #c2dda8;border-radius:7px;font-size:12px;font-weight:700;color:#2d6a1e;background:#f8fff4;">
       </select>
