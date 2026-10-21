@@ -758,6 +758,10 @@ body{font-family:'맑은 고딕','Apple SD Gothic Neo',sans-serif;font-size:14px
 .nav-title-txt{font-size:13px;font-weight:700;flex:1;color:#1a1a1a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .nav-tab{padding:6px 11px;font-size:12px;cursor:pointer;color:#888;white-space:nowrap;font-weight:600;border-radius:8px;margin:0 1px;display:flex;align-items:center;gap:4px;transition:background .15s,color .15s;flex-shrink:0;touch-action:manipulation;-webkit-tap-highlight-color:transparent;user-select:none;}
 .nav-tab:hover{background:#f0f0f0;color:#333;}
+@media (max-width:600px){
+  .madu-abar > div:first-child{font-size:8.5px !important;letter-spacing:-.3px;}
+  .madu-abar-hint{display:none;}
+}
 /* ── 자재사용량 탭: 모바일 세로 화면 ── */
 #panel-matuse select{max-width:100%;min-width:0;}
 @media (max-width:600px){
@@ -10529,6 +10533,8 @@ function checkBackupReminder(){
    · 관리자 공지: Firestore shared/notices 문서의 items 배열(모든 기기 실시간 공유). 관리자만 작성·수정·삭제. 항상 맨 위 고정
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
+  {date:'2026-10-22',items:[
+    '🧪 연간 시비 순성분량 팝업: 모바일에서 아래로 스크롤되지 않던 문제 수정, 성분 막대를 화면 폭에 맞춤']},
   {date:'2026-10-21',items:[
     '✏️ 작성 탭 비료·농약·모래 자재 사용: 자재를 고르지 않은 줄의 「정보」 칸에 「＋ 추가」 버튼 — 새 자재를 자재정보에 등록하고 그 줄에 바로 선택']},
   {date:'2026-10-19',items:[
@@ -14053,7 +14059,7 @@ function showMatUseAnnualNutrPopup(){
     const lbl  = val>=1000?(val/1000).toFixed(2)+'k':val.toFixed(1);
     const pct  = annualTotal>0?(val/annualTotal*100).toFixed(1):'0';
     return `<div onclick="showNutrProductPopup('${n}')"
-      style="display:flex;flex-direction:column;align-items:center;flex:1;min-width:36px;gap:3px;
+      class="madu-abar" style="display:flex;flex-direction:column;align-items:center;flex:1 1 0;min-width:0;gap:3px;
              cursor:pointer;border-radius:8px;padding:4px 2px;transition:background .15s;"
       onmouseover="this.style.background='${NUTR_COLORS[n]}18'"
       onmouseout="this.style.background='transparent'">
@@ -14071,7 +14077,7 @@ function showMatUseAnnualNutrPopup(){
       <!-- 비율 -->
       <div style="font-size:10px;color:#aaa;line-height:1;">${pct}%</div>
       <!-- 클릭 힌트 -->
-      <div style="font-size:8px;color:#bbb;line-height:1;">탭하여 제품보기</div>
+      <div class="madu-abar-hint" style="font-size:8px;color:#bbb;line-height:1;white-space:nowrap;">탭하여 제품보기</div>
     </div>`;
   }).join('');
 
@@ -14083,9 +14089,9 @@ function showMatUseAnnualNutrPopup(){
         ${yAxisHtml}
       </div>
       <!-- 막대 영역 -->
-      <div style="flex:1;display:flex;gap:6px;align-items:flex-end;
+      <div style="flex:1;min-width:0;display:flex;gap:clamp(1px,1%,6px);align-items:flex-end;
                   border-left:1.5px solid #e8e8e8;border-bottom:1.5px solid #e8e8e8;
-                  padding:0 8px;">
+                  padding:0 clamp(2px,1%,8px);">
         ${barColsHtml}
       </div>
     </div>`;
@@ -14122,11 +14128,11 @@ function showMatUseAnnualNutrPopup(){
   wrap.onclick = e=>{ if(e.target===wrap) wrap.remove(); };
 
   wrap.innerHTML = `
-    <div style="background:#fff;border-radius:14px;width:100%;max-width:1140px;max-height:96vh;
-                display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.3);overflow:hidden;">
+    <div class="madu-annual-box" style="background:#fff;border-radius:14px;width:100%;max-width:1140px;max-height:96vh;
+                display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.3);overflow-x:hidden;overflow-y:auto;-webkit-overflow-scrolling:touch;">
 
       <!-- 헤더 -->
-      <div style="background:linear-gradient(135deg,#2d6a1e,#4a9a2e);padding:14px 18px;display:flex;align-items:center;gap:10px;flex-shrink:0;">
+      <div style="background:linear-gradient(135deg,#2d6a1e,#4a9a2e);padding:14px 18px;display:flex;align-items:center;gap:10px;flex-shrink:0;position:sticky;top:0;z-index:3;">
         <span style="font-size:20px;">🌱</span>
         <div style="flex:1;min-width:0;">
           <div style="font-size:15px;font-weight:800;color:#fff;">${selYear}년 연간 시비 비료 순성분량</div>
@@ -14186,8 +14192,8 @@ function showMatUseAnnualNutrPopup(){
         </button>
       </div>
 
-      <!-- 테이블 영역 -->
-      <div style="flex:1;overflow:auto;padding:6px 10px 10px;">
+      <!-- 테이블 영역 (팝업 전체가 위아래로 스크롤되고, 표는 넓으면 옆으로 스크롤) -->
+      <div style="flex:1 0 auto;overflow-x:auto;padding:6px 10px 10px;">
 
         <!-- 월별 탭 -->
         <div id="madu-pane-month" style="padding-top:8px;">
