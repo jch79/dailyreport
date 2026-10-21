@@ -10529,6 +10529,8 @@ function checkBackupReminder(){
    · 관리자 공지: Firestore shared/notices 문서의 items 배열(모든 기기 실시간 공유). 관리자만 작성·수정·삭제. 항상 맨 위 고정
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
+  {date:'2026-10-21',items:[
+    '✏️ 작성 탭 비료·농약·모래 자재 사용: 자재를 고르지 않은 줄의 「정보」 칸에 「＋ 추가」 버튼 — 새 자재를 자재정보에 등록하고 그 줄에 바로 선택']},
   {date:'2026-10-19',items:[
     '📦 자재입출고 색상 구분 — 입고는 붉은색, 출고는 파란색 (등록 버튼·저장 버튼·수불내역 표시 공통)']},
   {date:'2026-10-17',items:[
@@ -11557,6 +11559,7 @@ function renderMaterialsTable(){
 
 /* ── 상세 모달 열기 ── */
 function openMatInfoModal(type, idx){
+  _matAddCallback=null;
   const item = getListByType(type)[idx];
   if(!item) return;
   matEditMode = true; matEditIdx = idx; matEditType = type;
@@ -11695,9 +11698,18 @@ function toggleMaterialEdit(){
   if(matEditIdx===-1){
     /* 추가 모드 */
     if(!collected.name){ showToast('상표명을 입력하세요'); return; }
-    { const l=getListByType(matEditType); l.push(collected); saveListByType(matEditType, l); }
+    let _newIdx=-1;
+    { const l=getListByType(matEditType); l.push(collected); _newIdx=l.length-1; saveListByType(matEditType, l); }
     document.getElementById('mat-info-modal').style.display='none';
     renderMaterialsTable();
+    /* 자재사용 줄의 「＋ 추가」에서 연 경우: 새 자재를 그 줄에 바로 선택 */
+    const _cb=_matAddCallback; _matAddCallback=null;
+    if(_cb && _cb.type===matEditType && _newIdx>=0 && typeof selectMatSearchItem==='function'){
+      _matSearchCtx={blockId:_cb.blockId,itemId:_cb.itemId,searchType:_cb.type};
+      selectMatSearchItem(_newIdx);
+      showToast(`"${collected.name}" 자재정보에 추가하고 선택했습니다`);
+      return;
+    }
     showToast('추가했습니다');
     return;
   }
@@ -11953,6 +11965,7 @@ function deleteMatItem(type, idx){
 /* ── 추가 모달 ── */
 function openAddMaterialModal(type){
   if(!guardMatEdit(type||'pest','자재정보 추가'))return;
+  _matAddCallback=null;
   const addType = type || 'pest';
   matEditMode=true; matEditIdx=-1; matEditType=addType;
   document.getElementById('mat-modal-title').textContent = addType==='pest'?'🌿 농약 추가':addType==='sand'?'🏖 모래 추가':'🌱 비료 추가';
@@ -15440,7 +15453,9 @@ function buildItemRow(blockId, item, order){
 
   const infoBtn = (!isManual && item.brandName)
     ? `<button onclick="showMatInfoByIdEdit(${blockId},${item.id})" style="width:100%;padding:2px 4px;border:1px solid ${typeColor};color:${typeColor};background:#fff;border-radius:3px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">ℹ 수정</button>`
-    : `<span style="display:block;text-align:center;color:#ddd;font-size:10px;">-</span>`;
+    : (!isManual && !item.brandName)
+      ? `<button onclick="addMatFromUseRow(${blockId},${item.id},'${item.type}')" title="자재정보에 없는 새 자재를 등록하고 이 줄에 바로 선택합니다" style="width:100%;padding:2px 4px;border:1px dashed ${typeColor};color:${typeColor};background:#fff;border-radius:3px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;">＋ 추가</button>`
+      : `<span style="display:block;text-align:center;color:#ddd;font-size:10px;">-</span>`;
 
   /* 컬럼 순서대로 셀 생성 */
   const colSpec = '56px ' + order.map(ci=>MAT_COLS[ci].width).join(' ') + ' 56px 28px';
@@ -15589,6 +15604,14 @@ function showMatInfoById(blockId, itemId){
   showMatInfo(item.type, item._listIdx);
 }
 
+/* ── ＋ 추가 버튼 — 자재사용 줄에서 새 자재를 자재정보에 등록하고, 저장되면 이 줄에 바로 선택 ── */
+let _matAddCallback=null;
+function addMatFromUseRow(blockId, itemId, type){
+  if(!['pest','fert','sand'].includes(type)) return;
+  openAddMaterialModal(type);                       /* 권한 없으면 여기서 안내 후 열리지 않음 */
+  const m=document.getElementById('mat-info-modal');
+  _matAddCallback = (m && m.style.display==='flex') ? {blockId,itemId,type} : null;
+}
 /* ── ℹ 수정 버튼 — 자재관리 편집 모달을 직접 오픈 ── */
 function showMatInfoByIdEdit(blockId, itemId){
   const block=matAreaBlocks.find(b=>b.id===blockId);
