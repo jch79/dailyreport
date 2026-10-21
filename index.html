@@ -10534,6 +10534,7 @@ function checkBackupReminder(){
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
   {date:'2026-10-22',items:[
+    '📅 자재 사용 캘린더: 날짜 칸에 관수시간과 날씨 아이콘 사이 최고/최저기온 표시 (예: 18°/6°)',
     '🧪 연간 시비 순성분량 팝업: 모바일에서 아래로 스크롤되지 않던 문제 수정, 성분 막대를 화면 폭에 맞춤']},
   {date:'2026-10-21',items:[
     '✏️ 작성 탭 비료·농약·모래 자재 사용: 자재를 고르지 않은 줄의 「정보」 칸에 「＋ 추가」 버튼 — 새 자재를 자재정보에 등록하고 그 줄에 바로 선택']},
@@ -14814,6 +14815,18 @@ function renderMatUseCalendar(){
     wxByDate[iso] = classifyWx(r.weather?.sky, isNaN(rainVal)?0:rainVal);
   });
 
+  /* ── 최고/최저기온 (관수시간과 날씨 아이콘 사이) ──
+     일보에 기록된 최저/최고(weather.minmax "최저/최고")를 우선 쓰고, 일보가 없는 날은 날씨 캐시(최근 90일) 값 사용 */
+  const tempByDate = {};
+  try{ const wc=loadWeatherCache(); (wc&&wc.rainData30||[]).forEach(e=>{ if(e&&e.date&&e.tmax!=null&&e.tmin!=null) tempByDate[e.date]={mx:+e.tmax,mn:+e.tmin}; }); }catch(e){}
+  allRecs.forEach(r=>{
+    const iso = recIsoDate(r.date); if(!iso) return;
+    const pr = String(r.weather?.minmax||'').split('/');
+    const mn = parseFloat(pr[0]), mx = parseFloat(pr[1]);
+    if(!isNaN(mn) && !isNaN(mx)) tempByDate[iso] = {mx, mn};
+  });
+  const fmtT = v => (Math.round(v*10)/10).toFixed(Math.abs(v)>=10?0:1).replace(/\.0$/,'');
+
   /* ── 관수량 표기 (날짜 옆, 상단 처리지역 선택에 따라 구역 결정) ──
      값 = 기록의 관수시간(분), 자동+수동 합계(getZoneTotal과 동일 규칙)
      전체/그린전면 → G:(좌/우), 좌그린 기준·좌그린 → G:(좌), 우그린 기준·우그린 → G:(우),
@@ -14905,6 +14918,7 @@ function renderMatUseCalendar(){
       <div style="display:flex;flex-wrap:wrap;align-items:baseline;column-gap:4px;padding-right:${wx?20:0}px;">
         <span style="font-size:11px;font-weight:700;color:${dowColor};">${d}</span>
         ${irrByDate[dateStr]?`<span title="관수시간(분, 자동+수동)" style="font-size:8.5px;font-weight:800;color:#1a6fb5;white-space:nowrap;letter-spacing:-0.2px;">${irrByDate[dateStr]}</span>`:''}
+        ${tempByDate[dateStr]?`<span title="최고/최저기온(℃)" style="font-size:8.5px;font-weight:800;white-space:nowrap;letter-spacing:-0.2px;"><span style="color:#d35400;">${fmtT(tempByDate[dateStr].mx)}°</span><span style="color:#aaa;">/</span><span style="color:#2471a3;">${fmtT(tempByDate[dateStr].mn)}°</span></span>`:''}
       </div>
       ${wxBadge}
       ${lines}
