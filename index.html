@@ -10534,6 +10534,7 @@ function checkBackupReminder(){
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
   {date:'2026-10-22',items:[
+    '📅 자재 사용 캘린더: 지역·종류를 해제해도 캘린더 높이는 유지하고 남은 기록만 위로 정렬',
     '📅 자재 사용 캘린더: 날짜 칸에 관수시간과 날씨 아이콘 사이 최고/최저기온 표시 (예: 18°/6°)',
     '🧪 연간 시비 순성분량 팝업: 모바일에서 아래로 스크롤되지 않던 문제 수정, 성분 막대를 화면 폭에 맞춤']},
   {date:'2026-10-21',items:[
@@ -14872,13 +14873,14 @@ function renderMatUseCalendar(){
       const g = areaGroups[it.area] = areaGroups[it.area] || {fert:[], pest:[], sand:[]};
       g[it.kind].push(it);
     });
-    const lines = Object.keys(areaGroups).map(area=>{
+    /* showAll=true: 필터와 관계없이 전부 그린 내용(칸 높이 유지용, 보이지 않게 깔아 둠) */
+    const mkLines = (showAll) => Object.keys(areaGroups).map(area=>{
       const g = areaGroups[area];
       /* 이 지역의 fert/pest/sand 각각은 그 안의 항목들이 전부 같은 excluded 상태를
          가짐(지역 단위·종류 단위로만 켜고 끄므로) — 대표로 첫 항목만 확인 */
-      const fertHidden = g.fert.length>0 && g.fert[0].excluded;
-      const pestHidden = g.pest.length>0 && g.pest[0].excluded;
-      const sandHidden = g.sand.length>0 && g.sand[0].excluded;
+      const fertHidden = !showAll && g.fert.length>0 && g.fert[0].excluded;
+      const pestHidden = !showAll && g.pest.length>0 && g.pest[0].excluded;
+      const sandHidden = !showAll && g.sand.length>0 && g.sand[0].excluded;
       const areaAllHidden = (!g.fert.length || fertHidden) && (!g.pest.length || pestHidden) && (!g.sand.length || sandHidden);
       /* 필터로 제외된 항목은 자리를 비워두지 않고(visibility:hidden 대신) 아예 그리지 않음
          → 남은 필터 결과가 날짜 칸 맨 위로 붙어서 정렬됨 */
@@ -14908,6 +14910,11 @@ function renderMatUseCalendar(){
       }
       return block;
     }).filter(Boolean).join('<div style="height:2px;"></div>');
+    const linesShown = mkLines(false), linesAll = mkLines(true);
+    /* 지역·종류를 해제해도 캘린더 칸 높이는 「전체 표시」 때 그대로 유지하고, 남은 기록만 칸 위쪽으로 정렬:
+       전체 내용을 보이지 않게 같은 자리에 깔아 높이를 잡고, 그 위에 필터된 내용을 겹쳐 그린다 */
+    const lines = (linesShown===linesAll) ? linesShown
+      : `<div style="display:grid;"><div aria-hidden="true" style="grid-area:1/1;visibility:hidden;pointer-events:none;">${linesAll}</div><div style="grid-area:1/1;align-self:start;">${linesShown}</div></div>`;
 
     /* 배경색·클릭 가능 여부는 실제로 "보이는(제외되지 않은)" 항목이 있을 때만 적용 */
     const visibleItems = items.filter(it=>!it.excluded);
