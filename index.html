@@ -10534,6 +10534,7 @@ function checkBackupReminder(){
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
   {date:'2026-10-23',items:[
+    '📦 자재입출고 농약·비료 「품목 편집」도 자재정보 팝업과 같은 항목으로 편집 (입출고 전용: 단위·이월재고), 저장 시 자재정보와 다르면 같이 수정할지 확인',
     '📦 자재입출고 등록: 쉼표·띄어쓰기로 여러 단어 동시 검색, 여러 품목 선택 후 품목별 수량 입력·한 번에 저장 (일자·사용처·비고 공통), 검색 목록과 선택 목록에 단가 표시']},
   {date:'2026-10-22',items:[
     '💾 상단 「내보내기」 백업에 📢 관리자 공지도 포함 (가져오기 시 관리자 계정이면 클라우드로 복원)',
@@ -16352,29 +16353,53 @@ document.addEventListener('click',e=>{const b=document.getElementById('sk-pick-s
    · 자재정보에 없는 상표명이면 → 자재정보에도 추가할지 묻고
    · 자재정보에 있는데 규격·단가가 다르면 → 자재정보의 규격·단가도 갱신할지 묻는다 */
 let _skMatGuide=null;
-function skEditItemMat(){
+/* 자재입출고 품목 → 자재정보 입력 항목으로 변환 (편집 팝업 채우기용)
+   품목에 저장된 값(엑셀 품목 시트의 추가 칸 x 포함)을 우선 쓰고, 비어 있으면 자재정보 값으로 채움 */
+const SK_X_MAP={
+  pest:[['name','상표명'],['type','종류'],['product','품목명'],['form','제형'],['size','규격'],['price','단가'],['active','주성분'],['usage','사용량/㎡'],['realUsage','실사용량'],
+        ['content','주성분함량'],['maker','제조회사'],['origin','원산지'],['target','비고'],['effect','예방및치료'],['absorption','흡수이행'],['moa','작용기작'],['category','분류'],['frac','frac/irac/hrac'],['series','계열'],['summary','요약']],
+  fert:[['name','상표명'],['form','제형'],['category','분류'],['size','규격'],['usage','사용량/㎡'],['price','단가'],['kgUnit','변환규격kg'],
+        ['N','n'],['P','p'],['K','k'],['Ca','ca'],['Mg','mg'],['Mn','mn'],['Fe','fe'],['Si','si'],['S','s']]
+};
+function _skXKey(k){ return String(k).replace(/[()（）\s]/g,'').toLowerCase(); }
+function _skXGet(x,key){ if(!x) return undefined; const kk=_skXKey(key); const f=Object.keys(x).find(z=>_skXKey(z)===kk); return f!==undefined?x[f]:undefined; }
+function skItemToMat(it){
+  const out={}; const lt=_skLedger;
+  (SK_X_MAP[lt]||[]).forEach(([f,xk])=>{ const v=_skXGet(it.x,xk); if(v!==undefined&&v!==null&&v!=='') out[f]=String(v); });
+  out.name=it.name||''; if(it.spec) out.size=it.spec; if(it.price) out.price=String(it.price); if(it.vendor) out.supplier=it.vendor;
+  if(it.use){ if(lt==='pest'){ if(!out.type) out.type=it.use; } else if(!out.category) out.category=it.use; }
+  const m=skMasterList().find(z=>z&&skNameKey(z.name)===skNameKey(it.name));
+  if(m) Object.keys(m).forEach(k=>{ if(k==='_customFields') return; if((out[k]===undefined||out[k]==='')&&m[k]!=null&&m[k]!=='') out[k]=String(m[k]); });
+  return out;
+}
+function skEditItemMat(id){
+  const it=id?skItemById(id):null;
   const {base,ph}=matFieldDefs(_skLedger);
   const L=SK_LEDGERS[_skLedger];
+  const v=it?skItemToMat(it):{};
+  const used=it&&_skTx.some(t=>t.itemId===it.id);
   const tdL='padding:5px 8px;font-weight:700;color:#555;white-space:nowrap;border-bottom:1px solid #f0f0f0;width:110px;font-size:11px;';
   const taS='width:100%;padding:4px 6px;border:1px solid #ccc;border-radius:5px;font-size:12px;box-sizing:border-box;resize:vertical;overflow:hidden;line-height:1.4;min-height:26px;font-family:inherit;';
   const rows=base.map(([k,l])=>{
     const inp=k==='name'
-      ?`<div style="position:relative;"><input data-field="name" id="sk-mat-name" autocomplete="off" oninput="skMatSearch(this.value)" onfocus="skMatSearch(this.value)" placeholder="입력하면 자재정보${_skLedger==='pest'?'·지침서':''}에서 자동검색..." style="width:100%;padding:4px 6px;border:1.5px solid #185FA5;border-radius:5px;font-size:12px;box-sizing:border-box;"><div class="sk-sugg" id="sk-mat-dd" style="display:none;"></div></div>`
-      :`<textarea data-field="${k}" placeholder="${ph[k]||''}" rows="1" oninput="autoGrowTA(this)" style="${taS}"></textarea>`;
+      ?`<div style="position:relative;"><input data-field="name" id="sk-mat-name" autocomplete="off" value="${skEsc(v.name||'')}" oninput="skMatSearch(this.value)" onfocus="${it?'':'skMatSearch(this.value)'}" placeholder="입력하면 자재정보${_skLedger==='pest'?'·지침서':''}에서 자동검색..." style="width:100%;padding:4px 6px;border:1.5px solid #185FA5;border-radius:5px;font-size:12px;box-sizing:border-box;"><div class="sk-sugg" id="sk-mat-dd" style="display:none;"></div></div>`
+      :`<textarea data-field="${k}" placeholder="${ph[k]||''}" rows="1" oninput="autoGrowTA(this)" style="${taS}">${skEsc(v[k]||'')}</textarea>`;
     return `<tr><td style="${tdL}">${l}</td><td style="padding:3px 8px;border-bottom:1px solid #f0f0f0;">${inp}</td></tr>`;
   }).join('');
   _skMatGuide=null;
-  document.getElementById('sk-modal').innerHTML=`<h3>${L.icon} ${_skLedger==='pest'?'농약 추가':'비료 추가'} <span style="font-size:12px;color:#889;">자재입출고 · ${L.label}</span></h3>
+  document.getElementById('sk-modal').innerHTML=`<h3>${L.icon} ${_skLedger==='pest'?'농약':'비료'} ${it?'편집':'추가'} <span style="font-size:12px;color:#889;">자재입출고 · ${L.label}</span></h3>
     <div id="sk-mat-note" style="font-size:11px;color:#2d6a1e;margin-bottom:6px;"></div>
     <div id="sk-mat-form"><table style="width:100%;border-collapse:collapse;font-size:12px;">${rows}</table></div>
     <div style="margin-top:10px;padding-top:10px;border-top:2px dashed #e0e0e0;">
       <div style="font-size:11px;color:#888;font-weight:700;margin-bottom:6px;">입출고 장부 전용</div>
-      <div class="sk-form"><label>단위<input id="sk-i-unit" value="EA"></label><label>전년도 이월재고<input id="sk-i-carry" type="number" value="0"></label></div>
+      <div class="sk-form"><label>단위<input id="sk-i-unit" value="${skEsc(it?(it.unit||''):'EA')}"></label><label>전년도 이월재고<input id="sk-i-carry" type="number" value="${skEsc(it?skNum(it.carry):0)}"></label></div>
     </div>
-    <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:12px;">
-      <button class="sk-btn" onclick="skCloseModal()">취소</button><button class="sk-btn pri" onclick="skSaveItemMat()">저장</button></div>`;
+    <div style="display:flex;gap:6px;justify-content:space-between;margin-top:12px;">
+      <div>${it?`<button class="sk-btn" style="color:#c0392b;border-color:#e6b0aa;" ${used?'disabled title="입출고 내역이 있어 삭제할 수 없습니다"':''} onclick="skDelItem('${it.id}')">삭제</button>`:''}</div>
+      <div style="display:flex;gap:6px;"><button class="sk-btn" onclick="skCloseModal()">취소</button><button class="sk-btn pri" onclick="skSaveItemMat(${it?`'${it.id}'`:'null'})">저장</button></div></div>`;
   document.getElementById('sk-modal').classList.remove('sk-ro');
   document.getElementById('sk-modal-bg').style.display='flex';
+  document.querySelectorAll('#sk-mat-form textarea').forEach(t=>autoGrowTA(t));
 }
 function skMatSearch(val){
   const dd=document.getElementById('sk-mat-dd'); if(!dd) return;
@@ -16414,34 +16439,43 @@ function skMatApply(src,key){
   if(note) note.textContent=`📋 지침서에서 「${key}」 기본 정보를 불러왔습니다. 규격·단가 등 누락 항목은 직접 입력하세요.`;
 }
 document.addEventListener('click',e=>{const b=document.getElementById('sk-mat-dd'); if(b && !e.target.closest('#sk-mat-name') && !e.target.closest('#sk-mat-dd')) b.style.display='none';});
-async function skSaveItemMat(){
+async function skSaveItemMat(id){
   const form=document.getElementById('sk-mat-form'); if(!form) return;
+  const old=id?skItemById(id):null;
   const c={}; form.querySelectorAll('[data-field]').forEach(e=>{ c[e.dataset.field]=String(e.value||'').trim(); });
   if(!c.name){ showToast('상표명을 입력해 주세요'); return; }
-  if(_skItems.some(it=>skNameKey(it.name)===skNameKey(c.name))){ showToast('같은 제품명의 품목이 이미 있습니다'); return; }
+  if(_skItems.some(it=>it.id!==id && skNameKey(it.name)===skNameKey(c.name))){ showToast('같은 제품명의 품목이 이미 있습니다'); return; }
   const lt=_skLedger, lab=SK_LEDGERS[lt].label;
-  const {x}=skMasterToItem(c);
+  /* 엑셀 품목 시트용 추가 칸: 이번에 입력한 항목으로 덮고, 그 밖의 기존 칸(엑셀에서 온 다른 열)은 유지 */
+  const {x:nx}=skMasterToItem(c);
+  const mappedKeys=new Set((SK_X_MAP[lt]||[]).map(([,xk])=>_skXKey(xk)));
+  const x={}; Object.entries((old&&old.x)||{}).forEach(([k,v])=>{ if(!mappedKeys.has(_skXKey(k))) x[k]=v; });
+  Object.assign(x,nx);
   const data={name:c.name,spec:c.size||'',unit:document.getElementById('sk-i-unit').value.trim(),price:skNum(c.price),
     carry:skNum(document.getElementById('sk-i-carry').value),vendor:c.supplier||'',
     use:(lt==='pest'?(c.type||c.category):c.category)||'',ledger:lt,x,updatedAt:firebase.firestore.FieldValue.serverTimestamp()};
-  /* 자재정보 반영 여부를 먼저 물어봄 */
+  /* 자재정보 반영 여부를 먼저 물어봄 (상표명이 바뀐 경우 예전 상표명으로도 찾음) */
   const list=getListByType(lt);
-  const idx=list.findIndex(m=>m&&skNameKey(m.name)===skNameKey(c.name));
-  let act=null;
+  let idx=list.findIndex(m=>m&&skNameKey(m.name)===skNameKey(c.name));
+  if(idx<0 && old && skNameKey(old.name)!==skNameKey(c.name)) idx=list.findIndex(m=>m&&skNameKey(m.name)===skNameKey(old.name));
+  let act=null, changed=[];
   if(idx<0){
     if(confirm(`「${c.name}」은(는) 자재정보(${lab})에 없습니다.\n자재정보에도 추가할까요?`)) act='add';
   } else {
-    const m=list[idx], diffs=[];
-    if(String(m.size||'').trim()!==c.size) diffs.push(`규격: ${m.size||'-'} → ${c.size||'-'}`);
-    if(skNum(m.price)!==skNum(c.price)) diffs.push(`단가: ${m.price?skFmt(skNum(m.price))+'원':'-'} → ${c.price?skFmt(skNum(c.price))+'원':'-'}`);
-    if(diffs.length && confirm(`자재정보(${lab})에 등록된 「${m.name}」의 규격·단가가 입력값과 다릅니다.\n\n${diffs.join('\n')}\n\n자재정보의 단가·규격도 갱신할까요?`)) act='upd';
+    const m=list[idx]; const {base}=matFieldDefs(lt);
+    changed=base.filter(([k])=>c[k]!=='' && String(m[k]==null?'':m[k]).trim()!==c[k]);
+    if(changed.length){
+      const lines=changed.slice(0,8).map(([k,l])=>`· ${l}: ${String(m[k]==null||m[k]===''?'-':m[k]).slice(0,20)} → ${c[k].slice(0,20)}`);
+      if(confirm(`자재정보(${lab})에 등록된 「${m.name}」과 다른 항목이 있습니다.\n\n${lines.join('\n')}${changed.length>8?`\n… 외 ${changed.length-8}개`:''}\n\n자재정보도 같이 수정할까요?`)) act='upd';
+    }
   }
-  try{ await _fbDb.collection(SK_COL_ITEMS).add(data); }catch(e){ showToast('⚠️ 저장 실패'); return; }
+  try{ if(id) await _fbDb.collection(SK_COL_ITEMS).doc(id).set(data,{merge:true}); else await _fbDb.collection(SK_COL_ITEMS).add(data); }
+  catch(e){ showToast('⚠️ 저장 실패'); return; }
   let msg='품목이 저장되었습니다';
   try{
-    const l=getListByType(lt), i2=l.findIndex(m=>m&&skNameKey(m.name)===skNameKey(c.name));
-    if(act==='add' && i2<0){ l.push({...c}); saveListByType(lt,l); msg+=' · 자재정보에도 추가됨'; }
-    else if(act==='upd' && i2>=0){ l[i2].size=c.size; l[i2].price=c.price; saveListByType(lt,l); msg+=' · 자재정보 단가·규격 갱신됨'; }
+    const l=getListByType(lt);
+    if(act==='add' && !l.some(m=>m&&skNameKey(m.name)===skNameKey(c.name))){ l.push({...c}); saveListByType(lt,l); msg+=' · 자재정보에도 추가됨'; }
+    else if(act==='upd' && l[idx]){ changed.forEach(([k])=>{ l[idx][k]=c[k]; }); saveListByType(lt,l); msg+=' · 자재정보도 수정됨'; }
     if(act && typeof renderMaterialsTable==='function') renderMaterialsTable();
   }catch(e){ console.warn(e); }
   skCloseModal(); showToast(msg);
@@ -16449,7 +16483,7 @@ async function skSaveItemMat(){
 
 function skEditItem(id){
   if(!skCanMaster()){showToast('이 장부의 품목 관리 권한이 없습니다');return;}
-  if(!id && (_skLedger==='pest'||_skLedger==='fert')) return skEditItemMat();
+  if(_skLedger==='pest'||_skLedger==='fert') return skEditItemMat(id||null);
   const it=id?skItemById(id):{name:'',spec:'',unit:'EA',price:'',use:'',vendor:'',carry:0};
   const used=id&&_skTx.some(t=>t.itemId===id);
   const f=(k,l,t='text')=>`<label>${l}<input id="sk-i-${k}" type="${t}" value="${skEsc(it[k]??'')}"></label>`;
