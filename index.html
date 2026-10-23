@@ -2115,28 +2115,6 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
       </div>
     </div>
 
-    <!-- 과거 날씨 자동 백필 (관리자 전용, 테스트) -->
-    <div id="settings-backfill-section" style="display:none;padding:16px 18px;border-bottom:1px solid #f0f0f0;">
-      <div style="font-size:11px;font-weight:700;color:#888;margin-bottom:10px;letter-spacing:.5px;">⏳ 과거 날씨 자동 백필 (관리자 · 테스트)</div>
-      <div style="font-size:11px;color:#888;margin-bottom:8px;line-height:1.6;">기록이 없는 과거 날짜에 기상청 실측(지점460)으로 <b>기온·강수량만</b> 자동 채운 초안 기록을 만듭니다. 작업자·작업내용 등 다른 항목은 비어 있으며, 메모에 "기상청 실측 자동백필" 표시가 남습니다. 이미 기록이 있는 날짜는 건드리지 않습니다.</div>
-      <div style="display:flex;gap:6px;margin-bottom:8px;">
-        <input type="date" id="backfill-start" value="2026-01-01" style="flex:1;font-size:12px;padding:6px 8px;border:1.5px solid #ccc;border-radius:6px;">
-        <input type="date" id="backfill-end" value="2026-01-31" style="flex:1;font-size:12px;padding:6px 8px;border:1.5px solid #ccc;border-radius:6px;">
-      </div>
-      <button onclick="runWeatherBackfillPreview()" style="width:100%;padding:9px;border:1.5px solid #185FA5;border-radius:8px;background:#f0f6ff;color:#185FA5;font-size:12px;font-weight:700;cursor:pointer;margin-bottom:6px;">🔍 조회(미리보기) — 저장 전 확인용</button>
-      <div id="backfill-result" style="font-size:11px;color:#555;"></div>
-    </div>
-
-    <div id="settings-raincheck-section" style="display:none;padding:16px 18px;border-bottom:1px solid #f0f0f0;">
-      <div style="font-size:11px;font-weight:700;color:#888;margin-bottom:10px;letter-spacing:.5px;">🔍 강우량 정합성 검사 (관리자)</div>
-      <div style="font-size:11px;color:#888;margin-bottom:8px;line-height:1.6;">저장된 기록의 날짜별 강우량(mm)을, 기상청 실측(지점460)과 하나씩 대조해서 값이 다른 날짜만 찾아줍니다. "연 누적강우량"이 화면마다 다르게 보일 때, 어느 날짜가 원인인지 확인하는 용도입니다.</div>
-      <div style="display:flex;gap:6px;margin-bottom:8px;align-items:center;">
-        <select id="raincheck-year" style="flex:1;font-size:12px;padding:6px 8px;border:1.5px solid #ccc;border-radius:6px;"></select>
-      </div>
-      <button onclick="runRainConsistencyCheck()" style="width:100%;padding:9px;border:1.5px solid #185FA5;border-radius:8px;background:#f0f6ff;color:#185FA5;font-size:12px;font-weight:700;cursor:pointer;margin-bottom:6px;">🔍 대조 실행</button>
-      <div id="raincheck-result" style="font-size:11px;color:#555;"></div>
-    </div>
-
     <!-- 앱 정보 -->
     <div style="padding:14px 18px;display:flex;align-items:center;justify-content:space-between;">
       <div style="font-size:11px;color:#aaa;">코스관리 작업일보 v78</div>
@@ -5344,62 +5322,6 @@ function ensureYearRain(year){
   _yearRainFetchBusy[year]=pr; return pr;
 }
 
-/* ── 강우량 정합성 검사 (관리자 · 설정) ──
-   저장된 각 날짜의 weather.rain 값과, 기상청 실측(같은 endpoint/기준)을
-   날짜별로 대조해서 다른 값이 있는 날짜만 찾아 보여준다. "연 누적강우량"이
-   화면마다 다르게 보이는 원인(어느 날짜가 실측과 다른 값으로 저장돼 있는지)을
-   실제로 찾아내기 위한 도구. */
-async function runRainConsistencyCheck(){
-  if(_fbRole!=='admin'){showToast('관리자만 사용할 수 있습니다');return;}
-  const yearSel=document.getElementById('raincheck-year');
-  const year=parseInt(yearSel?.value,10)||new Date().getFullYear();
-  const resultEl=document.getElementById('raincheck-result');
-  if(!resultEl)return;
-  resultEl.innerHTML='기상청 실측 조회 중... (월별로 나눠 요청해 다소 시간이 걸릴 수 있습니다)';
-  try{
-    const liveMap=await fetchYearRainRange(year);
-    const localMap=getYearlyRainFromRecords(year);
-    const now=new Date();
-    const expectedDays=year===now.getFullYear()
-      ? Math.floor((now-new Date(year,0,1))/86400000)+1
-      : ((year%4===0&&year%100!==0)||year%400===0?366:365);
-    /* 기상청 응답이 비정상적으로 적게 왔으면(네트워크/프록시 문제로 보임) 잘못된
-       "다 다름" 결과를 보여주는 대신 재시도를 안내 */
-    if(Object.keys(liveMap).length < expectedDays*0.5){
-      resultEl.innerHTML=`<div style="color:#c0392b;">⚠️ 기상청 응답을 충분히 받지 못했습니다(${Object.keys(liveMap).length}/${expectedDays}일치만 수신 — 네트워크 문제로 보입니다). 잠시 후 "대조 실행"을 다시 눌러주세요.</div>`;
-      return;
-    }
-    const allISOs=[...new Set([...Object.keys(localMap),...Object.keys(liveMap)])].sort();
-    const diffs=[];
-    let localSum=0, liveSum=0;
-    allISOs.forEach(iso=>{
-      const lv=localMap[iso], kv=liveMap[iso];
-      if(lv!=null) localSum+=lv;
-      if(kv!=null) liveSum+=kv;
-      const lvN=lv!=null?lv:0, kvN=kv!=null?kv:0;
-      if(Math.abs(lvN-kvN)>0.05){
-        diffs.push({iso, local:lv, kma:kv});
-      }
-    });
-    if(!diffs.length){
-      resultEl.innerHTML=`<div style="color:#3B6D11;font-weight:700;">✅ ${year}년 전체 ${allISOs.length}일 중 다른 날짜 없음 — 저장된 값과 기상청 실측이 모두 일치합니다.<br>저장된 값 합계 ${localSum.toFixed(1)}mm · 기상청 합계 ${liveSum.toFixed(1)}mm</div>`;
-      return;
-    }
-    resultEl.innerHTML=`
-      <div style="margin-bottom:8px;">
-        저장된 값 합계 <b>${localSum.toFixed(1)}mm</b> · 기상청 합계 <b>${liveSum.toFixed(1)}mm</b> · 차이 <b style="color:#c0392b;">${(localSum-liveSum).toFixed(1)}mm</b><br>
-        값이 다른 날짜 <b style="color:#c0392b;">${diffs.length}일</b> 발견
-      </div>
-      <div style="max-height:220px;overflow-y:auto;border:1px solid #eee;border-radius:6px;padding:6px 8px;">
-        ${diffs.map(d=>`<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid #f5f5f5;">
-          <span>${d.iso}</span>
-          <span>저장값 <b style="color:#185FA5;">${d.local!=null?d.local.toFixed(1):'—'}</b> vs 실측 <b style="color:#c0392b;">${d.kma!=null?d.kma.toFixed(1):'—'}</b></span>
-        </div>`).join('')}
-      </div>`;
-  }catch(e){
-    resultEl.innerHTML=`<div style="color:#c0392b;">조회 실패: ${e.message||e}</div>`;
-  }
-}
 let _rainYearOffset=0;
 let _rainYearManualNav=false;
 let _rainYearHidden=new Set();
@@ -9086,18 +9008,6 @@ function printCurrentTab(){
 /* ── 설정 모달 ── */
 function openSettingsModal(){
   document.getElementById('settings-modal').style.display='flex';
-  const bf=document.getElementById('settings-backfill-section');
-  if(bf) bf.style.display=(_fbRole==='admin')?'block':'none';
-  const rc=document.getElementById('settings-raincheck-section');
-  if(rc){
-    rc.style.display=(_fbRole==='admin')?'block':'none';
-    const sel=document.getElementById('raincheck-year');
-    if(sel && !sel.dataset.filled){
-      const cy=new Date().getFullYear();
-      sel.innerHTML=[cy,cy-1,cy-2].map(y=>`<option value="${y}">${y}년</option>`).join('');
-      sel.dataset.filled='1';
-    }
-  }
 }
 function closeSettingsModal(e){
   const m=document.getElementById('settings-modal');
@@ -9124,139 +9034,6 @@ function executeResetAll(){
   showToast('모든 기록이 초기화됐습니다. 새로고침합니다...');
   setTimeout(()=>location.reload(),1400);
 }
-
-/* ── 과거 날씨 자동 백필 (관리자 전용, 테스트) ──
-   기상청 AWS 지점460 일통계(sfc_aws_day.php)를 tm1~tm2 범위로 한 번에 조회해서
-   (실측 월/연누적강우량 계산에 이미 쓰고 있는 것과 같은 방식) 기록이 없는 과거
-   날짜에 기온·강수량만 채운 초안 기록을 만든다. 저장 전 반드시 미리보기로
-   결과를 확인시키고, "생성" 버튼을 눌러야만 실제로 레코드가 만들어진다. */
-let _backfillPreviewData=null;
-
-/* 응답은 "YYMMDD,STN,LON,LAT,HT,VAL" 형태의 CSV 줄(#으로 시작하는 주석 제외) —
-   날짜(YYMMDD)를 키로 하는 맵으로 변환 */
-function parseKmaDayCsv(txt){
-  const map={};
-  (txt||'').split('\n').forEach(line=>{
-    line=line.trim();
-    if(!line||line.startsWith('#'))return;
-    const cols=line.split(',').map(s=>s.trim());
-    if(cols.length<6)return;
-    const ymd=cols[0];
-    if(!/^\d{6}$/.test(ymd))return;
-    const yy=parseInt(ymd.slice(0,2),10);
-    const yyyy=yy<50?2000+yy:1900+yy;
-    const iso=`${yyyy}-${ymd.slice(2,4)}-${ymd.slice(4,6)}`;
-    const v=parseFloat(cols[5]);
-    if(!isNaN(v)) map[iso]=v;
-  });
-  return map;
-}
-
-async function runWeatherBackfillPreview(){
-  if(_fbRole!=='admin'){showToast('관리자만 사용할 수 있습니다');return;}
-  const startEl=document.getElementById('backfill-start'), endEl=document.getElementById('backfill-end');
-  const start=startEl?.value, end=endEl?.value;
-  const resultEl=document.getElementById('backfill-result');
-  if(!resultEl)return;
-  if(!start||!end||start>end){ resultEl.innerHTML='<div style="color:#c0392b;">시작일/종료일을 확인해주세요</div>'; return; }
-
-  const dates=[];
-  for(let d=new Date(start);d<=new Date(end);d.setDate(d.getDate()+1)){
-    dates.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);
-  }
-  const all=gd();
-  const existingISOs=new Set(all.map(r=>{
-    const m=r.date?.match(/(\d+)년\s*(\d+)월\s*(\d+)일/);
-    if(!m)return null;
-    const yy=parseInt(m[1]);const yyyy=yy<50?2000+yy:1900+yy;
-    return `${yyyy}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
-  }).filter(Boolean));
-
-  /* v1(범위조회 tm1~tm2)는 강수량 누적계산에서만 검증된 방식이었고, 기온
-     최고/최저(ta_max/ta_min)는 원래 하루씩(tm2만) 조회하는 방식만 실제 동작이
-     확인돼 있었음 — 범위로 걸었더니 전부 "자료 없음"으로 나온 원인으로 보여,
-     기존에 검증된 하루 단위(tm2만) 방식으로 날짜별 순회 조회하도록 변경 */
-  const parseDayVal=(txt)=>{
-    const l=(txt||'').split('\n').map(s=>s.trim()).find(s=>s&&!s.startsWith('#'));
-    if(!l)return null;
-    const cols=l.split(',');
-    const v=parseFloat(cols[5]);
-    return isNaN(v)?null:v;
-  };
-  const fetchDay=(dISO,obs)=>{
-    const ctrl=new AbortController();
-    const tid=setTimeout(()=>ctrl.abort(),10000);
-    return fetch(`https://empty-morning-c054.loveinch2000.workers.dev/?path=sfc_aws_day.php&tm2=${dISO}&obs=${obs}&stn=460`,{signal:ctrl.signal})
-      .then(r=>r.text()).finally(()=>clearTimeout(tid));
-  };
-
-  const rows=[];
-  for(let i=0;i<dates.length;i++){
-    const iso=dates[i];
-    resultEl.innerHTML=`조회 중... (${i+1}/${dates.length}) ${iso}`;
-    if(existingISOs.has(iso)){ rows.push({iso,tmax:null,tmin:null,rain:null,hasTemp:false,already:true}); continue; }
-    const dISO=iso.replace(/-/g,'');
-    try{
-      const [maxTxt,minTxt,rainTxt]=await Promise.all([fetchDay(dISO,'ta_max'),fetchDay(dISO,'ta_min'),fetchDay(dISO,'rn_day')]);
-      const tmax=parseDayVal(maxTxt), tmin=parseDayVal(minTxt), rain=parseDayVal(rainTxt);
-      rows.push({iso,tmax,tmin,rain,hasTemp:(tmax!=null&&tmin!=null),already:false});
-    }catch(e){
-      rows.push({iso,tmax:null,tmin:null,rain:null,hasTemp:false,already:false});
-    }
-    await new Promise(res=>setTimeout(res,120)); /* 서버 부담 완화용 짧은 텀 */
-  }
-  _backfillPreviewData=rows;
-
-  const okCount=rows.filter(r=>r.hasTemp&&!r.already).length;
-  const alreadyCount=rows.filter(r=>r.already).length;
-  const missingCount=rows.filter(r=>!r.hasTemp&&!r.already).length;
-
-  resultEl.innerHTML=`
-    <div style="margin-bottom:8px;">총 ${rows.length}일 중 · 신규 생성 가능 <b style="color:#185FA5;">${okCount}일</b> · 이미 기록 있음 ${alreadyCount}일 · 기상청 자료 없음 <b style="color:#c0392b;">${missingCount}일</b></div>
-    <div style="max-height:150px;overflow-y:auto;border:1px solid #eee;border-radius:6px;padding:6px 8px;margin-bottom:8px;">
-      ${rows.map(r=>`<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid #f5f5f5;">
-        <span>${r.iso}</span>
-        <span style="color:${r.already?'#aaa':r.hasTemp?'#333':'#c0392b'};">${r.already?'기존 기록 있음':r.hasTemp?`${r.tmin}~${r.tmax}°C · ${r.rain!=null?r.rain+'mm':'-'}`:'자료 없음'}</span>
-      </div>`).join('')}
-    </div>
-    ${okCount>0?`<button onclick="applyWeatherBackfill()" style="width:100%;padding:9px;border:none;border-radius:8px;background:#3B6D11;color:#fff;font-size:12px;font-weight:700;cursor:pointer;">✅ ${okCount}일 자동백필 기록 생성</button>`:''}`;
-}
-
-function applyWeatherBackfill(){
-  if(!_backfillPreviewData)return;
-  const targets=_backfillPreviewData.filter(r=>r.hasTemp&&!r.already);
-  if(!targets.length)return;
-  if(!confirm(`${targets.length}일치 자동백필 기록을 생성합니다. 계속할까요?`))return;
-  const all=gd();
-  const created=[];
-  targets.forEach(r=>{
-    const [yyyy,mm,dd]=r.iso.split('-').map(Number);
-    const dateLabel=formatDateStr(yyyy,mm,dd);
-    const avg=(r.tmax+r.tmin)/2;
-    const rec={
-      id:'rec_'+Date.now()+'_'+Math.random().toString(36).slice(2,10),
-      date:dateLabel,
-      course:gcn(),
-      backfilled:true,
-      weather:{temp:'--',feel:'--',humid:'--',wind:'--',sky:'--',avg:avg.toFixed(1),avgh:'--',minmaxh:'--',
-        monthRain:'--',yearRain:'--',minmax:`${Math.round(r.tmin)} / ${Math.round(r.tmax)}`,
-        rain:(r.rain!=null?r.rain:0).toString(),snow:'0',wdir:'',note:'(기상청 실측 자동백필)',
-        fetchedAt:new Date().toISOString(),badges:{}}
-    };
-    all.push(rec);
-    created.push(rec);
-  });
-  sd(all);
-  /* 로그인 상태면 클라우드에도 동일하게 반영 (실패해도 로컬 저장은 이미 완료된 상태) */
-  if(typeof fbSaveReport==='function'){
-    created.forEach(rec=>{ fbSaveReport(rec).catch(()=>{}); });
-  }
-  showToast(`${created.length}일치 자동백필 기록을 생성했습니다`);
-  const resultEl=document.getElementById('backfill-result');
-  if(resultEl) resultEl.innerHTML+=`<div style="margin-top:8px;color:#3B6D11;font-weight:700;">✅ ${created.length}일 생성 완료 — "기록" 탭에서 확인해보세요</div>`;
-  _backfillPreviewData=null;
-}
-
 
 let _wxStatTarget=null;
 function editWeatherStat(elId, label, type){
@@ -10533,8 +10310,9 @@ function checkBackupReminder(){
    · 관리자 공지: Firestore shared/notices 문서의 items 배열(모든 기기 실시간 공유). 관리자만 작성·수정·삭제. 항상 맨 위 고정
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
+  {date:'2026-10-24',items:[
+    '⚙️ 설정에서 「과거 날씨 자동 백필」·「강우량 정합성 검사」(관리자용 점검 도구) 삭제']},
   {date:'2026-10-23',items:[
-    '📦 자재입출고 품목관리에 「🔤 단어 바꾸기」 — 장부 전체의 품목명·규격·사용처 등에서 단어 일괄 교체 (예: 벨브 → 밸브)',
     '📦 자재입출고 농약·비료 「품목 편집」도 자재정보 팝업과 같은 항목으로 편집 (입출고 전용: 단위·이월재고), 저장 시 자재정보와 다르면 같이 수정할지 확인',
     '📦 자재입출고 등록: 쉼표·띄어쓰기로 여러 단어 동시 검색, 여러 품목 선택 후 품목별 수량 입력·한 번에 저장 (일자·사용처·비고 공통), 검색 목록과 선택 목록에 단가 표시']},
   {date:'2026-10-22',items:[
@@ -15968,7 +15746,6 @@ function showPdfGuide(ri){
     <div class="sk-card">
       <div class="sk-tools">
         <button class="sk-btn pri" onclick="skEditItem(null)">＋ 품목 추가</button>
-        <button class="sk-btn" onclick="skReplaceOpen()" title="이 장부의 품목·입출고 내역에서 단어를 한꺼번에 바꿉니다 (예: 벨브 → 밸브)">🔤 단어 바꾸기</button>
         <input id="sk-items-q" placeholder="🔍 검색" oninput="skRenderItems()" style="flex:1 1 160px;">
       </div>
       <div class="sk-tbl-wrap"><table class="sk-tbl" id="sk-items-tbl"></table></div>
@@ -16295,63 +16072,6 @@ async function skDelTx(id){
   const t=_skTx.find(x=>x.id===id); if(!t) return;
   if(!confirm(`${t.date} ${skItemById(t.itemId)?.name||t.itemName} ${t.io} ${t.qty} 내역을 삭제할까요?`)) return;
   try{await _fbDb.collection(SK_COL_TX).doc(id).delete(); showToast('삭제되었습니다');}catch(e){showToast('⚠️ 삭제 실패');}
-}
-
-
-/* ── 🔤 단어 일괄 바꾸기 (현재 장부) ──
-   품목(제품명·규격·용도·납품업체·엑셀 추가 칸)과 입출고 내역(제품명·규격·사용처·비고)에서 찾는 단어를 바꿀 단어로 한꺼번에 교체 */
-const SK_REPL_ITEM_F=['name','spec','use','vendor','unit'], SK_REPL_TX_F=['itemName','spec','place','note','unit'];
-function skReplaceOpen(){
-  if(!skCanMaster()){ showToast('이 장부의 품목 관리 권한이 없습니다'); return; }
-  const L=SK_LEDGERS[_skLedger];
-  document.getElementById('sk-modal').innerHTML=`<h3>🔤 단어 바꾸기 <span style="font-size:12px;color:#889;">${L.icon} ${L.label}</span></h3>
-    <div style="font-size:12px;color:#667;margin-bottom:8px;line-height:1.6;">이 장부의 품목(제품명·규격·용도·납품업체·엑셀 추가 칸)과 입출고 내역(제품명·규격·사용처·비고)에서 단어를 한꺼번에 바꿉니다.</div>
-    <div class="sk-form"><label>찾을 단어<input id="sk-rp-from" value="벨브" oninput="skReplacePreview()"></label><label>바꿀 단어<input id="sk-rp-to" value="밸브" oninput="skReplacePreview()"></label></div>
-    <div id="sk-rp-prev" style="margin-top:10px;max-height:45vh;overflow:auto;"></div>
-    <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:12px;">
-      <button class="sk-btn" onclick="skCloseModal()">취소</button><button class="sk-btn pri" id="sk-rp-go" onclick="skReplaceApply()">바꾸기</button></div>`;
-  document.getElementById('sk-modal').classList.remove('sk-ro');
-  document.getElementById('sk-modal-bg').style.display='flex';
-  skReplacePreview();
-}
-function _skRepl(v,from,to){ return typeof v==='string' && v.includes(from) ? v.split(from).join(to) : v; }
-function skReplacePlan(){
-  const from=document.getElementById('sk-rp-from').value, to=document.getElementById('sk-rp-to').value;
-  if(!from || from===to) return {from,to,items:[],tx:[]};
-  const items=[], tx=[];
-  _skItems.forEach(it=>{ const up={}; SK_REPL_ITEM_F.forEach(f=>{ const n=_skRepl(it[f],from,to); if(n!==it[f]) up[f]=n; });
-    if(it.x){ let ch=false; const nx={}; Object.entries(it.x).forEach(([k,v])=>{ const n=_skRepl(v,from,to); if(n!==v) ch=true; nx[k]=n; }); if(ch) up.x=nx; }
-    if(Object.keys(up).length) items.push({it,up}); });
-  _skTx.forEach(t=>{ const up={}; SK_REPL_TX_F.forEach(f=>{ const n=_skRepl(t[f],from,to); if(n!==t[f]) up[f]=n; }); if(Object.keys(up).length) tx.push({t,up}); });
-  return {from,to,items,tx};
-}
-function skReplacePreview(){
-  const el=document.getElementById('sk-rp-prev'); if(!el) return;
-  const P=skReplacePlan();
-  if(!P.from){ el.innerHTML='<div style="color:#999;font-size:12px;">찾을 단어를 입력하세요</div>'; return; }
-  const hl=v=>skEsc(String(v)).split(skEsc(P.from)).join(`<b style="background:#fff3c4;color:#c0392b;">${skEsc(P.from)}</b>`);
-  el.innerHTML=`<div style="font-size:12.5px;font-weight:800;color:#234;margin-bottom:6px;">품목 ${P.items.length}개 · 입출고 내역 ${P.tx.length}건이 바뀝니다</div>`
-    +(P.items.length?`<div style="font-size:11.5px;line-height:1.7;">${P.items.slice(0,60).map(({it,up})=>`· ${hl(it.name)}${up.name?` → <b>${skEsc(up.name)}</b>`:''}${!up.name&&(up.spec||up.use)?` <span style="color:#889;">(규격·용도 등)</span>`:''}`).join('<br>')}${P.items.length>60?`<br>… 외 ${P.items.length-60}개`:''}</div>`:'')
-    +(P.tx.length?`<div style="font-size:11px;color:#889;margin-top:6px;">입출고 내역의 제품명·사용처·비고에 들어 있는 「${skEsc(P.from)}」도 함께 바뀝니다</div>`:'');
-  const go=document.getElementById('sk-rp-go'); if(go) go.disabled=!(P.items.length||P.tx.length);
-}
-async function skReplaceApply(){
-  if(!skCanMaster()) return;
-  const P=skReplacePlan(); if(!P.items.length && !P.tx.length) return;
-  /* 바꾼 뒤 제품명이 기존 다른 품목과 같아지면 중단 */
-  const names=new Map(_skItems.map(it=>[it.id,it.name]));
-  P.items.forEach(({it,up})=>{ if(up.name) names.set(it.id,up.name); });
-  const seen=new Map(); let dup=null;
-  for(const [id,n] of names){ const k=skNameKey(n); if(seen.has(k)){ dup=n; break; } seen.set(k,id); }
-  if(dup){ alert(`바꾸면 「${dup}」 제품명이 두 개가 되어 중단했습니다.\n품목관리에서 하나로 합치거나 이름을 먼저 정리해 주세요.`); return; }
-  if(!confirm(`「${P.from}」 → 「${P.to}」\n\n품목 ${P.items.length}개 · 입출고 내역 ${P.tx.length}건을 바꿉니다.\n(모든 기기에 바로 반영됩니다)\n\n진행할까요?`)) return;
-  const ops=[];
-  P.items.forEach(({it,up})=>ops.push(bt=>bt.set(_fbDb.collection(SK_COL_ITEMS).doc(it.id),{...up,updatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true})));
-  P.tx.forEach(({t,up})=>ops.push(bt=>bt.set(_fbDb.collection(SK_COL_TX).doc(t.id),{...up,updatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true})));
-  const go=document.getElementById('sk-rp-go'); if(go) go.disabled=true;
-  try{ for(let i=0;i<ops.length;i+=400){ const bt=_fbDb.batch(); ops.slice(i,i+400).forEach(f=>f(bt)); await bt.commit(); }
-    skCloseModal(); showToast(`✅ 「${P.from}」→「${P.to}」 품목 ${P.items.length}개 · 내역 ${P.tx.length}건 변경`);
-  }catch(e){ console.warn(e); showToast('⚠️ 바꾸기 실패: '+(e.message||e)); if(go) go.disabled=false; }
 }
 
 /* ── 품목관리 ── */
