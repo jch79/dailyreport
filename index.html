@@ -10534,6 +10534,7 @@ function checkBackupReminder(){
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
   {date:'2026-10-23',items:[
+    '📦 자재입출고 품목관리에 「🔤 단어 바꾸기」 — 장부 전체의 품목명·규격·사용처 등에서 단어 일괄 교체 (예: 벨브 → 밸브)',
     '📦 자재입출고 농약·비료 「품목 편집」도 자재정보 팝업과 같은 항목으로 편집 (입출고 전용: 단위·이월재고), 저장 시 자재정보와 다르면 같이 수정할지 확인',
     '📦 자재입출고 등록: 쉼표·띄어쓰기로 여러 단어 동시 검색, 여러 품목 선택 후 품목별 수량 입력·한 번에 저장 (일자·사용처·비고 공통), 검색 목록과 선택 목록에 단가 표시']},
   {date:'2026-10-22',items:[
@@ -15967,6 +15968,7 @@ function showPdfGuide(ri){
     <div class="sk-card">
       <div class="sk-tools">
         <button class="sk-btn pri" onclick="skEditItem(null)">＋ 품목 추가</button>
+        <button class="sk-btn" onclick="skReplaceOpen()" title="이 장부의 품목·입출고 내역에서 단어를 한꺼번에 바꿉니다 (예: 벨브 → 밸브)">🔤 단어 바꾸기</button>
         <input id="sk-items-q" placeholder="🔍 검색" oninput="skRenderItems()" style="flex:1 1 160px;">
       </div>
       <div class="sk-tbl-wrap"><table class="sk-tbl" id="sk-items-tbl"></table></div>
@@ -16293,6 +16295,63 @@ async function skDelTx(id){
   const t=_skTx.find(x=>x.id===id); if(!t) return;
   if(!confirm(`${t.date} ${skItemById(t.itemId)?.name||t.itemName} ${t.io} ${t.qty} 내역을 삭제할까요?`)) return;
   try{await _fbDb.collection(SK_COL_TX).doc(id).delete(); showToast('삭제되었습니다');}catch(e){showToast('⚠️ 삭제 실패');}
+}
+
+
+/* ── 🔤 단어 일괄 바꾸기 (현재 장부) ──
+   품목(제품명·규격·용도·납품업체·엑셀 추가 칸)과 입출고 내역(제품명·규격·사용처·비고)에서 찾는 단어를 바꿀 단어로 한꺼번에 교체 */
+const SK_REPL_ITEM_F=['name','spec','use','vendor','unit'], SK_REPL_TX_F=['itemName','spec','place','note','unit'];
+function skReplaceOpen(){
+  if(!skCanMaster()){ showToast('이 장부의 품목 관리 권한이 없습니다'); return; }
+  const L=SK_LEDGERS[_skLedger];
+  document.getElementById('sk-modal').innerHTML=`<h3>🔤 단어 바꾸기 <span style="font-size:12px;color:#889;">${L.icon} ${L.label}</span></h3>
+    <div style="font-size:12px;color:#667;margin-bottom:8px;line-height:1.6;">이 장부의 품목(제품명·규격·용도·납품업체·엑셀 추가 칸)과 입출고 내역(제품명·규격·사용처·비고)에서 단어를 한꺼번에 바꿉니다.</div>
+    <div class="sk-form"><label>찾을 단어<input id="sk-rp-from" value="벨브" oninput="skReplacePreview()"></label><label>바꿀 단어<input id="sk-rp-to" value="밸브" oninput="skReplacePreview()"></label></div>
+    <div id="sk-rp-prev" style="margin-top:10px;max-height:45vh;overflow:auto;"></div>
+    <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:12px;">
+      <button class="sk-btn" onclick="skCloseModal()">취소</button><button class="sk-btn pri" id="sk-rp-go" onclick="skReplaceApply()">바꾸기</button></div>`;
+  document.getElementById('sk-modal').classList.remove('sk-ro');
+  document.getElementById('sk-modal-bg').style.display='flex';
+  skReplacePreview();
+}
+function _skRepl(v,from,to){ return typeof v==='string' && v.includes(from) ? v.split(from).join(to) : v; }
+function skReplacePlan(){
+  const from=document.getElementById('sk-rp-from').value, to=document.getElementById('sk-rp-to').value;
+  if(!from || from===to) return {from,to,items:[],tx:[]};
+  const items=[], tx=[];
+  _skItems.forEach(it=>{ const up={}; SK_REPL_ITEM_F.forEach(f=>{ const n=_skRepl(it[f],from,to); if(n!==it[f]) up[f]=n; });
+    if(it.x){ let ch=false; const nx={}; Object.entries(it.x).forEach(([k,v])=>{ const n=_skRepl(v,from,to); if(n!==v) ch=true; nx[k]=n; }); if(ch) up.x=nx; }
+    if(Object.keys(up).length) items.push({it,up}); });
+  _skTx.forEach(t=>{ const up={}; SK_REPL_TX_F.forEach(f=>{ const n=_skRepl(t[f],from,to); if(n!==t[f]) up[f]=n; }); if(Object.keys(up).length) tx.push({t,up}); });
+  return {from,to,items,tx};
+}
+function skReplacePreview(){
+  const el=document.getElementById('sk-rp-prev'); if(!el) return;
+  const P=skReplacePlan();
+  if(!P.from){ el.innerHTML='<div style="color:#999;font-size:12px;">찾을 단어를 입력하세요</div>'; return; }
+  const hl=v=>skEsc(String(v)).split(skEsc(P.from)).join(`<b style="background:#fff3c4;color:#c0392b;">${skEsc(P.from)}</b>`);
+  el.innerHTML=`<div style="font-size:12.5px;font-weight:800;color:#234;margin-bottom:6px;">품목 ${P.items.length}개 · 입출고 내역 ${P.tx.length}건이 바뀝니다</div>`
+    +(P.items.length?`<div style="font-size:11.5px;line-height:1.7;">${P.items.slice(0,60).map(({it,up})=>`· ${hl(it.name)}${up.name?` → <b>${skEsc(up.name)}</b>`:''}${!up.name&&(up.spec||up.use)?` <span style="color:#889;">(규격·용도 등)</span>`:''}`).join('<br>')}${P.items.length>60?`<br>… 외 ${P.items.length-60}개`:''}</div>`:'')
+    +(P.tx.length?`<div style="font-size:11px;color:#889;margin-top:6px;">입출고 내역의 제품명·사용처·비고에 들어 있는 「${skEsc(P.from)}」도 함께 바뀝니다</div>`:'');
+  const go=document.getElementById('sk-rp-go'); if(go) go.disabled=!(P.items.length||P.tx.length);
+}
+async function skReplaceApply(){
+  if(!skCanMaster()) return;
+  const P=skReplacePlan(); if(!P.items.length && !P.tx.length) return;
+  /* 바꾼 뒤 제품명이 기존 다른 품목과 같아지면 중단 */
+  const names=new Map(_skItems.map(it=>[it.id,it.name]));
+  P.items.forEach(({it,up})=>{ if(up.name) names.set(it.id,up.name); });
+  const seen=new Map(); let dup=null;
+  for(const [id,n] of names){ const k=skNameKey(n); if(seen.has(k)){ dup=n; break; } seen.set(k,id); }
+  if(dup){ alert(`바꾸면 「${dup}」 제품명이 두 개가 되어 중단했습니다.\n품목관리에서 하나로 합치거나 이름을 먼저 정리해 주세요.`); return; }
+  if(!confirm(`「${P.from}」 → 「${P.to}」\n\n품목 ${P.items.length}개 · 입출고 내역 ${P.tx.length}건을 바꿉니다.\n(모든 기기에 바로 반영됩니다)\n\n진행할까요?`)) return;
+  const ops=[];
+  P.items.forEach(({it,up})=>ops.push(bt=>bt.set(_fbDb.collection(SK_COL_ITEMS).doc(it.id),{...up,updatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true})));
+  P.tx.forEach(({t,up})=>ops.push(bt=>bt.set(_fbDb.collection(SK_COL_TX).doc(t.id),{...up,updatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true})));
+  const go=document.getElementById('sk-rp-go'); if(go) go.disabled=true;
+  try{ for(let i=0;i<ops.length;i+=400){ const bt=_fbDb.batch(); ops.slice(i,i+400).forEach(f=>f(bt)); await bt.commit(); }
+    skCloseModal(); showToast(`✅ 「${P.from}」→「${P.to}」 품목 ${P.items.length}개 · 내역 ${P.tx.length}건 변경`);
+  }catch(e){ console.warn(e); showToast('⚠️ 바꾸기 실패: '+(e.message||e)); if(go) go.disabled=false; }
 }
 
 /* ── 품목관리 ── */
