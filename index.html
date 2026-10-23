@@ -10533,7 +10533,10 @@ function checkBackupReminder(){
    · 관리자 공지: Firestore shared/notices 문서의 items 배열(모든 기기 실시간 공유). 관리자만 작성·수정·삭제. 항상 맨 위 고정
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
+  {date:'2026-10-23',items:[
+    '📦 자재입출고 등록: 쉼표·띄어쓰기로 여러 단어 동시 검색, 여러 품목 선택 후 품목별 수량 입력·한 번에 저장 (일자·사용처·비고 공통), 검색 목록과 선택 목록에 단가 표시']},
   {date:'2026-10-22',items:[
+    '💾 상단 「내보내기」 백업에 📢 관리자 공지도 포함 (가져오기 시 관리자 계정이면 클라우드로 복원)',
     '📅 자재 사용 캘린더: 지역·종류를 해제해도 캘린더 높이는 유지하고 남은 기록만 위로 정렬',
     '📅 자재 사용 캘린더: 날짜 칸 우측 날씨 아이콘 옆에 최고/최저기온 표시 (예: 18°/6° ☀️)',
     '🧪 연간 시비 순성분량 팝업: 모바일에서 아래로 스크롤되지 않던 문제 수정, 성분 막대를 화면 폭에 맞춤']},
@@ -10646,6 +10649,20 @@ async function noticeDelete(id){
     _notices=items; try{ localStorage.setItem(NOTICE_CACHE_KEY,JSON.stringify(items)); }catch(e){}
     showToast('공지를 삭제했습니다'); renderNoticePanel(); }catch(e){ showToast('⚠️ 삭제 실패'); }
 }
+/* 백업 파일의 공지를 클라우드로 복원 (관리자만). 클라우드와 내용이 같으면 아무것도 안 함 */
+async function noticeRestoreBackup(raw){
+  let items; try{ items=typeof raw==='string'?JSON.parse(raw):raw; }catch(e){ return ''; }
+  if(!Array.isArray(items)) return '';
+  if(!(_fbUser&&_fbRole==='admin')) return '';
+  try{
+    const ref=_fbDb.collection(FB_COL_SHARED).doc(NOTICE_DOC);
+    const snap=await ref.get(); const cur=(snap.exists&&Array.isArray(snap.data().items))?snap.data().items:[];
+    if(JSON.stringify(cur)===JSON.stringify(items)) return '';
+    if(cur.length && !confirm(`이 파일에 공지 ${items.length}개가 들어 있습니다. (현재 클라우드: ${cur.length}개)\n\n공지를 파일 내용으로 교체할까요?\n(취소하면 현재 공지를 그대로 둡니다)`)) return '';
+    await ref.set({items,updatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true});
+    return `공지 복원 완료: ${items.length}개`;
+  }catch(e){ console.warn('[공지 복원]',e); return '공지 복원 중 오류: '+(e.message||e); }
+}
 /* 공지 패널 자리 만들기 (자재입출고 패널 뒤) + 배지 */
 (function(){ const mk=()=>{ if(document.getElementById('panel-notice')) return; const sk=document.getElementById('panel-sk'); if(!sk) return;
   const p=document.createElement('div'); p.className='panel'; p.id='panel-notice'; p.style.display='none'; sk.parentNode.insertBefore(p,sk.nextSibling); noticeUpdateBadge(); };
@@ -10718,7 +10735,7 @@ function exportDataFile(){
   /* 모든 localStorage 키 수집 */
   const allKeys=[SK,PK,RK,CNK,RATE_KEY,DSK,WCK,LOC_KEY,IRR_ZONES_KEY,MAT_PEST_KEY,MAT_FERT_KEY,MAT_SAND_KEY,MAT_AREA_PRESET_KEY,
     TREATAREA_PRESET_KEY,TANKVOL_PRESET_KEY,MAT_COL_ORDER_KEY,
-    TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY,TDR_ZONE_LABEL_KEY,GP_TARGET_KEY,REG_NAME_ORDER_KEY,WSK];
+    TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY,TDR_ZONE_LABEL_KEY,GP_TARGET_KEY,REG_NAME_ORDER_KEY,WSK,NOTICE_CACHE_KEY];
   const exportObj={};
   allKeys.forEach(k=>{
     const v=localStorage.getItem(k);
@@ -10735,9 +10752,14 @@ function exportDataFile(){
   const _skBkStep=(typeof skBackupForExport==='function'?skBackupForExport():Promise.resolve(null))
     .then(bk=>{ if(bk){ exportObj['golf_sk_backup_v1']=JSON.stringify(bk); _skBkInfo=` + 자재입출고 품목 ${bk.items.length}개·입출고 ${bk.tx.length}건${bk.tpl&&Object.keys(bk.tpl).length?`·엑셀양식 ${Object.keys(bk.tpl).length}개`:''}`; } })
     .catch(e=>console.warn('[내보내기] 자재입출고 백업 실패',e));
+  /* 📢 관리자 공지(클라우드)도 최신 내용으로 백업에 포함 */
+  const _ntStep=(async()=>{ try{
+      if(_fbUser){ const d=await _fbDb.collection(FB_COL_SHARED).doc(NOTICE_DOC).get(); const items=(d.exists&&Array.isArray(d.data().items))?d.data().items:[]; exportObj[NOTICE_CACHE_KEY]=JSON.stringify(items); }
+      const n=JSON.parse(exportObj[NOTICE_CACHE_KEY]||'[]').length; if(n) _skBkInfo+=` + 공지 ${n}개`;
+    }catch(e){ console.warn('[내보내기] 공지 백업 실패',e); } })();
 
   /* 현재 HTML 파일에 데이터를 내장시켜 새 HTML로 다운로드 */
-  _skBkStep.then(()=>fetch(location.href))
+  Promise.all([_skBkStep,_ntStep]).then(()=>fetch(location.href))
     .then(r=>{
       if(!r.ok) throw new Error(`페이지를 다시 불러오지 못했습니다 (HTTP ${r.status})`);
       return r.text();
@@ -10820,7 +10842,7 @@ function importDataFile(event){
       /* 기존 관련 키 지우기 */
       [SK,PK,RK,CNK,RATE_KEY,DSK,WCK,LOC_KEY,IRR_ZONES_KEY,MAT_PEST_KEY,MAT_FERT_KEY,MAT_SAND_KEY,MAT_AREA_PRESET_KEY,
         TREATAREA_PRESET_KEY,TANKVOL_PRESET_KEY,MAT_COL_ORDER_KEY,
-        TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY,TDR_ZONE_LABEL_KEY,GP_TARGET_KEY,REG_NAME_ORDER_KEY,WSK].forEach(k=>localStorage.removeItem(k));
+        TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY,TDR_ZONE_LABEL_KEY,GP_TARGET_KEY,REG_NAME_ORDER_KEY,WSK,NOTICE_CACHE_KEY].forEach(k=>localStorage.removeItem(k));
 
       /* 새 데이터 적재 */
       importedKeys.forEach(k=>{
@@ -10829,9 +10851,11 @@ function importDataFile(event){
       });
 
       const _finishImport=()=>{ showToast('✅ 가져오기 완료! 페이지를 새로 고침합니다...'); setTimeout(()=>location.reload(),1200); };
-      if(data['golf_sk_backup_v1'] && typeof skRestoreBackup==='function'){
-        skRestoreBackup(data['golf_sk_backup_v1']).then(msg=>{ if(msg) alert(msg); }).catch(e=>console.warn(e)).then(_finishImport);
-      } else _finishImport();
+      const _skRs = (data['golf_sk_backup_v1'] && typeof skRestoreBackup==='function')
+        ? skRestoreBackup(data['golf_sk_backup_v1']).then(msg=>{ if(msg) alert(msg); }).catch(e=>console.warn(e))
+        : Promise.resolve();
+      _skRs.then(()=>(typeof noticeRestoreBackup==='function'?noticeRestoreBackup(data[NOTICE_CACHE_KEY]):null))
+        .then(msg=>{ if(msg) alert(msg); }).catch(e=>console.warn(e)).then(_finishImport);
     }catch(err){
       console.error(err);
       showToast('파일 읽기 오류: '+err.message);
@@ -15897,11 +15921,11 @@ function showPdfGuide(ri){
       <div class="sk-form">
         <label>일자<input type="date" id="sk-e-date"></label>
         <label class="full" style="position:relative;">제품명 (검색해서 선택)
-          <input id="sk-e-item" placeholder="예: 레듀샤, G85, 새들티" autocomplete="off" oninput="skSuggest()" onfocus="skSuggest()">
+          <input id="sk-e-item" placeholder="예: 레듀샤, G85, 새들티 (쉼표·띄어쓰기로 여러 개 검색)" autocomplete="off" oninput="skSuggest()" onfocus="skSuggest()">
           <div class="sk-sugg" id="sk-e-sugg" style="display:none;"></div>
         </label>
+        <div class="full" id="sk-e-sel"></div>
         <div class="full" id="sk-e-iteminfo" style="font-size:12px;color:#456;"></div>
-        <label>수량<input type="number" id="sk-e-qty" inputmode="decimal" min="0" step="any"></label>
         <label>사용처 / 입고처<input id="sk-e-place" list="sk-place-list" placeholder="예: 동3번 페어웨이"></label>
         <label class="full">비고<input id="sk-e-note" placeholder="예: 누수 헤드 교체"></label>
       </div>
@@ -15970,7 +15994,7 @@ function skApplyLedger(){ const L=x=>(x.ledger||'sk')===_skLedger; _skItems=_skA
 (function(){ try{const c=JSON.parse(localStorage.getItem(SK_CACHE_KEY)||'null'); if(c){_skAllItems=c.items||[];_skAllTx=c.tx||[];skApplyLedger();}}catch(e){} })();
 function skSwitchLedger(l){
   if(!SK_LEDGERS[l]) return; _skLedger=l; try{localStorage.setItem('golf_sk_ledger_v1',l);}catch(e){}
-  skApplyLedger(); _skSelItemId=null; _skEditingTxId=null; _skMoneyOpen='';
+  skApplyLedger(); _skSelItemId=null; _skEditingTxId=null; _skMoneyOpen=''; if(typeof _skMulti!=='undefined'){ _skMulti=[]; if(typeof skRenderSel==='function') skRenderSel(); }
   const L=SK_LEDGERS[l]; const t=document.getElementById('sk-ledger-title'); if(t) t.textContent=`${L.icon} ${L.label} 입출고`;
   document.querySelectorAll('[data-sk-ledger]').forEach(b=>b.classList.toggle('on',b.dataset.skLedger===l));
   skApplyRole();
@@ -16113,64 +16137,126 @@ function skShowItem(id){
   document.getElementById('sk-modal-bg').style.display='flex';
 }
 function skCloseModal(){document.getElementById('sk-modal-bg').style.display='none';document.getElementById('sk-modal').style.maxWidth='';}
-function skQuickEntry(id,io){ skCloseModal(); skView('entry'); skResetEntry(); skSetIo(io); skPickItem(id); document.getElementById('sk-e-qty').focus(); }
+function skQuickEntry(id,io){ skCloseModal(); skView('entry'); skResetEntry(); skSetIo(io); skPickItem(id); }
 
 /* ── 입출고 등록 ── */
-function skSetIo(io){ _skIo=io; document.getElementById('sk-io-in').classList.toggle('on',io==='입고'); document.getElementById('sk-io-out').classList.toggle('on',io==='출고'); const sv=document.getElementById('sk-e-save'); if(sv){ sv.classList.toggle('io-in',io==='입고'); sv.classList.toggle('io-out',io==='출고'); } skShowItemInfo(); }
+function skSetIo(io){ _skIo=io; document.getElementById('sk-io-in').classList.toggle('on',io==='입고'); document.getElementById('sk-io-out').classList.toggle('on',io==='출고'); const sv=document.getElementById('sk-e-save'); if(sv){ sv.classList.toggle('io-in',io==='입고'); sv.classList.toggle('io-out',io==='출고'); } if(typeof skRenderSel==='function') skRenderSel(); }
+/* ── 입출고 등록: 다중검색 · 여러 품목 선택 · 품목별 수량 ──
+   검색어를 쉼표/띄어쓰기로 나누면 그중 하나라도 포함된 품목을 모두 보여주고, 눌러서 여러 개 선택(다시 누르면 해제).
+   선택한 품목마다 수량을 넣고 저장하면 품목별로 입출고 1건씩 한꺼번에 저장. 일자·입고/출고·사용처·비고는 공통.
+   기존 내역 「수정」 때는 1개만 선택됨 */
+let _skMulti=[];   /* [{id, qty}] */
+function skSearchTerms(v){ return String(v||'').split(/[,，\s]+/).map(skNorm).filter(Boolean); }
 function skSuggest(){
-  const box=document.getElementById('sk-e-sugg'); const q=skNorm(document.getElementById('sk-e-item').value);
-  const st=skStats();
-  const list=_skItems.filter(it=>!q||skNorm(it.name+it.spec+it.use).includes(q)).sort((a,b)=>a.name.localeCompare(b.name,'ko')).slice(0,40);
-  box.innerHTML=list.map(it=>`<div onmousedown="event.preventDefault();skPickItem('${it.id}')"><b>${skEsc(it.name)}</b> <span style="color:#889;">${skEsc(it.spec||'')}</span> <span style="float:right;color:#185FA5;font-weight:700;">재고 ${skFmt(st[it.id].stock)}${skEsc(it.unit||'')}</span></div>`).join('')||'<div style="color:#999;">일치하는 품목 없음 — 품목관리에서 추가하세요</div>';
+  const box=document.getElementById('sk-e-sugg'); const terms=skSearchTerms(document.getElementById('sk-e-item').value);
+  const st=skStats(); const sel=new Set(_skMulti.map(m=>m.id));
+  const list=_skItems.filter(it=>{ if(!terms.length) return true; const h=skNorm((it.name||'')+(it.spec||'')+(it.use||'')); return terms.some(t=>h.includes(t)); })
+    .sort((a,b)=>a.name.localeCompare(b.name,'ko')).slice(0,80);
+  const head = `<div style="font-size:11px;color:#667;background:#f4f8fc;cursor:default;display:flex;align-items:center;gap:6px;position:sticky;top:0;z-index:1;" onmousedown="event.preventDefault()">
+      <span style="flex:1;">${terms.length>1?`검색어 ${terms.length}개 · `:''}${list.length}개 품목 — 눌러서 여러 개 선택${_skMulti.length?` · <b style="color:#185FA5;">${_skMulti.length}개 선택됨</b>`:''}</span>
+      <button onmousedown="event.preventDefault();document.getElementById('sk-e-sugg').style.display='none';const f=document.querySelector('#sk-e-sel input');if(f)f.focus();" style="font-size:11px;font-weight:800;padding:3px 9px;border-radius:6px;border:1.5px solid #185FA5;background:#185FA5;color:#fff;cursor:pointer;flex-shrink:0;">✓ 선택 완료</button></div>`;
+  box.innerHTML=head+(list.map(it=>{ const on=sel.has(it.id);
+    return `<div onmousedown="event.preventDefault();skToggleSel('${it.id}')" style="display:flex;align-items:center;gap:7px;${on?'background:#eef6ff;':''}">
+      <span style="font-size:15px;flex-shrink:0;color:${on?'#185FA5':'#bbb'};">${on?'☑':'☐'}</span>
+      <span style="flex:1;min-width:0;"><b>${skEsc(it.name)}</b> <span style="color:#889;">${skEsc(it.spec||'')}</span>
+        <span style="display:block;font-size:11px;color:#889;">단가 ${it.price?skFmt(skNum(it.price))+'원':'-'}</span></span>
+      <span style="color:#185FA5;font-weight:700;white-space:nowrap;">재고 ${skFmt(st[it.id].stock)}${skEsc(it.unit||'')}</span></div>`; }).join('')
+    ||'<div style="color:#999;">일치하는 품목 없음 — 품목관리에서 추가하세요</div>');
   box.style.display='block';
-  _skSelItemId=null; skShowItemInfo();
 }
 document.addEventListener('click',e=>{const b=document.getElementById('sk-e-sugg'); if(b && !e.target.closest('#sk-e-item') && !e.target.closest('#sk-e-sugg')) b.style.display='none';});
-function skPickItem(id){ const it=skItemById(id); if(!it) return; _skSelItemId=id; document.getElementById('sk-e-item').value=it.name; document.getElementById('sk-e-sugg').style.display='none'; skShowItemInfo(); }
-function skShowItemInfo(){
+function skToggleSel(id){
+  const i=_skMulti.findIndex(m=>m.id===id);
+  if(i>=0) _skMulti.splice(i,1);
+  else { if(_skEditingTxId) _skMulti=[]; _skMulti.push({id,qty:''}); }   /* 수정 중엔 1개만 */
+  skRenderSel(); skSuggest();
+}
+function skPickItem(id){   /* 재고현황의 「입고/출고 등록」, 내역 수정에서 호출 */
+  if(!skItemById(id)) return;
+  if(_skEditingTxId) _skMulti=[];
+  if(!_skMulti.some(m=>m.id===id)) _skMulti.push({id,qty:''});
+  document.getElementById('sk-e-sugg').style.display='none';
+  skRenderSel();
+  setTimeout(()=>{ const q=document.getElementById('sk-q-'+id); if(q) q.focus(); },30);
+}
+function skSetSelQty(id,v){ const m=_skMulti.find(x=>x.id===id); if(m) m.qty=v; skSelSummary(); skSelMark(id); }
+function skRemoveSel(id){ _skMulti=_skMulti.filter(m=>m.id!==id); skRenderSel(); const b=document.getElementById('sk-e-sugg'); if(b&&b.style.display==='block') skSuggest(); }
+function skSelMark(id){
+  const m=_skMulti.find(x=>x.id===id), it=skItemById(id), row=document.getElementById('sk-sel-row-'+id); if(!m||!it||!row) return;
+  const over=_skIo==='출고' && skNum(m.qty)>skSelAvail(it.id);
+  row.style.background=over?'#fdecea':'#fff'; row.style.borderColor=over?'#e6b0aa':'#dfe9f3';
+  const w=row.querySelector('.sk-sel-warn'); if(w) w.style.display=over?'block':'none';
+}
+function skSelAvail(id){ let a=skStats()[id].stock; if(_skEditingTxId){ const old=_skTx.find(t=>t.id===_skEditingTxId); if(old&&old.itemId===id) a+= old.io==='출고'?skNum(old.qty):-skNum(old.qty); } return a; }
+function skSelSummary(){
   const el=document.getElementById('sk-e-iteminfo'); if(!el) return;
-  const it=_skSelItemId&&skItemById(_skSelItemId);
-  if(!it){el.innerHTML='';return;}
-  const s=skStats()[it.id];
-  el.innerHTML=`규격 <b>${skEsc(it.spec||'-')}</b> · 단위 <b>${skEsc(it.unit||'-')}</b> · 현재고 <b style="color:#185FA5;">${skFmt(s.stock)}</b>${it.use?' · '+skEsc(it.use):''}`;
+  if(!_skMulti.length){ el.innerHTML=''; return; }
+  let amt=0, n=0; _skMulti.forEach(m=>{ const it=skItemById(m.id); const q=skNum(m.qty); if(it&&q>0){ amt+=q*skNum(it.price); n++; } });
+  el.innerHTML=`선택 <b>${_skMulti.length}</b>개 · 수량 입력 <b>${n}</b>개 · ${_skIo} 금액 <b style="color:${_skIo==='입고'?'#c0392b':'#185FA5'};">${skFmt(Math.round(amt))}원</b>`;
 }
+function skRenderSel(){
+  const box=document.getElementById('sk-e-sel'); if(!box) return;
+  const st=skStats();
+  _skMulti=_skMulti.filter(m=>skItemById(m.id));
+  box.innerHTML=_skMulti.length?`<div style="font-size:11px;color:#556;font-weight:700;margin:2px 0 4px;">선택한 품목 (${_skMulti.length})</div>`+_skMulti.map(m=>{ const it=skItemById(m.id);
+    return `<div id="sk-sel-row-${it.id}" style="display:flex;align-items:center;gap:8px;border:1.5px solid #dfe9f3;border-radius:9px;padding:7px 9px;margin-bottom:5px;background:#fff;">
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:800;color:#234;word-break:break-all;">${skEsc(it.name)} <span style="font-weight:500;color:#889;font-size:12px;">${skEsc(it.spec||'')}</span></div>
+        <div style="font-size:11px;color:#667;">단가 <b>${it.price?skFmt(skNum(it.price))+'원':'-'}</b> · 현재고 <b style="color:#185FA5;">${skFmt(st[it.id].stock)}${skEsc(it.unit||'')}</b></div>
+        <div class="sk-sel-warn" style="display:none;font-size:11px;color:#c0392b;font-weight:700;">현재고보다 많은 출고 수량</div>
+      </div>
+      <input id="sk-q-${it.id}" type="number" inputmode="decimal" min="0" step="any" placeholder="수량" value="${skEsc(m.qty)}" oninput="skSetSelQty('${it.id}',this.value)"
+        style="width:78px;font-size:14px;padding:7px 8px;border:1.5px solid #cfdcea;border-radius:8px;text-align:right;flex-shrink:0;">
+      <span style="font-size:12px;color:#667;min-width:22px;flex-shrink:0;">${skEsc(it.unit||'')}</span>
+      <button onclick="skRemoveSel('${it.id}')" title="선택 해제" style="border:none;background:none;color:#c0392b;font-size:16px;cursor:pointer;flex-shrink:0;padding:2px 4px;">✕</button>
+    </div>`; }).join(''):'';
+  _skMulti.forEach(m=>skSelMark(m.id));
+  skSelSummary();
+}
+function skShowItemInfo(){ skRenderSel(); }
 function skResetEntry(){
-  _skSelItemId=null; _skEditingTxId=null;
+  _skSelItemId=null; _skEditingTxId=null; _skMulti=[];
   document.getElementById('sk-e-date').value=skToday();
-  ['sk-e-item','sk-e-qty','sk-e-place','sk-e-note'].forEach(i=>document.getElementById(i).value='');
+  ['sk-e-item','sk-e-place','sk-e-note'].forEach(i=>document.getElementById(i).value='');
   document.getElementById('sk-e-editing').textContent=''; document.getElementById('sk-e-save').textContent='저장';
-  skShowItemInfo();
-}
-function skFillPlaces(){
-  const dl=document.getElementById('sk-place-list'); if(!dl) return;
-  const set=[...new Set(_skTx.map(t=>t.place).filter(Boolean))].slice(0,200);
-  dl.innerHTML=set.map(p=>`<option value="${skEsc(p)}">`).join('');
+  skRenderSel();
 }
 async function skSaveTx(){
   if(!skCanEdit()){showToast('입출고 등록 권한이 없습니다');return;}
-  const it=_skSelItemId&&skItemById(_skSelItemId);
-  if(!it){showToast('제품명을 목록에서 선택해 주세요');return;}
-  const date=document.getElementById('sk-e-date').value, qty=skNum(document.getElementById('sk-e-qty').value);
+  if(!_skMulti.length){showToast('제품을 검색해서 선택해 주세요');return;}
+  const date=document.getElementById('sk-e-date').value;
   if(!date){showToast('일자를 입력해 주세요');return;}
-  if(!(qty>0)){showToast('수량을 입력해 주세요');return;}
-  const st=skStats()[it.id];
-  let avail=st.stock;
-  if(_skEditingTxId){const old=_skTx.find(t=>t.id===_skEditingTxId); if(old&&old.itemId===it.id) avail+= old.io==='출고'?skNum(old.qty):-skNum(old.qty);}
-  if(_skIo==='출고' && qty>avail && !confirm(`현재고(${skFmt(avail)})보다 많은 수량입니다. 그래도 저장할까요?`)) return;
-  const data={date,itemId:it.id,itemName:it.name,spec:it.spec||'',unit:it.unit||'',io:_skIo,qty,
-    place:document.getElementById('sk-e-place').value.trim(),note:document.getElementById('sk-e-note').value.trim(),
-    price:skNum(it.price),vendor:it.vendor||'',ledger:_skLedger,
-    by:_fbUser.email,updatedAt:firebase.firestore.FieldValue.serverTimestamp()};
+  const rows=_skMulti.map(m=>({it:skItemById(m.id),qty:skNum(m.qty)})).filter(r=>r.it);
+  const noQty=rows.filter(r=>!(r.qty>0));
+  if(noQty.length){ showToast(`수량을 입력해 주세요: ${noQty.map(r=>r.it.name).slice(0,3).join(', ')}${noQty.length>3?' 외 '+(noQty.length-3)+'개':''}`); const f=document.getElementById('sk-q-'+noQty[0].it.id); if(f) f.focus(); return; }
+  if(_skIo==='출고'){
+    const over=rows.filter(r=>r.qty>skSelAvail(r.it.id));
+    if(over.length && !confirm(`현재고보다 많은 출고 수량이 있습니다.\n\n${over.map(r=>`· ${r.it.name}: 출고 ${skFmt(r.qty)} / 현재고 ${skFmt(skSelAvail(r.it.id))}`).join('\n')}\n\n그래도 저장할까요?`)) return;
+  }
+  const place=document.getElementById('sk-e-place').value.trim(), note=document.getElementById('sk-e-note').value.trim();
+  const mk=r=>({date,itemId:r.it.id,itemName:r.it.name,spec:r.it.spec||'',unit:r.it.unit||'',io:_skIo,qty:r.qty,place,note,
+    price:skNum(r.it.price),vendor:r.it.vendor||'',ledger:_skLedger,by:_fbUser.email,updatedAt:firebase.firestore.FieldValue.serverTimestamp()});
   const btn=document.getElementById('sk-e-save'); btn.disabled=true;
   try{
-    if(_skEditingTxId) await _fbDb.collection(SK_COL_TX).doc(_skEditingTxId).set(data,{merge:true});
-    else await _fbDb.collection(SK_COL_TX).add({...data,ts:Date.now(),createdAt:firebase.firestore.FieldValue.serverTimestamp()});
-    showToast(`✅ ${it.name} ${_skIo} ${skFmt(qty)}${it.unit||''} ${_skEditingTxId?'수정':'저장'}됨`);
+    if(_skEditingTxId){
+      await _fbDb.collection(SK_COL_TX).doc(_skEditingTxId).set(mk(rows[0]),{merge:true});
+      showToast(`✅ ${rows[0].it.name} ${_skIo} ${skFmt(rows[0].qty)}${rows[0].it.unit||''} 수정됨`);
+    } else {
+      const now=Date.now(), bt=_fbDb.batch();
+      rows.forEach((r,i)=>bt.set(_fbDb.collection(SK_COL_TX).doc(),{...mk(r),ts:now+i,createdAt:firebase.firestore.FieldValue.serverTimestamp()}));
+      await bt.commit();
+      showToast(rows.length===1?`✅ ${rows[0].it.name} ${_skIo} ${skFmt(rows[0].qty)}${rows[0].it.unit||''} 저장됨`:`✅ ${rows.length}개 품목 ${_skIo} 저장됨`);
+    }
     const keepDate=date, keepIo=_skIo; skResetEntry(); document.getElementById('sk-e-date').value=keepDate; skSetIo(keepIo);
   }catch(e){console.warn(e);showToast('⚠️ 저장 실패: '+(e.message||e));}
   btn.disabled=false;
 }
 
+function skFillPlaces(){
+  const dl=document.getElementById('sk-place-list'); if(!dl) return;
+  const set=[...new Set(_skTx.map(t=>t.place).filter(Boolean))].slice(0,200);
+  dl.innerHTML=set.map(p=>`<option value="${skEsc(p)}">`).join('');
+}
 /* ── 수불내역 ── */
 function skRenderLog(){
   const sel=document.getElementById('sk-log-month');
@@ -16196,7 +16282,7 @@ function skEditTx(id){
   const t=_skTx.find(x=>x.id===id); if(!t) return;
   skView('entry'); skResetEntry(); _skEditingTxId=id;
   skSetIo(t.io); skPickItem(t.itemId);
-  document.getElementById('sk-e-date').value=t.date; document.getElementById('sk-e-qty').value=t.qty;
+  document.getElementById('sk-e-date').value=t.date; if(_skMulti[0]){ _skMulti[0].qty=String(t.qty); skRenderSel(); }
   document.getElementById('sk-e-place').value=t.place||''; document.getElementById('sk-e-note').value=t.note||'';
   document.getElementById('sk-e-save').textContent='수정 저장';
   document.getElementById('sk-e-editing').textContent=`✎ ${t.date} ${t.io} 내역을 수정 중입니다 (초기화를 누르면 새 등록으로 돌아갑니다)`;
