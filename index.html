@@ -10347,6 +10347,7 @@ function checkBackupReminder(){
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
   {date:'2026-10-24',items:[
+    '🧪 자재입출고 농약 장부: 품목명·주성분함량 표시 — PC는 칸을 나눠서, 휴대폰은 제품명 아래 작게 (재고현황·수불내역·품목관리·입출고 등록)',
     '📊 정규직 근무현황: 오늘 이후 빈 칸을 눌러 휴무·연차 「계획」 표시 (점선, 집계 제외 · 날짜가 지나면 작성 기록 기준으로 표시)',
     '📊 통계 정규직 근무현황: 「사용연차(누적)」 칸에 이번 달 사용 일수와 (올해 누적) 일수를 함께 표시, 「잔여연차」 칸은 남은 일수를 크게 표시',
     '⚙️ 설정에서 「과거 날씨 자동 백필」·「강우량 정합성 검사」(관리자용 점검 도구) 삭제']},
@@ -15669,6 +15670,8 @@ function showPdfGuide(ri){
 .sk-form label{font-size:11px;color:#556;font-weight:700;display:flex;flex-direction:column;gap:3px;}
 .sk-form .full{grid-column:1/-1;}
 .sk-io-toggle{display:flex;gap:6px;}
+.sk-mb{display:none;}
+@media (max-width:700px){.sk-pc{display:none !important;}.sk-mb{display:block;}}
 .sk-io-toggle button{flex:1;font-size:14px;font-weight:800;padding:9px;border-radius:9px;border:2px solid #ddd;background:#fff;cursor:pointer;}
 .sk-io-toggle button.in{color:#c0392b;}
 .sk-io-toggle button.out{color:#185FA5;}
@@ -15897,6 +15900,18 @@ function skRenderAll(){
   skFillPlaces();
 }
 
+/* ── 농약 장부 전용: 품목명·주성분함량 표시 (PC=칸 나눔 / 휴대폰=제품명 아래 작게) ── */
+function skPestInfo(it){
+  if(_skLedger!=='pest'||!it) return null;
+  const m=(typeof skMasterList==='function'?skMasterList():[]).find(z=>z&&skNameKey(z.name)===skNameKey(it.name))||{};
+  const ok=v=>v!=null&&v!==''&&String(v)!=='0';
+  const g=(xk,mk)=>{ const v=(typeof _skXGet==='function')?_skXGet(it.x,xk):undefined; return ok(v)?String(v):(ok(m[mk])?String(m[mk]):''); };
+  return {product:g('품목명','product'), content:g('주성분함량','content')};
+}
+function skPestTh(){ return _skLedger==='pest'?'<th class="sk-pc">품목명</th><th class="sk-pc">주성분함량</th>':''; }
+function skPestTd(it){ const p=skPestInfo(it); if(!p) return ''; return `<td class="l sk-pc" style="font-size:11px;">${skEsc(p.product)}</td><td class="sk-pc" style="font-size:11px;white-space:nowrap;">${skEsc(p.content)}</td>`; }
+function skPestSub(it,always){ const p=skPestInfo(it); if(!p||!(p.product||p.content)) return ''; return `<div class="${always?'':'sk-mb'}" style="font-size:10.5px;color:#7a6a99;font-weight:500;line-height:1.35;">${skEsc([p.product,p.content].filter(Boolean).join(' · '))}</div>`; }
+function skPestCols(){ return _skLedger==='pest'?2:0; }
 /* ── 재고현황 ── */
 function skRenderStock(){
   const st=skStats();
@@ -15919,16 +15934,16 @@ function skRenderStock(){
   _skItems.forEach(it=>amt+=Math.max(0,st[it.id].stock)*skNum(it.price));
   const rows=list.map(it=>{const s=st[it.id];
     return `<tr class="click" onclick="skShowItem('${it.id}')">
-      <td class="l"><b>${skEsc(it.name)}</b><div style="font-size:10.5px;color:#889;">${skEsc(it.use||'')}</div></td>
-      <td>${skEsc(it.spec||'')}</td><td>${skEsc(it.unit||'')}</td>
+      <td class="l"><b>${skEsc(it.name)}</b><div style="font-size:10.5px;color:#889;">${skEsc(it.use||'')}</div>${skPestSub(it)}</td>
+      ${skPestTd(it)}<td>${skEsc(it.spec||'')}</td><td>${skEsc(it.unit||'')}</td>
       <td class="sk-stock ${s.stock<=0?'sk-low':''}">${skFmt(s.stock)}</td>
       ${amtCol?`<td style="font-weight:700;color:#185FA5;white-space:nowrap;">${skFmt(Math.round(am[it.id][so]))}</td>`:''}
       <td>${skFmt(skNum(it.carry))}</td>
       <td class="${s.in?'':'sk-zero'}">${skFmt(s.in)}</td><td class="${s.out?'':'sk-zero'}">${skFmt(s.out)}</td>
       <td style="font-size:11px;">${s.lastIn?s.lastIn.slice(5):''}</td><td style="font-size:11px;">${s.lastOut?s.lastOut.slice(5):''}</td>
       <td style="font-size:11px;">${skEsc(it.vendor||'')}</td></tr>`;}).join('');
-  document.getElementById('sk-stock-tbl').innerHTML=`<thead><tr><th>제품명</th><th>규격</th><th>단위</th><th>현재고</th>${amtCol?`<th>${amtCol}(원)</th>`:''}<th>이월</th><th>입고</th><th>출고</th><th>최종입고</th><th>최종출고</th><th>납품업체</th></tr></thead>
-    <tbody>${rows||`<tr><td colspan="${amtCol?11:10}" style="padding:22px;color:#999;">${_skItems.length?'검색 결과가 없습니다':'등록된 품목이 없습니다. 상단 「📥 엑셀 가져오기」로 기존 사용장부를 불러오세요.'}</td></tr>`}</tbody>`;
+  document.getElementById('sk-stock-tbl').innerHTML=`<thead><tr><th>제품명</th>${skPestTh()}<th>규격</th><th>단위</th><th>현재고</th>${amtCol?`<th>${amtCol}(원)</th>`:''}<th>이월</th><th>입고</th><th>출고</th><th>최종입고</th><th>최종출고</th><th>납품업체</th></tr></thead>
+    <tbody>${rows||`<tr><td colspan="${(amtCol?11:10)+skPestCols()}" style="padding:22px;color:#999;">${_skItems.length?'검색 결과가 없습니다':'등록된 품목이 없습니다. 상단 「📥 엑셀 가져오기」로 기존 사용장부를 불러오세요.'}</td></tr>`}</tbody>`;
 }
 
 /* ── 품목 상세(내역) ── */
@@ -15977,7 +15992,7 @@ function skSuggest(){
     return `<div onmousedown="event.preventDefault();skToggleSel('${it.id}')" style="display:flex;align-items:center;gap:7px;${on?'background:#eef6ff;':''}">
       <span style="font-size:15px;flex-shrink:0;color:${on?'#185FA5':'#bbb'};">${on?'☑':'☐'}</span>
       <span style="flex:1;min-width:0;"><b>${skEsc(it.name)}</b> <span style="color:#889;">${skEsc(it.spec||'')}</span>
-        <span style="display:block;font-size:11px;color:#889;">단가 ${it.price?skFmt(skNum(it.price))+'원':'-'}</span></span>
+        ${skPestSub(it,true)}<span style="display:block;font-size:11px;color:#889;">단가 ${it.price?skFmt(skNum(it.price))+'원':'-'}</span></span>
       <span style="color:#185FA5;font-weight:700;white-space:nowrap;">재고 ${skFmt(st[it.id].stock)}${skEsc(it.unit||'')}</span></div>`; }).join('')
     ||'<div style="color:#999;">일치하는 품목 없음 — 품목관리에서 추가하세요</div>');
   box.style.display='block';
@@ -16020,7 +16035,7 @@ function skRenderSel(){
     return `<div id="sk-sel-row-${it.id}" style="display:flex;align-items:center;gap:8px;border:1.5px solid #dfe9f3;border-radius:9px;padding:7px 9px;margin-bottom:5px;background:#fff;">
       <div style="flex:1;min-width:0;">
         <div style="font-size:13px;font-weight:800;color:#234;word-break:break-all;">${skEsc(it.name)} <span style="font-weight:500;color:#889;font-size:12px;">${skEsc(it.spec||'')}</span></div>
-        <div style="font-size:11px;color:#667;">단가 <b>${it.price?skFmt(skNum(it.price))+'원':'-'}</b> · 현재고 <b style="color:#185FA5;">${skFmt(st[it.id].stock)}${skEsc(it.unit||'')}</b></div>
+        ${skPestSub(it,true)}<div style="font-size:11px;color:#667;">단가 <b>${it.price?skFmt(skNum(it.price))+'원':'-'}</b> · 현재고 <b style="color:#185FA5;">${skFmt(st[it.id].stock)}${skEsc(it.unit||'')}</b></div>
         <div class="sk-sel-warn" style="display:none;font-size:11px;color:#c0392b;font-weight:700;">현재고보다 많은 출고 수량</div>
       </div>
       <input id="sk-q-${it.id}" type="number" inputmode="decimal" min="0" step="any" placeholder="수량" value="${skEsc(m.qty)}" oninput="skSetSelQty('${it.id}',this.value)"
@@ -16088,13 +16103,13 @@ function skRenderLog(){
     .sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.ts||0)-(a.ts||0));
   let si=0,so=0; list.forEach(t=>t.io==='입고'?si+=skNum(t.qty):so+=skNum(t.qty));
   const ce=skCanEdit();
-  document.getElementById('sk-log-tbl').innerHTML=`<thead><tr><th>일자</th><th>제품명</th><th>규격</th><th>구분</th><th>수량</th><th>단위</th><th>사용처</th><th>비고</th><th>입력</th>${ce?'<th></th>':''}</tr></thead><tbody>
-    ${list.map(t=>{const it=skItemById(t.itemId);return `<tr><td style="white-space:nowrap;">${skEsc(t.date)}</td><td class="l"><b>${skEsc(it?.name||t.itemName)}</b></td><td>${skEsc(it?.spec||t.spec||'')}</td>
+  document.getElementById('sk-log-tbl').innerHTML=`<thead><tr><th>일자</th><th>제품명</th>${skPestTh()}<th>규격</th><th>구분</th><th>수량</th><th>단위</th><th>사용처</th><th>비고</th><th>입력</th>${ce?'<th></th>':''}</tr></thead><tbody>
+    ${list.map(t=>{const it=skItemById(t.itemId);return `<tr><td style="white-space:nowrap;">${skEsc(t.date)}</td><td class="l"><b>${skEsc(it?.name||t.itemName)}</b>${skPestSub(it||{name:t.itemName})}</td>${skPestTd(it||{name:t.itemName})}<td>${skEsc(it?.spec||t.spec||'')}</td>
       <td><span class="sk-tag ${t.io==='입고'?'in':'out'}">${t.io}</span></td><td><b>${skFmt(skNum(t.qty))}</b></td><td>${skEsc(it?.unit||t.unit||'')}</td>
       <td class="l">${skEsc(t.place||'')}</td><td class="l">${skEsc(t.note||'')}</td><td style="font-size:10px;color:#99a;">${skEsc(String(t.by||'').split('@')[0])}</td>
       ${ce?`<td style="white-space:nowrap;"><button class="sk-btn" style="padding:3px 7px;font-size:11px;" onclick="skEditTx('${t.id}')">수정</button> <button class="sk-btn" style="padding:3px 7px;font-size:11px;color:#c0392b;border-color:#e6b0aa;" onclick="skDelTx('${t.id}')">삭제</button></td>`:''}</tr>`;}).join('')
-      ||`<tr><td colspan="10" style="padding:20px;color:#999;">내역이 없습니다</td></tr>`}
-    ${list.length?`<tr style="background:#f4f8fc;font-weight:800;"><td colspan="3">합계 (${list.length}건)</td><td colspan="${ce?7:6}" class="l">입고 ${skFmt(si)} · 출고 ${skFmt(so)}</td></tr>`:''}</tbody>`;
+      ||`<tr><td colspan="${10+skPestCols()}" style="padding:20px;color:#999;">내역이 없습니다</td></tr>`}
+    ${list.length?`<tr style="background:#f4f8fc;font-weight:800;"><td colspan="${3+skPestCols()}">합계 (${list.length}건)</td><td colspan="${ce?7:6}" class="l">입고 ${skFmt(si)} · 출고 ${skFmt(so)}</td></tr>`:''}</tbody>`;
 }
 function skEditTx(id){
   const t=_skTx.find(x=>x.id===id); if(!t) return;
@@ -16116,10 +16131,10 @@ async function skDelTx(id){
 function skRenderItems(){
   const q=skNorm(document.getElementById('sk-items-q').value); const st=skStats();
   const list=_skItems.filter(it=>!q||skNorm(it.name+it.spec+it.use+it.vendor).includes(q)).sort((a,b)=>a.name.localeCompare(b.name,'ko'));
-  document.getElementById('sk-items-tbl').innerHTML=`<thead><tr><th>제품명</th><th>규격</th><th>단위</th><th>단가</th><th>용도</th><th>납품업체</th><th>이월재고</th><th>현재고</th><th></th></tr></thead><tbody>
-    ${list.map(it=>`<tr><td class="l"><b>${skEsc(it.name)}</b></td><td>${skEsc(it.spec||'')}</td><td>${skEsc(it.unit||'')}</td><td>${skNum(it.price)?skFmt(skNum(it.price)):''}</td>
+  document.getElementById('sk-items-tbl').innerHTML=`<thead><tr><th>제품명</th>${skPestTh()}<th>규격</th><th>단위</th><th>단가</th><th>용도</th><th>납품업체</th><th>이월재고</th><th>현재고</th><th></th></tr></thead><tbody>
+    ${list.map(it=>`<tr><td class="l"><b>${skEsc(it.name)}</b>${skPestSub(it)}</td>${skPestTd(it)}<td>${skEsc(it.spec||'')}</td><td>${skEsc(it.unit||'')}</td><td>${skNum(it.price)?skFmt(skNum(it.price)):''}</td>
       <td class="l" style="font-size:11px;">${skEsc(it.use||'')}</td><td style="font-size:11px;">${skEsc(it.vendor||'')}</td><td>${skFmt(skNum(it.carry))}</td><td class="sk-stock">${skFmt(st[it.id].stock)}</td>
-      <td><button class="sk-btn" style="padding:3px 8px;font-size:11px;" onclick="skEditItem('${it.id}')">편집</button></td></tr>`).join('')||'<tr><td colspan="9" style="padding:20px;color:#999;">품목이 없습니다</td></tr>'}</tbody>`;
+      <td><button class="sk-btn" style="padding:3px 8px;font-size:11px;" onclick="skEditItem('${it.id}')">편집</button></td></tr>`).join('')||`<tr><td colspan="${9+skPestCols()}" style="padding:20px;color:#999;">품목이 없습니다</td></tr>`}</tbody>`;
 }
 /* ── 품목 추가: 자재정보(농약·비료·모래)에서 불러오기 ──
    자재정보 탭의 마스터 목록에서 고르면 제품명·규격·단가 등이 채워지고, 엑셀 품목 시트의 나머지 칸(주성분·FRAC·성분비 등)도
