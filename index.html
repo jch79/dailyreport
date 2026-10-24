@@ -7324,11 +7324,14 @@ function renderStats(){
         <td style="${ledgerTdStyle}color:#0C447C;font-weight:700;background:#f5f9ff;">${offCnt}일</td>
         <td style="${ledgerTdStyle}color:#555;background:#fafcff;">${unusedOff}일</td>
         <td style="${ledgerTdStyle}color:#0C447C;font-weight:800;background:#e8f1fb;">${remainOff}일</td>
-        <td style="${ledgerTdStyle}color:#8e44ad;font-weight:700;background:#f8f2fb;" title="${ledgerYm.slice(0,4)}년 1월 ~ ${parseInt(ledgerYm.slice(5))}월 사용한 연차 누적">${leaveCumByName[name]||0}일${leaveCnt?`<div style="font-size:8px;color:#a374bf;font-weight:600;margin-top:1px;">이번달 ${leaveCnt}일</div>`:''}</td>
+        <td style="${ledgerTdStyle}color:#8e44ad;font-weight:700;background:#f8f2fb;" title="이번 달 사용 ${leaveCnt}일 · ${ledgerYm.slice(0,4)}년 누적 ${leaveCumByName[name]||0}일">${leaveCnt}일<div style="font-size:8.5px;color:#a374bf;font-weight:700;margin-top:1px;">(${leaveCumByName[name]||0}일)</div></td>
         <td style="${ledgerTdStyle}background:#faf5fc;">
-          <input type="number" value="${annualGrant}" title="연차 총 부여일수 (수정 가능, ${ledgerYm} 기준) · 상단 '↺' 버튼으로 전월 말 잔여를 이 칸에 불러올 수 있습니다"
-            onchange="updateRegLeaveMeta('${nameEsc}','${ledgerYm}','annualGrant',this.value)" style="${ledgerInpStyle}">
-          <div style="font-size:8px;color:#8e44ad;font-weight:700;margin-top:1px;">잔여 ${remainLeave}일</div>
+          <div style="font-size:11px;color:#8e44ad;font-weight:800;">${remainLeave}일</div>
+          <div style="display:flex;align-items:center;justify-content:center;gap:2px;margin-top:2px;">
+            <span style="font-size:8px;color:#a374bf;font-weight:700;">부여</span>
+            <input type="number" value="${annualGrant}" title="연차 부여일수 (수정 가능, ${ledgerYm} 기준) · '↺' 버튼으로 전월 말 잔여를 이 칸에 불러올 수 있습니다"
+              onchange="updateRegLeaveMeta('${nameEsc}','${ledgerYm}','annualGrant',this.value)" style="${ledgerInpStyle}width:30px;font-size:9px;">
+          </div>
         </td>`;
       return`<tr>
         <td style="${nameColStyle}" title="${name}">${name}</td>
@@ -10316,7 +10319,7 @@ function checkBackupReminder(){
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
   {date:'2026-10-24',items:[
-    '📊 통계 정규직 근무현황: 「사용연차(누적)」 — 그 해 1월부터 보고 있는 달까지 사용한 연차 일수 표시 (이번 달 사용분은 아래 작게)',
+    '📊 통계 정규직 근무현황: 「사용연차(누적)」 칸에 이번 달 사용 일수와 (올해 누적) 일수를 함께 표시, 「잔여연차」 칸은 남은 일수를 크게 표시',
     '⚙️ 설정에서 「과거 날씨 자동 백필」·「강우량 정합성 검사」(관리자용 점검 도구) 삭제']},
   {date:'2026-10-23',items:[
     '📦 자재입출고 농약·비료 「품목 편집」도 자재정보 팝업과 같은 항목으로 편집 (입출고 전용: 단위·이월재고), 저장 시 자재정보와 다르면 같이 수정할지 확인',
