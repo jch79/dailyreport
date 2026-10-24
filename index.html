@@ -215,6 +215,7 @@ async function fbFullSyncFromCloud(){
       if(sh.tankVolPresets) localStorage.setItem('mat_tankvol_custom_presets', JSON.stringify(sh.tankVolPresets));
       if(sh.matColOrder) localStorage.setItem('mat_col_order_v1', JSON.stringify(sh.matColOrder));
       if(sh.regNameOrder) localStorage.setItem('reg_name_order_v1', JSON.stringify(sh.regNameOrder));
+      if(sh.regLeavePlan) localStorage.setItem('golf_reg_leave_plan_v1', JSON.stringify(sh.regLeavePlan));
       if(sh.weatherManual) localStorage.setItem('golf_weather_stat_manual_v1', JSON.stringify(sh.weatherManual));
       console.log('[FB] 공유 설정 동기화 완료');
     }
@@ -272,6 +273,7 @@ async function fbSaveSharedSettings(){
     const tvp=localStorage.getItem('mat_tankvol_custom_presets'); if(tvp) settings.tankVolPresets=JSON.parse(tvp);
     const mco=localStorage.getItem('mat_col_order_v1'); if(mco) settings.matColOrder=JSON.parse(mco);
     const rno=localStorage.getItem('reg_name_order_v1'); if(rno) settings.regNameOrder=JSON.parse(rno);
+    const rlp=localStorage.getItem('golf_reg_leave_plan_v1'); if(rlp) settings.regLeavePlan=JSON.parse(rlp);
     const wm=localStorage.getItem('golf_weather_stat_manual_v1'); if(wm) settings.weatherManual=JSON.parse(wm);
     settings._updatedAt = firebase.firestore.FieldValue.serverTimestamp();
     await _fbDb.collection(FB_COL_SHARED).doc('settings').set(settings, {merge:true});
@@ -7208,6 +7210,7 @@ function renderStats(){
     if(!days.length){matEl.innerHTML='<div style="font-size:11px;color:#aaa;padding:8px 0;">기간을 선택하세요</div>';return;}
     if(days.length>62){matEl.innerHTML='<div style="font-size:11px;color:#aaa;padding:8px 0;">기간이 너무 깁니다. 2개월 이내로 선택해 주세요.</div>';return;}
     const dateMap=_dateMap;
+    const _planToday=(()=>{const t=new Date();return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`;})();
 
     /* 요일명 */
     const DOW=['일','월','화','수','목','금','토'];
@@ -7254,18 +7257,25 @@ function renderStats(){
         (r.workers||[]).forEach(w=>{ if(w.type==='정규직'&&w.off&&w.leave&&w.name) leaveCumByName[w.name]=(leaveCumByName[w.name]||0)+1; }); }); }
     const bodyRows=names.map(name=>{
       /* 해당 기간 출근일수·휴무일수·연차일수·OT 집계 */
-      let attendCnt=0,offCnt=0,leaveCnt=0,otSum=0;
+      let attendCnt=0,offCnt=0,leaveCnt=0,otSum=0,planOff=0,planLeave=0;
       const nameEscClick=name.replace(/'/g,"\\'");
       const cells=days.map(d=>{
         const rec=dateMap[d];
         const dt=new Date(d);const dow=dt.getDay();const isWk=dow===0||dow===6;
-        if(!rec){
-          return`<td style="min-width:26px;max-width:32px;padding:1px;text-align:center;border:1px solid #e0e0e0;background:${isWk?C_WEEKEND:'#fafafa'};"></td>`;
-        }
+        /* 기록이 없는 오늘·앞으로의 날짜: 휴무/연차 「계획」 표시 (단순 확인용 — 집계에는 넣지 않음).
+           날짜가 지나면 계획은 보이지 않고 작성 탭의 기록만 기준으로 표시·계산 */
+        const planCell=()=>{
+          if(d<_planToday) return`<td style="min-width:26px;max-width:32px;padding:1px;text-align:center;border:1px solid #e0e0e0;background:${isWk?C_WEEKEND:'#fafafa'};"></td>`;
+          const pl=regPlanGet(name,d);
+          if(pl==='off') planOff++; else if(pl==='leave') planLeave++;
+          const c=pl==='leave'?C_LEAVE:C_OFF;
+          return`<td title="${d} ${pl?(pl==='leave'?'연차 계획':'휴무 계획')+' · 클릭하여 변경':'클릭하면 휴무→연차→없음 순으로 계획 표시'}" onclick="toggleRegPlan('${nameEscClick}','${d}')" style="cursor:pointer;min-width:26px;max-width:32px;padding:1px;text-align:center;border:1px solid #e0e0e0;background:${pl?(pl==='leave'?'#faf4fd':'#fff5f5'):(isWk?C_WEEKEND:'#fafafa')};">
+            ${pl?`<div style="width:14px;height:14px;border-radius:3px;border:1.5px dashed ${c};margin:auto;display:flex;align-items:center;justify-content:center;background:#fff;"><span style="font-size:8.5px;color:${c};font-weight:800;">${pl==='leave'?'연':'휴'}</span></div>`:''}
+          </td>`;
+        };
+        if(!rec) return planCell();
         const w=(rec.workers||[]).find(w=>w.name===name&&w.type==='정규직');
-        if(!w){
-          return`<td style="min-width:26px;max-width:32px;padding:1px;text-align:center;border:1px solid #e0e0e0;background:${isWk?C_WEEKEND:'#fafafa'};"></td>`;
-        }
+        if(!w) return planCell();
         if(w.off&&w.leave){
           leaveCnt++;
           if(!_regStatFilter.leave){
@@ -7335,7 +7345,7 @@ function renderStats(){
         </td>`;
       return`<tr>
         <td style="${nameColStyle}" title="${name}">${name}</td>
-        <td style="min-width:70px;padding:3px 6px;border:1px solid #b5d4f4;font-size:10px;color:#0C447C;font-weight:700;white-space:nowrap;background:#f5f9ff;">출 ${attendCnt}일${offCnt>0?` · 휴 ${offCnt}일`:''}${leaveCnt>0?` · 연차 ${leaveCnt}일`:''}</td>
+        <td style="min-width:70px;padding:3px 6px;border:1px solid #b5d4f4;font-size:10px;color:#0C447C;font-weight:700;white-space:nowrap;background:#f5f9ff;">출 ${attendCnt}일${offCnt>0?` · 휴 ${offCnt}일`:''}${leaveCnt>0?` · 연차 ${leaveCnt}일`:''}${(planOff||planLeave)?`<div style="font-size:8.5px;color:#999;font-weight:600;margin-top:1px;">계획: ${[planOff?`휴 ${planOff}`:'',planLeave?`연 ${planLeave}`:''].filter(Boolean).join(' · ')}</div>`:''}</td>
         <td style="min-width:44px;padding:3px 4px;border:1px solid #b5d4f4;font-size:10px;color:#B8690A;font-weight:700;white-space:nowrap;background:#fff8ee;text-align:center;">${otSum>0?otSum+'h':'-'}</td>
         ${ledgerCells}
         ${cells}
@@ -7354,6 +7364,7 @@ function renderStats(){
         ${regFilterBtn('off','휴무',C_OFF)}
         ${regFilterBtn('leave','연차',C_LEAVE)}
         <span style="margin-left:4px;"><span style="display:inline-block;width:12px;height:12px;background:${C_NODATA};border-radius:2px;vertical-align:middle;"></span> 미기록</span>
+        <span style="margin-left:6px;"><span style="display:inline-block;width:10px;height:10px;border:1.5px dashed ${C_OFF};border-radius:2px;vertical-align:middle;"></span><span style="display:inline-block;width:10px;height:10px;border:1.5px dashed ${C_LEAVE};border-radius:2px;vertical-align:middle;margin-left:2px;"></span> 계획 <span style="color:#aaa;">(오늘 이후 빈 칸을 눌러 휴무·연차 계획 표시, 집계 제외)</span></span>
         <span style="color:#aaa;">· 버튼을 클릭하면 해당 항목만 켜고 끌 수 있습니다 · 보라색 숫자칸(이월/발생휴일/연차부여)은 클릭해서 직접 입력·수정할 수 있습니다 · 발생휴일 옆 '일괄' 버튼으로 전체 직원을 한 번에 같은 값으로 설정할 수 있습니다 · 상단 '↺ 전월 잔여 불러오기'로 전월 말 잔여를 자동으로 채울 수 있습니다(이후에도 수동 수정 가능)</span>
       </div>
       <table style="border-collapse:collapse;font-size:11px;">
@@ -9193,6 +9204,23 @@ function closeRainDayModal(e){
 
 /* ── 정규직 근무 현황: 날짜별 출근/휴무/연차 클릭 수정 ── */
 let _regDayEdit=null; /* {name, dateStr} */
+/* ── 정규직 휴무/연차 「계획」 ── {"이름|YYYY-MM-DD": "off"|"leave"} · 팀 공유 설정으로 동기화 */
+const REG_PLAN_KEY='golf_reg_leave_plan_v1';
+function getRegPlans(){ try{ return JSON.parse(localStorage.getItem(REG_PLAN_KEY)||'{}')||{}; }catch(e){ return {}; } }
+function regPlanGet(name,d){ return getRegPlans()[name+'|'+d]||''; }
+function toggleRegPlan(name,d){
+  if(!guardSectionEdit('workers')) return;
+  const P=getRegPlans(), k=name+'|'+d, cur=P[k]||'';
+  const next=cur===''?'off':cur==='off'?'leave':'';
+  if(next) P[k]=next; else delete P[k];
+  /* 지난 날짜의 계획은 정리(기록 기준으로 바뀌므로 보관할 필요 없음) */
+  const t=new Date(); t.setDate(t.getDate()-1); const cut=`${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`;
+  Object.keys(P).forEach(key=>{ if(key.split('|').pop()<cut) delete P[key]; });
+  localStorage.setItem(REG_PLAN_KEY, JSON.stringify(P));
+  if(typeof fbSaveSharedSettings==='function') setTimeout(fbSaveSharedSettings,300);
+  if(typeof renderStats==='function') renderStats();
+  showToast(next?`${name} ${d.slice(5).replace('-','/')} ${next==='leave'?'연차':'휴무'} 계획 표시`:`${name} ${d.slice(5).replace('-','/')} 계획 해제`);
+}
 function openRegDayEdit(name, dateStr){
   if(!guardSectionEdit('workers'))return;
   _regDayEdit={name, dateStr};
@@ -10319,6 +10347,7 @@ function checkBackupReminder(){
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
   {date:'2026-10-24',items:[
+    '📊 정규직 근무현황: 오늘 이후 빈 칸을 눌러 휴무·연차 「계획」 표시 (점선, 집계 제외 · 날짜가 지나면 작성 기록 기준으로 표시)',
     '📊 통계 정규직 근무현황: 「사용연차(누적)」 칸에 이번 달 사용 일수와 (올해 누적) 일수를 함께 표시, 「잔여연차」 칸은 남은 일수를 크게 표시',
     '⚙️ 설정에서 「과거 날씨 자동 백필」·「강우량 정합성 검사」(관리자용 점검 도구) 삭제']},
   {date:'2026-10-23',items:[
@@ -10524,7 +10553,7 @@ function exportDataFile(){
   /* 모든 localStorage 키 수집 */
   const allKeys=[SK,PK,RK,CNK,RATE_KEY,DSK,WCK,LOC_KEY,IRR_ZONES_KEY,MAT_PEST_KEY,MAT_FERT_KEY,MAT_SAND_KEY,MAT_AREA_PRESET_KEY,
     TREATAREA_PRESET_KEY,TANKVOL_PRESET_KEY,MAT_COL_ORDER_KEY,
-    TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY,TDR_ZONE_LABEL_KEY,GP_TARGET_KEY,REG_NAME_ORDER_KEY,WSK,NOTICE_CACHE_KEY];
+    TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY,TDR_ZONE_LABEL_KEY,GP_TARGET_KEY,REG_NAME_ORDER_KEY,WSK,NOTICE_CACHE_KEY,REG_PLAN_KEY];
   const exportObj={};
   allKeys.forEach(k=>{
     const v=localStorage.getItem(k);
@@ -10631,7 +10660,7 @@ function importDataFile(event){
       /* 기존 관련 키 지우기 */
       [SK,PK,RK,CNK,RATE_KEY,DSK,WCK,LOC_KEY,IRR_ZONES_KEY,MAT_PEST_KEY,MAT_FERT_KEY,MAT_SAND_KEY,MAT_AREA_PRESET_KEY,
         TREATAREA_PRESET_KEY,TANKVOL_PRESET_KEY,MAT_COL_ORDER_KEY,
-        TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY,TDR_ZONE_LABEL_KEY,GP_TARGET_KEY,REG_NAME_ORDER_KEY,WSK,NOTICE_CACHE_KEY].forEach(k=>localStorage.removeItem(k));
+        TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY,TDR_ZONE_LABEL_KEY,GP_TARGET_KEY,REG_NAME_ORDER_KEY,WSK,NOTICE_CACHE_KEY,REG_PLAN_KEY].forEach(k=>localStorage.removeItem(k));
 
       /* 새 데이터 적재 */
       importedKeys.forEach(k=>{
