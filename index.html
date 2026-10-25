@@ -3072,6 +3072,7 @@ function addWorker(col){
   }
   markDirty();
   curWorkers.push({name,type,task,sub,days:'1',off:false});renderWorkers();
+  if(type==='정규직') applyRegPlansToWorkers();
   const p=gp();const pi=p.findIndex(x=>x.name===name);if(pi<0){p.push({name,type,sub});sp(p);renderPresets();}else if(p[pi].type!==type||p[pi].sub!==sub){p[pi].type=type;p[pi].sub=sub;sp(p);renderPresets();}
 }
 function moveRegWorker(globalIdx, dir){
@@ -6569,6 +6570,7 @@ function copyToToday(idx){
   curWorkers=JSON.parse(JSON.stringify(r.workers||[]));
   curWorkers.forEach(w=>w.off=false);
   renderWorkers();
+  applyRegPlansToWorkers();   /* 오늘 날짜에 휴무·연차 계획이 있으면 미리 체크 */
 
   /* 작업내용 복사 */
   if(r.tasks&&r.tasks.length){
@@ -10348,6 +10350,8 @@ function checkBackupReminder(){
    · 관리자 공지: Firestore shared/notices 문서의 items 배열(모든 기기 실시간 공유). 관리자만 작성·수정·삭제. 항상 맨 위 고정
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
+  {date:'2026-10-25',items:[
+    '✏️ 작성 탭: 저장된 일보가 없는 날짜를 열면 통계에서 미리 표시한 휴무·연차 계획대로 정규직을 미리 체크 (명단에 없으면 추가, 직접 수정 가능)']},
   {date:'2026-10-24',items:[
     '📦 자재입출고 품목관리: 재고(있음/없음)·납품업체·용도 필터와 정렬(현재고·재고금액·단가·납품업체), 품목 수·재고금액 합계 표시',
     '🐞 자재정보가 없는 기기(새 기기·초기화 후 가져오기)에서 페이지를 열 때 스크립트가 멈춰 일부 탭이 동작하지 않던 문제 수정',
@@ -11035,8 +11039,43 @@ function applyDatePicker(val){
        그대로 남아있으면 혼동을 주므로 비워준다 */
     _curWeatherMeta={date:val,fetchedAt:null,badges:{}};
     applyWeatherMetaToUI(_curWeatherMeta);
+    applyRegPlansToWorkers();
   }
   updateStatManualBadges();
+}
+/* ── 휴무/연차 「계획」을 작성 탭 작업자(정규직)에 미리 체크 ──
+   고른 날짜에 저장된 일보가 없을 때만 적용. 계획이 있는 정규직은 휴무(연차면 휴무+연차)로 체크하고,
+   명단에 없으면 휴무/연차 상태로 추가. 미리 체크된 값은 언제든 직접 바꿀 수 있음 */
+let _regPlanAppliedSig='', _regPlanMarks={iso:'',names:{}};   /* 직전에 계획으로 체크한 사람(다른 날짜로 옮기면 되돌림) */
+function applyRegPlansToWorkers(){
+  try{
+    const iso=document.getElementById('inp-date-picker')?.value; if(!iso) return;
+    const label=document.getElementById('inp-date')?.value||'';
+    if(label && gd().some(r=>r.date===label)) return;               /* 저장된 기록이 있는 날은 기록 우선 */
+    let P={}; try{ P=JSON.parse(localStorage.getItem('golf_reg_leave_plan_v1')||'{}')||{}; }catch(e){}
+    const plans=Object.entries(P).filter(([k])=>k.endsWith('|'+iso)).map(([k,v])=>({name:k.slice(0,k.length-iso.length-1),kind:v}));
+    const done=[];
+    /* 다른 날짜의 계획으로 체크해 둔 사람은, 이번 날짜에 계획이 없으면 출근 상태로 되돌림(직접 바꾼 경우는 그대로) */
+    if(_regPlanMarks.iso && _regPlanMarks.iso!==iso){
+      const now=new Set(plans.map(x=>x.name));
+      Object.entries(_regPlanMarks.names).forEach(([nm,kind])=>{ if(now.has(nm)) return;
+        const w=curWorkers.find(x=>x.type==='정규직'&&x.name===nm);
+        if(w && w.off===true && !!w.leave===(kind==='leave')){ w.off=false; w.leave=false; done.push(`${nm} 출근(계획 해제)`); } });
+      _regPlanMarks={iso:'',names:{}};
+    }
+    if(!plans.length){ if(done.length){ renderWorkers(); showToast('📅 '+done.join(', '),3000); } return; }
+    _regPlanMarks={iso,names:Object.fromEntries(plans.map(x=>[x.name,x.kind]))};
+    plans.forEach(({name,kind})=>{
+      const leave=kind==='leave';
+      let w=curWorkers.find(x=>x.type==='정규직'&&x.name===name);
+      if(!w){ w={name,type:'정규직',task:'',sub:'',days:'1',off:true,leave}; curWorkers.push(w); done.push(`${name} ${leave?'연차':'휴무'}(추가)`); return; }
+      if(w.off!==true||!!w.leave!==leave){ w.off=true; w.leave=leave; done.push(`${name} ${leave?'연차':'휴무'}`); }
+    });
+    if(!done.length) return;
+    renderWorkers(); if(typeof markDirty==='function') markDirty();
+    const sig=iso+'|'+done.join(',');
+    if(sig!==_regPlanAppliedSig){ _regPlanAppliedSig=sig; showToast('📅 계획 반영: '+done.join(', '),4000); }
+  }catch(e){ console.warn('[계획 반영]',e); }
 }
 function setToday(){
   const t=new Date();
@@ -11052,6 +11091,7 @@ function setToday(){
   window._bsManualNav={};
   renderTempChart();
   renderElapsedItems();
+  setTimeout(applyRegPlansToWorkers,0); /* 페이지 시작 시에도 안전하게(스크립트 로드 완료 후) */
 }
 
 /* ── 저장 후 새로고침 시, 방금 저장한 기록을 기록 탭에서 찾아 스크롤+하이라이트 ── */
