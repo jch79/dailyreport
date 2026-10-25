@@ -10349,6 +10349,7 @@ function checkBackupReminder(){
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
   {date:'2026-10-24',items:[
+    '📦 자재입출고 품목관리: 재고(있음/없음)·납품업체·용도 필터와 정렬(현재고·재고금액·단가·납품업체), 품목 수·재고금액 합계 표시',
     '🐞 자재정보가 없는 기기(새 기기·초기화 후 가져오기)에서 페이지를 열 때 스크립트가 멈춰 일부 탭이 동작하지 않던 문제 수정',
     '💾 가져오기 시 「클라우드에도 반영」 선택(추가·덮어쓰기 / 완전 교체 / 이 기기에만) — 새로고침 후 클라우드 값으로 덮여 복원이 안 되던 문제 수정',
     '⚙️ 설정 「초기화」는 이 기기 자료만 지운다는 점을 명확히 표시하고, 최근 추가된 저장 항목까지 함께 지우도록 수정',
@@ -15850,6 +15851,12 @@ function showPdfGuide(ri){
         <button class="sk-btn pri" onclick="skEditItem(null)">＋ 품목 추가</button>
         <input id="sk-items-q" placeholder="🔍 검색" oninput="skRenderItems()" style="flex:1 1 160px;">
       </div>
+      <div class="sk-tools" style="margin-top:6px;">
+        <select id="sk-items-stock" onchange="skRenderItems()" style="flex:1 1 110px;"><option value="">재고: 전체</option><option value="has">재고 있음</option><option value="zero">재고 없음(0 이하)</option></select>
+        <select id="sk-items-vendor" onchange="skRenderItems()" style="flex:1 1 130px;"></select>
+        <select id="sk-items-use" onchange="skRenderItems()" style="flex:1 1 110px;"></select>
+        <select id="sk-items-sort" onchange="skRenderItems()" style="flex:1 1 120px;"><option value="name">이름순</option><option value="stock">현재고 많은순</option><option value="amt">재고금액 많은순</option><option value="price">단가 높은순</option><option value="vendor">납품업체순</option></select>
+      </div>
       <div class="sk-tbl-wrap"><table class="sk-tbl" id="sk-items-tbl"></table></div>
       <div class="sk-note">전년도 이월재고는 연초 재고 수량입니다. 품목 삭제는 입출고 내역이 없는 품목만 가능합니다.</div>
     </div>
@@ -16195,8 +16202,24 @@ async function skDelTx(id){
 /* ── 품목관리 ── */
 function skRenderItems(){
   const q=skNorm(document.getElementById('sk-items-q').value); const st=skStats();
-  const list=_skItems.filter(it=>!q||skNorm(it.name+it.spec+it.use+it.vendor).includes(q)).sort((a,b)=>a.name.localeCompare(b.name,'ko'));
-  document.getElementById('sk-items-tbl').innerHTML=`<thead><tr><th>제품명</th>${skPestTh()}<th>규격</th><th>단위</th><th>단가</th><th>용도</th><th>납품업체</th><th>이월재고</th><th>현재고</th><th></th></tr></thead><tbody>
+  /* 필터: 재고 / 납품업체 / 용도 · 정렬 — 납품업체·용도 목록은 현재 장부의 품목에서 자동으로 만듦 */
+  const fillSel=(id,label,vals)=>{ const el=document.getElementById(id); if(!el) return ''; const cur=el.value;
+    const opts=[...new Set(vals.map(v=>v||'__none__'))].sort((a,b)=>a==='__none__'?1:b==='__none__'?-1:a.localeCompare(b,'ko'));
+    el.innerHTML=`<option value="">${label}: 전체</option>`+opts.map(v=>`<option value="${skEsc(v)}">${v==='__none__'?'(미지정)':skEsc(v)}</option>`).join('');
+    el.value=(cur===''||opts.includes(cur))?cur:''; return el.value; };
+  const vSel=fillSel('sk-items-vendor','납품업체',_skItems.map(it=>String(it.vendor||'').trim()));
+  const uSel=fillSel('sk-items-use','용도',_skItems.map(it=>String(it.use||'').trim()));
+  const stF=document.getElementById('sk-items-stock')?.value||'', so=document.getElementById('sk-items-sort')?.value||'name';
+  const mt=(v,sel)=>!sel||(sel==='__none__'?String(v||'').trim()==='':String(v||'').trim()===sel);
+  const amtOf=it=>Math.max(0,st[it.id].stock)*skNum(it.price);
+  const list=_skItems.filter(it=>(!q||skNorm(it.name+it.spec+it.use+it.vendor).includes(q))
+      &&(!stF||(stF==='has'?st[it.id].stock>0:st[it.id].stock<=0))
+      &&mt(it.vendor,vSel)&&mt(it.use,uSel))
+    .sort((a,b)=>{ const k= so==='stock'?st[b.id].stock-st[a.id].stock : so==='amt'?amtOf(b)-amtOf(a) : so==='price'?skNum(b.price)-skNum(a.price)
+      : so==='vendor'?String(a.vendor||'\uffff').localeCompare(String(b.vendor||'\uffff'),'ko') : 0;
+      return k || a.name.localeCompare(b.name,'ko'); });
+  const sumAmt=list.reduce((t,it)=>t+amtOf(it),0);
+  document.getElementById('sk-items-tbl').innerHTML=`<caption style="caption-side:top;text-align:left;font-size:11.5px;color:#556;padding:2px 2px 6px;">${list.length}개 품목${list.length!==_skItems.length?` (전체 ${_skItems.length}개 중)`:''} · 재고금액 <b style="color:#185FA5;">${skFmt(Math.round(sumAmt))}원</b></caption><thead><tr><th>제품명</th>${skPestTh()}<th>규격</th><th>단위</th><th>단가</th><th>용도</th><th>납품업체</th><th>이월재고</th><th>현재고</th><th></th></tr></thead><tbody>
     ${list.map(it=>`<tr><td class="l"><b>${skEsc(it.name)}</b>${skPestSub(it)}</td>${skPestTd(it)}<td>${skEsc(it.spec||'')}</td><td>${skEsc(it.unit||'')}</td><td>${skNum(it.price)?skFmt(skNum(it.price)):''}</td>
       <td class="l" style="font-size:11px;">${skEsc(it.use||'')}</td><td style="font-size:11px;">${skEsc(it.vendor||'')}</td><td>${skFmt(skNum(it.carry))}</td><td class="sk-stock">${skFmt(st[it.id].stock)}</td>
       <td><button class="sk-btn" style="padding:3px 8px;font-size:11px;" onclick="skEditItem('${it.id}')">편집</button></td></tr>`).join('')||`<tr><td colspan="${9+skPestCols()}" style="padding:20px;color:#999;">품목이 없습니다</td></tr>`}</tbody>`;
