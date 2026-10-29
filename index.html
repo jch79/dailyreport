@@ -10350,6 +10350,8 @@ function checkBackupReminder(){
    · 관리자 공지: Firestore shared/notices 문서의 items 배열(모든 기기 실시간 공유). 관리자만 작성·수정·삭제. 항상 맨 위 고정
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
+  {date:'2026-10-29',items:[
+    '📦 자재입출고 재고현황: 품목을 눌러 여는 팝업에 「✏️ 품목 수정」 버튼과 내역별 「수정」 버튼 추가']},
   {date:'2026-10-25',items:[
     '✏️ 작성 탭: 저장된 일보가 없는 날짜를 열면 통계에서 미리 표시한 휴무·연차 계획대로 정규직을 미리 체크 (명단에 없으면 추가, 직접 수정 가능)']},
   {date:'2026-10-24',items:[
@@ -16073,10 +16075,11 @@ function skShowItem(id){
     <div class="sk-edit-only" style="display:flex;gap:6px;margin-bottom:8px;">
       <button class="sk-btn in" onclick="skQuickEntry('${id}','입고')">⬇ 입고 등록</button>
       <button class="sk-btn out" onclick="skQuickEntry('${id}','출고')">⬆ 출고 등록</button>
+      ${skCanMaster()?`<button class="sk-btn" style="margin-left:auto;" onclick="skCloseModal();skEditItem('${id}')" title="제품명·규격·단가·납품업체 등 품목 정보 수정">✏️ 품목 수정</button>`:''}
     </div>
     <div class="sk-tbl-wrap" style="max-height:45vh;overflow:auto;"><table class="sk-tbl" style="min-width:0;">
-      <thead><tr><th>일자</th><th>구분</th><th>수량</th><th>사용처</th><th>비고</th></tr></thead>
-      <tbody>${tx.map(t=>`<tr><td>${skEsc(t.date)}</td><td><span class="sk-tag ${t.io==='입고'?'in':'out'}">${t.io}</span></td><td><b>${skFmt(skNum(t.qty))}</b></td><td class="l">${skEsc(t.place||'')}</td><td class="l">${skEsc(t.note||'')}</td></tr>`).join('')||'<tr><td colspan="5" style="color:#999;padding:14px;">입출고 내역이 없습니다</td></tr>'}</tbody></table></div>
+      <thead><tr><th>일자</th><th>구분</th><th>수량</th><th>사용처</th><th>비고</th>${skCanEdit()?'<th></th>':''}</tr></thead>
+      <tbody>${tx.map(t=>`<tr><td>${skEsc(t.date)}</td><td><span class="sk-tag ${t.io==='입고'?'in':'out'}">${t.io}</span></td><td><b>${skFmt(skNum(t.qty))}</b></td><td class="l">${skEsc(t.place||'')}</td><td class="l">${skEsc(t.note||'')}</td>${skCanEdit()?`<td style="white-space:nowrap;"><button class="sk-btn" style="padding:3px 8px;font-size:11px;" onclick="skCloseModal();skEditTx('${t.id}')" title="이 입출고 내역 수정">수정</button></td>`:''}</tr>`).join('')||'<tr><td colspan="5" style="color:#999;padding:14px;">입출고 내역이 없습니다</td></tr>'}</tbody></table></div>
     <div style="text-align:right;margin-top:10px;"><button class="sk-btn" onclick="skCloseModal()">닫기</button></div>`;
   document.getElementById('sk-modal').classList.toggle('sk-ro',!skCanEdit());
   document.getElementById('sk-modal-bg').style.display='flex';
