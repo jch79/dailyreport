@@ -1909,6 +1909,8 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
           <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
             <button onclick="loadPrevMonthCarryAll()" title="선택된 월의 전월 말일 기준 잔여휴무·잔여연차를 계산해서 이번달 이월/연차부여 값으로 채웁니다 (불러온 뒤에도 직접 수정 가능)"
               style="font-size:10.5px;font-weight:700;padding:3px 10px;border-radius:100px;cursor:pointer;border:1.3px solid #8e44ad;background:#faf5fc;color:#8e44ad;white-space:nowrap;">↺ 전월 잔여 불러오기</button>
+            <button onclick="openRegPlanImport()" title="엑셀 휴무 예상표를 붙여넣어 그 달의 휴무·연차 계획을 한꺼번에 등록합니다"
+              style="font-size:10.5px;font-weight:700;padding:3px 10px;border-radius:100px;cursor:pointer;border:1.3px dashed #c0392b;background:#fff5f5;color:#c0392b;white-space:nowrap;">📋 계획 일괄입력</button>
             <button onclick="openRegNameOrderEditor()" title="표에 표시되는 정규직 이름 순서를 직접 정할 수 있습니다"
               style="font-size:10.5px;font-weight:700;padding:3px 10px;border-radius:100px;cursor:pointer;border:1.3px solid #185FA5;background:#f3f9ff;color:#185FA5;white-space:nowrap;">⇅ 이름순서편집</button>
             <span id="reg-total-days" style="font-size:11px;color:#0C447C;font-weight:700;background:#daeaf9;padding:2px 8px;border-radius:100px;"></span>
@@ -7139,7 +7141,11 @@ function renderStats(){
     const yy=parseInt(m[1]);const mm=m[2].padStart(2,'0');
     const yyyy=yy<50?2000+yy:1900+yy;
     return`${yyyy}-${mm}`;
-  }).filter(Boolean))].sort().reverse();
+  }).filter(Boolean).concat(
+    /* 기록이 없어도 이번 달과 휴무·연차 계획이 있는 달은 선택할 수 있게 */
+    [(()=>{const t=new Date();return `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}`;})()],
+    Object.keys((typeof getRegPlans==='function'?getRegPlans():{})).map(k=>(k.split('|')[1]||'').slice(0,7)).filter(Boolean)
+  ))].sort().reverse();
 
   /* 현재 달 YM */
   const nowDate=new Date();
@@ -7206,6 +7212,8 @@ function renderStats(){
     const nameSet=new Set();
     /* 선택 기간 내 출근·휴무 기록이 1건 이상 있는 정규직만 표시 */
     filtered.forEach(r=>(r.workers||[]).filter(w=>w.type==='정규직').forEach(w=>nameSet.add(w.name)));
+    /* 아직 기록이 없는 달(앞으로의 달)도 계획이 있는 직원은 표시 */
+    if(_days.length){ const d0=_days[0], d1=_days[_days.length-1]; Object.keys(getRegPlans()).forEach(k=>{ const [nm,dt]=k.split('|'); if(dt>=d0&&dt<=d1) nameSet.add(nm); }); }
     const names=getOrderedRegNames([...nameSet]);
     if(!names.length){matEl.innerHTML='<div style="font-size:11px;color:#aaa;padding:8px 0;">정규직 데이터 없음</div>';return;}
     const days=_days;
@@ -9210,7 +9218,7 @@ function closeRainDayModal(e){
 let _regDayEdit=null; /* {name, dateStr} */
 /* ── 정규직 휴무/연차 「계획」 ── {"이름|YYYY-MM-DD": "off"|"leave"} · 팀 공유 설정으로 동기화 */
 const REG_PLAN_KEY='golf_reg_leave_plan_v1';
-function getRegPlans(){ try{ return JSON.parse(localStorage.getItem(REG_PLAN_KEY)||'{}')||{}; }catch(e){ return {}; } }
+function getRegPlans(){ try{ return JSON.parse(localStorage.getItem('golf_reg_leave_plan_v1')||'{}')||{}; }catch(e){ return {}; } }  /* 키를 글자로 직접 — 페이지 시작 중 호출돼도 안전 */
 function regPlanGet(name,d){ return getRegPlans()[name+'|'+d]||''; }
 function toggleRegPlan(name,d){
   if(!guardSectionEdit('workers')) return;
@@ -9225,6 +9233,85 @@ function toggleRegPlan(name,d){
   if(typeof renderStats==='function') renderStats();
   showToast(next?`${name} ${d.slice(5).replace('-','/')} ${next==='leave'?'연차':'휴무'} 계획 표시`:`${name} ${d.slice(5).replace('-','/')} 계획 해제`);
 }
+
+/* ── 휴무·연차 계획 일괄 입력 (엑셀 예상표 붙여넣기) ──
+   엑셀에서 「성명 + 1일~말일」 칸을 복사해 붙여넣으면, 그 달의 계획으로 한꺼번에 등록(해당 직원의 그 달 기존 계획은 교체).
+   칸 값: 「휴」=휴무, 「연」=연차, 빈칸=없음. 성명은 앱의 정규직 이름(예: 「조창호 과장」)과 앞부분이 같으면 자동으로 맞춤 */
+const REG_PLAN_PRESET_2026_11="이상기\t휴\t\t\t\t\t\t\t휴\t\t\t\t\t\t\t휴\t\t\t\t\t\t\t\t휴\t휴\t\t\t\t\t휴\t\n김택진\t\t\t\t\t\t\t휴\t휴\t휴\t휴\t\t\t\t\t\t\t\t휴\t\t\t\t휴\t\t\t\t\t\t\t휴\t\n조창호\t휴\t\t\t\t\t\t휴\t휴\t연\t연\t\t\t\t휴\t\t\t\t\t\t\t휴\t휴\t\t\t\t\t\t휴\t\t\n김완\t\t휴\t\t\t\t\t\t\t\t\t\t\t\t휴\t휴\t\t\t\t\t\t\t휴\t\t\t\t\t\t\t휴\t\n박진영\t휴\t\t\t\t\t\t휴\t휴\t휴\t연\t\t\t\t\t휴\t\t\t\t\t\t\t휴\t\t\t\t\t\t\t휴\t\n박형근\t\t\t\t\t\t\t\t\t휴\t휴\t\t\t\t\t휴\t\t\t\t\t휴\t휴\t\t휴\t휴\t\t\t\t\t\t\n정진명\t\t\t\t\t\t\t휴\t\t\t\t\t\t\t휴\t\t\t\t\t\t\t휴\t\t\t\t\t\t\t휴\t\t\n허문희\t휴\t\t\t\t\t\t\t휴\t\t\t\t\t\t\t휴\t\t\t\t\t\t\t\t\t\t\t휴\t휴\t휴\t휴\t\n정진호\t휴\t\t\t\t\t\t\t휴\t\t\t\t\t\t\t휴\t\t\t\t\t\t휴\t휴\t\t\t\t\t\t\t휴\t\n안치환\t\t\t\t휴\t휴\t\t\t\t\t\t\t휴\t휴\t\t\t\t\t\t\t휴\t\t\t\t\t\t\t휴\t휴\t\t\n박진서\t\t휴\t휴\t\t\t\t\t\t\t휴\t\t\t\t\t\t휴\t휴\t\t\t\t\t\t\t휴\t\t\t\t\t\t\n손준규\t휴\t\t\t\t\t\t휴\t휴\t\t\t\t\t\t\t휴\t\t\t\t\t\t휴\t휴\t\t\t\t\t\t\t휴\t";
+function _regKnownNames(){
+  const set=new Set(); gd().forEach(r=>(r.workers||[]).forEach(w=>{ if(w.type==='정규직'&&w.name) set.add(w.name); }));
+  Object.keys(getRegPlans()).forEach(k=>set.add(k.split('|')[0])); return [...set];
+}
+function _regMatchName(raw,known){
+  const n=String(raw||'').replace(/\s+/g,''); if(!n) return '';
+  const ex=known.find(k=>k.replace(/\s+/g,'')===n); if(ex) return ex;
+  const pre=known.filter(k=>k.replace(/\s+/g,'').startsWith(n)); if(pre.length===1) return pre[0];
+  return '';
+}
+function openRegPlanImport(){
+  if(!guardSectionEdit('workers')) return;
+  const sel=document.getElementById('stats-month'); const t=new Date(); const nowYm=`${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}`;
+  const def=(sel&&sel.value&&sel.value>=nowYm)?sel.value:nowYm;   /* 계획은 앞으로의 달 — 기본은 이번 달 */
+  document.getElementById('rpi-wrap')?.remove();
+  const w=document.createElement('div'); w.id='rpi-wrap';
+  w.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10050;display:flex;align-items:center;justify-content:center;padding:12px;';
+  w.innerHTML=`<div style="background:#fff;border-radius:14px;max-width:560px;width:100%;max-height:92vh;overflow:auto;box-shadow:0 10px 40px rgba(0,0,0,.3);">
+    <div style="background:linear-gradient(135deg,#0C447C,#185FA5);color:#fff;padding:13px 16px;font-size:14px;font-weight:800;position:sticky;top:0;">📋 휴무·연차 계획 일괄 입력</div>
+    <div style="padding:12px 16px;font-size:12px;color:#556;line-height:1.6;">
+      엑셀 예상표에서 <b>성명 칸부터 말일 칸까지</b> 복사해 아래에 붙여넣으세요. 「휴」=휴무, 「연」=연차로 계획에 등록되고, 붙여넣은 직원의 그 달 기존 계획은 교체됩니다.
+      <div style="display:flex;gap:6px;align-items:center;margin:8px 0;"><span style="font-weight:700;">적용 월</span><input type="month" id="rpi-month" value="${def}" style="font-size:13px;padding:5px 8px;border:1.5px solid #cfdcea;border-radius:7px;">
+        <button id="rpi-preset" style="display:none;font-size:11px;padding:4px 9px;border-radius:6px;border:1.5px solid #8e44ad;background:#faf5fc;color:#8e44ad;font-weight:700;cursor:pointer;">11월 예상표 넣기</button></div>
+      <textarea id="rpi-text" rows="9" placeholder="예)&#10;조창호	휴			…" style="width:100%;box-sizing:border-box;font-size:12px;font-family:monospace;padding:8px;border:1.5px solid #cfdcea;border-radius:8px;white-space:pre;overflow:auto;"></textarea>
+      <div id="rpi-prev" style="margin-top:8px;font-size:11.5px;"></div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;padding:0 16px 14px;">
+      <button onclick="document.getElementById('rpi-wrap').remove()" style="padding:8px 14px;border-radius:8px;border:1.5px solid #ccc;background:#fff;font-size:13px;font-weight:700;cursor:pointer;">취소</button>
+      <button id="rpi-go" onclick="applyRegPlanImport()" style="padding:8px 16px;border-radius:8px;border:1.5px solid #185FA5;background:#185FA5;color:#fff;font-size:13px;font-weight:800;cursor:pointer;">계획 등록</button></div></div>`;
+  document.body.appendChild(w);
+  const ta=w.querySelector('#rpi-text'), mo=w.querySelector('#rpi-month'), pb=w.querySelector('#rpi-preset');
+  const syncPreset=()=>{ pb.style.display=mo.value==='2026-11'?'inline-block':'none'; };
+  pb.onclick=()=>{ ta.value=REG_PLAN_PRESET_2026_11; regPlanImportPreview(); };
+  mo.onchange=()=>{ syncPreset(); regPlanImportPreview(); }; ta.oninput=regPlanImportPreview;
+  syncPreset(); if(mo.value==='2026-11'){ ta.value=REG_PLAN_PRESET_2026_11; } regPlanImportPreview();
+}
+function _regPlanParse(){
+  const ym=document.getElementById('rpi-month').value; if(!ym) return {ym,rows:[],bad:[]};
+  const [y,m]=ym.split('-').map(Number); const nd=new Date(y,m,0).getDate();
+  const known=_regKnownNames(); const rows=[], bad=[];
+  String(document.getElementById('rpi-text').value||'').split(/\r?\n/).forEach(line=>{
+    if(!line.trim()) return;
+    const cells=line.split('\t');
+    let idx=-1, nm='';
+    for(let i=0;i<cells.length;i++){ const c=cells[i].trim(); if(!c||/^(휴|연|\d+(\.\d+)?)$/.test(c)) continue; const mt=_regMatchName(c,known); if(mt){ idx=i; nm=mt; break; } }
+    if(idx<0){ const c=(cells.find(x=>x.trim()&&!/^(휴|연|\d+(\.\d+)?)$/.test(x.trim()))||'').trim(); if(!c) return; idx=cells.indexOf(cells.find(x=>x.trim()===c)); nm=c; bad.push(c); }
+    const days={}; for(let d=1;d<=nd;d++){ const v=String(cells[idx+d]||'').trim(); if(v.startsWith('연')) days[d]='leave'; else if(v.startsWith('휴')) days[d]='off'; }
+    rows.push({name:nm,days});
+  });
+  return {ym,rows,bad,nd};
+}
+function regPlanImportPreview(){
+  const el=document.getElementById('rpi-prev'); if(!el) return;
+  const P=_regPlanParse();
+  if(!P.rows.length){ el.innerHTML='<span style="color:#999;">붙여넣은 내용이 없습니다</span>'; return; }
+  el.innerHTML=`<div style="font-weight:800;color:#234;margin-bottom:4px;">${P.ym.replace('-','년 ')}월 · ${P.rows.length}명</div>`+P.rows.map(r=>{
+    const off=Object.entries(r.days).filter(([,v])=>v==='off').map(([d])=>d), lv=Object.entries(r.days).filter(([,v])=>v==='leave').map(([d])=>d);
+    return `<div>· <b>${skEsc?skEsc(r.name):r.name}</b> — 휴 ${off.length}일${off.length?` (${off.join(',')})`:''}${lv.length?` · <span style="color:#8e44ad;">연 ${lv.length}일 (${lv.join(',')})</span>`:''}</div>`; }).join('')
+    +(P.bad.length?`<div style="color:#c0392b;margin-top:4px;">⚠️ 앱 기록에 없는 이름: ${P.bad.join(', ')} — 이 이름 그대로 등록됩니다</div>`:'');
+}
+function applyRegPlanImport(){
+  if(!guardSectionEdit('workers')) return;
+  const R=_regPlanParse(); if(!R.rows.length){ showToast('붙여넣은 내용이 없습니다'); return; }
+  const P=getRegPlans(); let n=0;
+  R.rows.forEach(r=>{ Object.keys(P).forEach(k=>{ if(k.startsWith(r.name+'|'+R.ym+'-')) delete P[k]; });
+    Object.entries(r.days).forEach(([d,v])=>{ P[`${r.name}|${R.ym}-${String(d).padStart(2,'0')}`]=v; n++; }); });
+  localStorage.setItem(REG_PLAN_KEY, JSON.stringify(P));
+  if(typeof fbSaveSharedSettings==='function') setTimeout(fbSaveSharedSettings,300);
+  document.getElementById('rpi-wrap')?.remove();
+  const sel=document.getElementById('stats-month'); if(sel && [...sel.options].some(o=>o.value===R.ym)) sel.value=R.ym;
+  if(typeof renderStats==='function') renderStats();
+  showToast(`📋 ${R.ym.replace('-','년 ')}월 계획 ${R.rows.length}명 · ${n}건 등록`,4000);
+}
+
 function openRegDayEdit(name, dateStr){
   if(!guardSectionEdit('workers'))return;
   _regDayEdit={name, dateStr};
@@ -10350,6 +10437,9 @@ function checkBackupReminder(){
    · 관리자 공지: Firestore shared/notices 문서의 items 배열(모든 기기 실시간 공유). 관리자만 작성·수정·삭제. 항상 맨 위 고정
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
+  {date:'2026-11-01',items:[
+    '📊 정규직 근무현황: 「📋 계획 일괄입력」 — 엑셀 휴무 예상표를 붙여넣어 한 달 휴무·연차 계획을 한꺼번에 등록 (11월 예상표 내용 포함)',
+    '📊 기록이 아직 없는 달도 계획이 있는 직원은 근무현황 표에 표시']},
   {date:'2026-10-29',items:[
     '📦 자재입출고 재고현황: 품목을 눌러 여는 팝업에 「✏️ 품목 수정」 버튼과 내역별 「수정」 버튼 추가']},
   {date:'2026-10-25',items:[
