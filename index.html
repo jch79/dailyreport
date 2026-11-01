@@ -9342,6 +9342,17 @@ function openRegDayEdit(name, dateStr){
     </button>`).join('');
   document.getElementById('reg-day-modal').style.display='flex';
 }
+/* 통계에서 고친 근무 상태를, 작성 탭에 같은 날짜 일보가 열려 있으면 그 화면에도 반영
+   (안 그러면 작성 탭에서 그대로 「저장하기」를 누를 때 예전 상태로 다시 덮어써짐) */
+function syncWriteFormWorker(rec, name, type){
+  try{
+    if(!rec || (document.getElementById('inp-date')?.value||'')!==rec.date) return;
+    const src=(rec.workers||[]).find(w=>w.name===name&&w.type===type); if(!src) return;
+    const cw=curWorkers.find(w=>w.name===name&&w.type===type);
+    if(cw) Object.assign(cw,{off:src.off,leave:src.leave,days:src.days,ot:src.ot}); else curWorkers.push(JSON.parse(JSON.stringify(src)));
+    renderWorkers();
+  }catch(e){ console.warn('[작성 탭 반영]',e); }
+}
 function saveRegDayEdit(status){
   if(!_regDayEdit)return;
   const {name,dateStr}=_regDayEdit;
@@ -9354,6 +9365,7 @@ function saveRegDayEdit(status){
   else if(status==='off'){ w.off=true; w.leave=false; }
   else if(status==='leave'){ w.off=true; w.leave=true; }
   sd(all);
+  syncWriteFormWorker(all[idx], name, '정규직');
   renderStats();
   renderHistory();
   closeRegDayModal(null);
@@ -9450,6 +9462,7 @@ function saveDailyDayEdit(){
     w.ot=document.getElementById('ddm-ot').value||'0';
   }
   sd(all);
+  syncWriteFormWorker(all[idx], name, '일용');
   renderStats();
   renderHistory();
   closeDailyDayModal(null);
@@ -10438,6 +10451,7 @@ function checkBackupReminder(){
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
   {date:'2026-11-01',items:[
+    '📊 통계에서 출근·휴무·연차를 고치면, 작성 탭에 같은 날짜 일보가 열려 있을 때 그 화면에도 바로 반영 (예전 상태로 다시 저장되는 문제 방지)',
     '📊 정규직 근무현황: 「📋 계획 일괄입력」 — 엑셀 휴무 예상표를 붙여넣어 한 달 휴무·연차 계획을 한꺼번에 등록 (11월 예상표 내용 포함)',
     '📊 기록이 아직 없는 달도 계획이 있는 직원은 근무현황 표에 표시']},
   {date:'2026-10-29',items:[
