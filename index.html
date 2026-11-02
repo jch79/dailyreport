@@ -52,20 +52,19 @@ function fbShowAutoLoginNotice(){
   w.innerHTML=`<div style="background:#fff;border-radius:14px;max-width:340px;width:100%;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,.3);">
     <div style="background:linear-gradient(135deg,#0C447C,#185FA5);color:#fff;padding:13px 16px;font-size:14px;font-weight:800;">🔑 자동 로그인</div>
     <div style="padding:14px 16px;font-size:13px;color:#333;line-height:1.7;">
-      <b>${String(_fbUser.email||'').replace(/</g,'&lt;')}</b>${role?` (${role})`:''}<br>계정으로 자동 로그인합니다.
-      <div style="height:4px;background:#e8eef5;border-radius:4px;margin-top:10px;overflow:hidden;"><div id="fb-auto-bar" style="height:100%;width:100%;background:#185FA5;transition:width 3s linear;"></div></div>
+      <b>${String(_fbUser.email||'').replace(/</g,'&lt;')}</b>${role?` (${role})`:''}<br>계정으로 자동 로그인합니다.<br>
+      <span style="font-size:11.5px;color:#888;">「확인」을 눌러야 시작됩니다.</span>
     </div>
     <div style="display:flex;gap:6px;padding:0 16px 10px;">
       <button id="fb-auto-other" style="flex:1;padding:9px;border-radius:8px;border:1.5px solid #ccc;background:#fff;color:#555;font-size:12.5px;font-weight:700;cursor:pointer;">다른 계정으로 로그인</button>
-      <button id="fb-auto-ok" style="flex:1;padding:9px;border-radius:8px;border:1.5px solid #185FA5;background:#185FA5;color:#fff;font-size:12.5px;font-weight:800;cursor:pointer;">확인</button></div>
+      <button id="fb-auto-ok" style="flex:1;padding:9px;border-radius:8px;border:1.5px solid #185FA5;background:#185FA5;color:#fff;font-size:12.5px;font-weight:800;cursor:pointer;">확인 (로그인)</button></div>
     <div style="text-align:center;padding:0 16px 12px;"><button id="fb-auto-off" style="border:none;background:none;color:#999;font-size:11px;text-decoration:underline;cursor:pointer;">이 기기 자동 로그인 해제</button></div></div>`;
   document.body.appendChild(w);
-  const close=()=>{ clearTimeout(t); w.remove(); };
-  const t=setTimeout(close,3200);
-  requestAnimationFrame(()=>{ const b=document.getElementById('fb-auto-bar'); if(b) b.style.width='0%'; });
+  /* 오작동 방지: 시간이 지나도 저절로 닫히지 않고, 바깥을 눌러도 닫히지 않음 — 「확인」을 눌러야 시작 */
+  const close=()=>{ w.remove(); };
   w.querySelector('#fb-auto-ok').onclick=close;
   w.querySelector('#fb-auto-other').onclick=async()=>{ close(); try{ localStorage.setItem('golf_fb_auto_session','0'); }catch(e){} await fbLogout(); };
-  w.querySelector('#fb-auto-off').onclick=async()=>{ clearTimeout(t);
+  w.querySelector('#fb-auto-off').onclick=async()=>{
     try{ localStorage.setItem('golf_auto_login','0'); localStorage.setItem('golf_fb_auto_session','0'); }catch(e){}
     try{ await _fbAuth.setPersistence(firebase.auth.Auth.Persistence.SESSION); }catch(e){}
     w.remove(); showToast('이 기기의 자동 로그인을 해제했습니다 (브라우저를 닫으면 로그아웃)'); };
@@ -10493,7 +10492,7 @@ const APP_CHANGELOG=[
   {date:'2026-11-02',items:[
     '📦 자재입출고 등록: 선택한 품목 아래 「＋ 제품 추가」 버튼 — 재고현황의 입고/출고 등록, 수불내역의 수정에서 들어와도 같은 방식으로 여러 품목 추가 가능 (수정 중 추가한 품목은 새 내역으로 저장)',
     '🔑 로그인 창에 「자동 로그인」 체크 — 체크하고 로그인한 기기는 브라우저를 닫았다 열어도 로그인 유지 (로그아웃하면 해제)',
-    '🔑 자동 로그인으로 열릴 때 「○○ 계정으로 자동 로그인합니다」 안내 팝업 (다른 계정으로 로그인·자동 로그인 해제 선택 가능)']},
+    '🔑 자동 로그인으로 열릴 때 「○○ 계정으로 자동 로그인합니다」 안내 팝업 — 「확인」을 눌러야 시작 (다른 계정으로 로그인·자동 로그인 해제 선택 가능)']},
   {date:'2026-11-01',items:[
     '📊 통계에서 출근·휴무·연차를 고치면, 작성 탭에 같은 날짜 일보가 열려 있을 때 그 화면에도 바로 반영 (예전 상태로 다시 저장되는 문제 방지)',
     '📊 정규직 근무현황: 「📋 계획 일괄입력」 — 엑셀 휴무 예상표를 붙여넣어 한 달 휴무·연차 계획을 한꺼번에 등록 (11월 예상표 내용 포함)',
