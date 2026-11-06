@@ -10489,6 +10489,8 @@ function checkBackupReminder(){
    · 관리자 공지: Firestore shared/notices 문서의 items 배열(모든 기기 실시간 공유). 관리자만 작성·수정·삭제. 항상 맨 위 고정
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
+  {date:'2026-11-06',items:[
+    '✏️ 작성 탭 자재 사용 「＋ 추가」로 새 자재를 등록하면 「자재입출고 장부에도 등록할까요?」 확인 — 확인하면 농약·비료·모래 장부에 품목으로 함께 등록']},
   {date:'2026-11-02',items:[
     '📦 자재입출고 등록: 선택한 품목 아래 「＋ 제품 추가」 버튼 — 재고현황의 입고/출고 등록, 수불내역의 수정에서 들어와도 같은 방식으로 여러 품목 추가 가능 (수정 중 추가한 품목은 새 내역으로 저장)',
     '🔑 로그인 창에 「자동 로그인」 체크 — 체크하고 로그인한 기기는 브라우저를 닫았다 열어도 로그인 유지 (로그아웃하면 해제)',
@@ -11810,6 +11812,8 @@ function toggleMaterialEdit(){
       _matSearchCtx={blockId:_cb.blockId,itemId:_cb.itemId,searchType:_cb.type};
       selectMatSearchItem(_newIdx);
       showToast(`"${collected.name}" 자재정보에 추가하고 선택했습니다`);
+      /* 자재입출고 장부에도 품목으로 등록할지 확인 */
+      setTimeout(()=>matAskAddToLedger(matEditType==='pest'||matEditType==='fert'||matEditType==='sand'?matEditType:_cb.type, collected),300);
       return;
     }
     showToast('추가했습니다');
@@ -15729,6 +15733,29 @@ function showMatInfoById(blockId, itemId){
   showMatInfo(item.type, item._listIdx);
 }
 
+/* ── 작성 탭 「＋ 추가」로 자재정보에 등록한 자재를 자재입출고 장부(농약/비료/모래)에도 품목으로 등록 ── */
+async function matAskAddToLedger(type, m){
+  try{
+    if(!['pest','fert','sand'].includes(type) || !m || !m.name) return;
+    const lab={pest:'농약',fert:'비료',sand:'모래'}[type];
+    if(!_fbUser){ return; }   /* 자재입출고는 로그인(클라우드) 상태에서만 사용 */
+    const can=_fbRole==='admin'||((_fbRole==='member'||_fbRole==='partial')&&skLedgerAllowed(type));
+    if(!can) return;          /* 그 장부 품목관리 권한이 없으면 묻지 않음 */
+    /* 이미 장부에 같은 이름 품목이 있으면 묻지 않음 */
+    let exists=false;
+    try{ const snap=await _fbDb.collection(SK_COL_ITEMS).where('ledger','==',type).get();
+      exists=snap.docs.some(d=>skNameKey(d.data().name||'')===skNameKey(m.name)); }catch(e){ console.warn(e); }
+    if(exists){ showToast(`「${m.name}」은(는) 자재입출고(${lab})에 이미 있습니다`); return; }
+    if(!confirm(`「${m.name}」을(를) 자재입출고 「${lab}」 장부에도 품목으로 등록할까요?\n(단가·규격·납품업체 등 자재정보 내용이 함께 들어갑니다)`)) return;
+    const prev=_skLedger; _skLedger=type;
+    let r; try{ r=skMasterToItem(m); } finally{ _skLedger=prev; }
+    const it=r.it||{};
+    const data={name:it.name||String(m.name).trim(),spec:it.spec||'',unit:type==='sand'?'':'EA',price:skNum(it.price),carry:0,
+      vendor:m.supplier||'',use:it.use||'',ledger:type,x:r.x||{},updatedAt:firebase.firestore.FieldValue.serverTimestamp()};
+    await _fbDb.collection(SK_COL_ITEMS).add(data);
+    showToast(`✅ 자재입출고 「${lab}」 장부에도 등록했습니다`);
+  }catch(e){ console.warn('[자재입출고 등록]',e); showToast('⚠️ 자재입출고 등록 실패: '+(e.message||e)); }
+}
 /* ── ＋ 추가 버튼 — 자재사용 줄에서 새 자재를 자재정보에 등록하고, 저장되면 이 줄에 바로 선택 ── */
 let _matAddCallback=null;
 function addMatFromUseRow(blockId, itemId, type){
