@@ -1221,6 +1221,8 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
           <input type="text" id="inp-date" style="flex:1.4;font-size:12px;background:#f5f5f5;color:#555;border:1.5px solid #ddd;border-radius:7px;padding:7px 8px;" readonly placeholder="날짜 선택 후 자동입력">
           <button class="btn btn-sm" onclick="setToday()" style="white-space:nowrap;font-size:11px;">오늘</button>
         </div>
+        <button class="btn btn-sm" onclick="copyToNextDay()" title="지금 화면의 내용을 날짜만 다음날로 바꿔 이어서 작성 (날씨·휴무 등은 초기화)"
+          style="margin-top:6px;width:100%;font-size:12px;font-weight:700;color:#2d6a1e;border:1.5px solid #8bc34a;background:#f4faee;">📋 다음날로 복사</button>
       </div>
       <div class="field"><label>골프장</label><input type="text" id="inp-course" placeholder="예) 곤지암CC" oninput="syncCourseName(this.value)"></div>
     </div>
@@ -2502,6 +2504,7 @@ function renderTasks(){
               style="width:62px;font-size:12px;font-weight:700;color:#7F77DD;border:1.5px solid #c0b8f0;border-radius:5px;padding:2px 5px;background:#faf9ff;text-align:center;"
               onchange="curWorkTimes=curWorkTimes||{};curWorkTimes.night=this.value;markDirty&&markDirty();">
           </label>
+          <div id="task-attend-chips" style="flex:1 1 240px;min-width:0;display:flex;flex-wrap:wrap;gap:4px;align-items:center;"></div>
         </div>
       </div>`:''}
       <div class="task-scroll-wrap">
@@ -2526,6 +2529,7 @@ function renderTasks(){
     const secEl=document.getElementById(`sec-${si}`);
     sec.tasks.forEach((task,ti)=>secEl.appendChild(buildTaskRow(si,ti,task,sec.cls)));
   });
+  renderTaskAttendChips();
 }
 
 function buildTaskRow(si,ti,task,cls){
@@ -2538,7 +2542,8 @@ function buildTaskRow(si,ti,task,cls){
   const nightVal=task.night!==undefined?task.night:false;
   const workersHtml=task.workers.map((w,wi)=>`
     <span class="worker-tag">
-      <input type="text" value="${w}" placeholder="이름" style="width:${Math.min(230,Math.max(44,(w.length||2)*10+16))}px;max-width:230px;"
+      <input type="text" class="tw-inp" data-si="${si}" data-ti="${ti}" data-wi="${wi}" value="${w}" placeholder="이름" style="width:${Math.min(230,Math.max(44,(w.length||2)*10+16))}px;max-width:230px;"
+        onfocus="twFocus(${si},${ti},${wi})"
         oninput="setWorkerVal(${si},${ti},${wi},this.value);this.style.width=Math.min(230,Math.max(44,(this.value.length||2)*10+16))+'px'">
       <button class="wtag-del" onclick="removeWorkerField(${si},${ti},${wi})">&#10005;</button>
     </span>`).join('');
@@ -2588,6 +2593,38 @@ function renameTaskRow(si,ti,v){
   if(!name) return;
   markDirty();
   curTasks[si].tasks[ti].name=name;
+}
+/* ── 작업내용: 출근자 칩 → 커서가 있는 작업자 칸에 이름 입력 ──
+   출근 시간 옆에 오늘 출근자(휴무 아닌 작업자)를 칩으로 보여주고, 작업자 입력칸에 커서를 둔 채 칩을 누르면 그 칸에 이름이 들어감.
+   칸이 이미 채워져 있으면 같은 작업에 작업자 칸을 하나 더 만들어 넣음 */
+let _twFocus=null;
+function _twShort(n){ const t=String(n||'').trim(); const p=t.split(/\s+/); return p.length>1?p[0]:t; }
+function twFocus(si,ti,wi){ _twFocus={si,ti,wi,at:Date.now()}; renderTaskAttendChips(); }
+function renderTaskAttendChips(){
+  const box=document.getElementById('task-attend-chips'); if(!box) return;
+  /* 지금은 정규직 출근자만 표시 (일용직 제외) */
+  const list=(curWorkers||[]).filter(w=>w&&w.name&&!w.off&&w.type==='정규직');
+  const reg=list, etc=[];
+  const used=new Set(); if(_twFocus){ const t=curTasks[_twFocus.si]?.tasks?.[_twFocus.ti]; (t?.workers||[]).forEach(x=>used.add(String(x).trim())); }
+  const chip=w=>{ const nm=_twShort(w.name); const on=used.has(nm);
+    return `<button type="button" onmousedown="event.preventDefault()" onclick="pickAttendWorker('${nm.replace(/'/g,"\\'")}')" title="${w.name}${w.type!=='정규직'?' ('+w.type+')':''} — 작업자 칸에 커서를 두고 누르면 입력"
+      style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:100px;cursor:pointer;white-space:nowrap;border:1.3px solid ${on?'#bbb':(w.type==='정규직'?'#3B6D11':'#b9770e')};background:${on?'#f1f1f1':'#fff'};color:${on?'#aaa':(w.type==='정규직'?'#3B6D11':'#9c640c')};">${on?'✓ ':''}${nm}</button>`; };
+  box.innerHTML=list.length?`<span style="font-size:10px;font-weight:700;color:#3B6D11;white-space:nowrap;">출근자</span>`+reg.map(chip).join('')+etc.map(chip).join('')
+    :`<span style="font-size:10px;color:#999;">정규직 출근자 없음 (작업자 섹션에서 추가)</span>`;
+}
+function pickAttendWorker(name){
+  const a=document.activeElement;
+  const f=(a&&a.classList&&a.classList.contains('tw-inp'))?{si:+a.dataset.si,ti:+a.dataset.ti,wi:+a.dataset.wi}:(_twFocus&&Date.now()-_twFocus.at<15000?_twFocus:null);
+  if(!f){ showToast('작업자 입력칸을 먼저 눌러 커서를 둔 뒤 출근자를 선택하세요'); return; }
+  const task=curTasks[f.si]?.tasks?.[f.ti]; if(!task) return;
+  task.workers=task.workers||[''];
+  if(task.workers.some(x=>String(x).trim()===name)){ showToast(`${name} — 이미 이 작업에 입력되어 있습니다`); return; }
+  let wi=f.wi;
+  if(String(task.workers[wi]||'').trim()!==''){ const emp=task.workers.findIndex(x=>!String(x).trim()); wi=emp>=0?emp:task.workers.push('')-1; }
+  task.workers[wi]=name; markDirty();
+  refreshSection(f.si);
+  requestAnimationFrame(()=>{ const el=document.querySelector(`.tw-inp[data-si="${f.si}"][data-ti="${f.ti}"][data-wi="${wi}"]`);
+    if(el){ el.focus(); try{ el.setSelectionRange(el.value.length,el.value.length); }catch(e){} } _twFocus={si:f.si,ti:f.ti,wi,at:Date.now()}; renderTaskAttendChips(); });
 }
 function setWorkerVal(si,ti,wi,v){markDirty();curTasks[si].tasks[ti].workers[wi]=v;}
 function addWorkerField(si,ti){markDirty();curTasks[si].tasks[ti].workers.push('');refreshSection(si);}
@@ -3072,6 +3109,7 @@ function renderWorkers(){
       dailyAttendEl.style.display='none';
     }
   }
+  if(typeof renderTaskAttendChips==='function') renderTaskAttendChips();
 }
 function addDailyBulk(){
   const sel=document.getElementById('daily-subgroup-sel');
@@ -6561,6 +6599,43 @@ function renderHistory(){
 }
 
 /* ── 오늘 날짜로 복사 ── */
+/* ── 다음날로 복사 (기본정보) ──
+   지금 작성 화면의 내용을 날짜만 다음날로 바꿔 이어서 작성. 기록 탭 「오늘날짜로 복사」와 같은 기준으로
+   날씨·관수·자재사용·특이사항·TDR·휴무 체크는 비우고, 다음날 휴무·연차 계획이 있으면 미리 체크 */
+function copyToNextDay(){
+  const pk=document.getElementById('inp-date-picker'); const curIso=pk&&pk.value;
+  if(!curIso){ showToast('날짜를 먼저 선택하세요'); return; }
+  const d=new Date(curIso+'T00:00:00'); d.setDate(d.getDate()+1);
+  const y=d.getFullYear(), m=d.getMonth()+1, dd=d.getDate();
+  const iso=`${y}-${String(m).padStart(2,'0')}-${String(dd).padStart(2,'0')}`, label=formatDateStr(y,m,dd);
+  const curLabel=document.getElementById('inp-date').value, all=gd();
+  const curSaved=all.some(r=>r.date===curLabel), nextSaved=all.some(r=>r.date===label);
+  let msg=`지금 작성 화면의 내용을 다음날(${label})로 복사합니다.\n\n• 날짜만 다음날로 바뀌고 기본정보·작업자·작업내용·예고 등은 그대로 복사됩니다.\n• 날씨·관수·자재 사용·특이사항·TDR·휴무 체크는 초기화됩니다.\n• 다음날 휴무·연차 계획이 있으면 미리 체크합니다.`;
+  if(!curSaved) msg+=`\n\n⚠️ 현재 날짜(${curLabel}) 기록은 아직 저장되지 않았습니다. 복사하면 현재 날짜 내용은 저장되지 않으니, 먼저 「저장하기」를 하세요.`;
+  if(nextSaved) msg+=`\n\n⚠️ 다음날 기록이 이미 저장되어 있습니다. 복사 후 저장하면 그 기록을 덮어씁니다.`;
+  if(!confirm(msg)) return;
+  /* 날짜 → 다음날 */
+  pk.value=iso; document.getElementById('inp-date').value=label;
+  _tempManualNav=false; _gpManualNav=false; _rainYearManualNav=false; _rainManualNav=false; _irrManualNav=false; window._bsManualNav={};
+  _curWeatherMeta={date:iso,fetchedAt:null,badges:{}}; applyWeatherMetaToUI(_curWeatherMeta);
+  /* 날씨 초기화 */
+  ['w-temp','w-feel','w-humid','w-wind','w-sky','w-avg','w-avgh','w-minmaxh','w-month-rain','w-year-rain','w-minmax'].forEach(id=>{const el=document.getElementById(id); if(el) el.textContent='--';});
+  ['inp-rain','inp-snow','inp-wdir','inp-weather-note','inp-notes','irr-note'].forEach(id=>{const el=document.getElementById(id); if(el) el.value='';});
+  {const rg=document.getElementById('rain-chart-container'); if(rg) rg.innerHTML='<div style="font-size:11px;color:#aaa;padding:10px;">자동 불러오기 후 표시됩니다</div>';}
+  /* 관수량·자재 사용·TDR 초기화 (날마다 다른 값) */
+  getIrrZones().flatMap(z=>[`irr-${z.key}-auto`,`irr-${z.key}-man`]).forEach(id=>{const el=document.getElementById(id); if(el) el.value='';});
+  if(typeof calcIrrTotal==='function'){ try{ calcIrrTotal(); }catch(e){} }
+  matUseRows=[]; matAreaBlocks=[]; matAreaIdxCounter=0; matItemIdxCounter=0; renderAreaBlocks();
+  clearTdrVals();
+  /* 작업자: 휴무·연차 체크 초기화 후 다음날 계획 반영 */
+  curWorkers.forEach(w=>{ w.off=false; w.leave=false; });
+  if(typeof _regPlanMarks!=='undefined') _regPlanMarks={iso:'',names:{}};
+  renderWorkers(); applyRegPlansToWorkers();
+  renderTempChart(); renderElapsedItems();
+  markDirty();
+  window.scrollTo(0,0);
+  showToast(`✅ ${label}로 복사했습니다. 날씨 「자동 불러오기」 후 작성·저장하세요.`,4000);
+}
 function copyToToday(idx){
   const r=gd()[idx];
   const t=new Date();
@@ -10489,6 +10564,9 @@ function checkBackupReminder(){
    · 관리자 공지: Firestore shared/notices 문서의 items 배열(모든 기기 실시간 공유). 관리자만 작성·수정·삭제. 항상 맨 위 고정
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
+  {date:'2026-11-07',items:[
+    '✏️ 작업내용: 출근 시간 옆에 오늘 정규직 출근자 이름 칩 표시 — 작업자 입력칸에 커서를 두고 칩을 누르면 이름이 입력 (칸이 차 있으면 작업자 칸을 하나 더 만들어 입력)',
+    '✏️ 작성 탭 기본정보에 「📋 다음날로 복사」 — 지금 화면 내용을 다음날로 이어서 작성 (날씨·관수·자재 사용·특이사항·TDR·휴무 체크 초기화, 다음날 휴무·연차 계획 미리 체크)']},
   {date:'2026-11-06',items:[
     '✏️ 작성 탭 자재 사용 「＋ 추가」로 새 자재를 등록하면 「자재입출고 장부에도 등록할까요?」 확인 — 확인하면 농약·비료·모래 장부에 품목으로 함께 등록']},
   {date:'2026-11-02',items:[
