@@ -1217,9 +1217,9 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
         <label>날짜</label>
         <div style="display:flex;gap:5px;align-items:center;">
           <input type="date" id="inp-date-picker" style="flex:1;font-size:13px;padding:7px 9px;border:1.5px solid #c8c8c8;border-radius:7px;background:#fafafa;"
-            onchange="applyDatePicker(this.value)" oninput="applyDatePicker(this.value)">
+            onfocus="this.dataset.prev=this.value" onchange="onDatePick(this.value)">
           <input type="text" id="inp-date" style="flex:1.4;font-size:12px;background:#f5f5f5;color:#555;border:1.5px solid #ddd;border-radius:7px;padding:7px 8px;" readonly placeholder="날짜 선택 후 자동입력">
-          <button class="btn btn-sm" onclick="setToday()" style="white-space:nowrap;font-size:11px;">오늘</button>
+          <button class="btn btn-sm" onclick="onTodayBtn()" style="white-space:nowrap;font-size:11px;">오늘</button>
         </div>
         <button class="btn btn-sm" onclick="copyToNextDay()" title="지금 화면의 내용을 날짜만 다음날로 바꿔 이어서 작성 (날씨·휴무 등은 초기화)"
           style="margin-top:6px;width:100%;font-size:12px;font-weight:700;color:#2d6a1e;border:1.5px solid #8bc34a;background:#f4faee;">📋 다음날로 복사</button>
@@ -5856,6 +5856,7 @@ let _formSnapshot=null;
 let _debounceTimer=null;
 
 function markDirty(){
+  _formDirty=true;
   /* 버튼 즉시 활성화 */
   const btn=document.getElementById('btn-undo');
   if(btn&&btn.disabled){btn.disabled=false;btn.style.opacity='1';btn.style.cursor='pointer';}
@@ -5978,7 +5979,8 @@ let _saveReportBusy = false;
 function refreshAfterSaveNoReload(dateLabel){
   const all = gd();
   const idx = all.findIndex(x=>x.date===dateLabel);
-  if(idx>=0) loadForEdit(idx, true);
+  /* 저장 직후 다른 날짜로 이동했으면(저장하고 이동) 작성 화면은 건드리지 않음 */
+  if(idx>=0 && (document.getElementById('inp-date')||{}).value===dateLabel) loadForEdit(idx, true);
   if(typeof renderHistory==='function') renderHistory();
   if(typeof renderStats==='function') renderStats();
   if(typeof renderTempChart==='function') renderTempChart();
@@ -5987,7 +5989,8 @@ function refreshAfterSaveNoReload(dateLabel){
   if(typeof renderElapsedItems==='function') renderElapsedItems();
 }
 
-function saveReport(){
+function saveReport(opts){
+  opts=opts||{};
   if(_saveReportBusy) return;
   _saveReportBusy = true;
   const _scrollYBeforeSave = window.scrollY; /* 저장 전 스크롤 위치 기억 */
@@ -6040,7 +6043,7 @@ function saveReport(){
   };
   const all=gd();const ex=all.findIndex(x=>x.date===date);
   if(ex>=0){
-    if(!confirm('같은 날짜 기록이 있습니다. 덮어쓰겠습니까?')){
+    if(!opts.noConfirm && !confirm('같은 날짜 기록이 있습니다. 덮어쓰겠습니까?')){
       _saveReportBusy = false; /* 취소 시 즉시 해제 */
       requestAnimationFrame(()=>{ window.scrollTo({top: _scrollYBeforeSave}); });
       return;
@@ -6070,6 +6073,7 @@ function saveReport(){
   });
   if(presetChanged){sp(presets);renderPresets();if(typeof fbSaveSharedSettings==='function') setTimeout(fbSaveSharedSettings,500);}
   sd(all);
+  _formDirty=false;   /* 저장 완료 → 변경 없음 */
   /* 저장 후 새로고침 시 방금 저장한 기록을 자동으로 찾아 보여주기 위한 표시 */
   sessionStorage.setItem('golf_after_save_date_label', r.date);
   /* ☁️ Firebase 동기화 (로그인 & 쓰기 권한 있을 때) */
@@ -6111,9 +6115,9 @@ function saveReport(){
   });
   setTimeout(()=>{const el=document.getElementById('bs-write-chart');if(el)renderBsChartInto('bs-write-chart',gd(),true);},100);
 }
-function clearForm(){
+function clearForm(silent){
   const _sy=window.scrollY;
-  if(!confirm('초기화하겠습니까?')){requestAnimationFrame(()=>window.scrollTo({top:_sy}));return;}
+  if(silent!==true && !confirm('초기화하겠습니까?')){requestAnimationFrame(()=>window.scrollTo({top:_sy}));return;}
   requestAnimationFrame(()=>window.scrollTo({top:_sy}));
   matUseRows=[];matAreaBlocks=[];matAreaIdxCounter=0;matItemIdxCounter=0;renderAreaBlocks();
   curWorkers=[];renderWorkers();initTasks();yegoData={};renderYego();curWorkTimes={early:'',day:'',night:''};
@@ -6124,6 +6128,7 @@ function clearForm(){
   clearTdrVals();;
   ['w-temp','w-feel','w-humid','w-wind','w-sky','w-avg','w-avgh','w-minmaxh','w-month-rain','w-year-rain','w-minmax'].forEach(id=>{const _el=document.getElementById(id); if(_el)_el.textContent='--';});
   {const _rgEl=document.getElementById('rain-chart-container');if(_rgEl)_rgEl.innerHTML='<div style="font-size:11px;color:#aaa;padding:10px;">자동 불러오기 후 표시됩니다</div>';}
+  _formDirty=false;
 }
 
 /* ── 검색 ── */
@@ -6631,39 +6636,98 @@ function renderHistory(){
 /* ── 다음날로 복사 (기본정보) ──
    지금 작성 화면의 내용을 날짜만 다음날로 바꿔 이어서 작성. 기록 탭 「오늘날짜로 복사」와 같은 기준으로
    날씨·관수·자재사용·특이사항·TDR·휴무 체크는 비우고, 다음날 휴무·연차 계획이 있으면 미리 체크 */
-function copyToNextDay(){
-  const pk=document.getElementById('inp-date-picker'); const curIso=pk&&pk.value;
-  if(!curIso){ showToast('날짜를 먼저 선택하세요'); return; }
-  const d=new Date(curIso+'T00:00:00'); d.setDate(d.getDate()+1);
-  const y=d.getFullYear(), m=d.getMonth()+1, dd=d.getDate();
-  const iso=`${y}-${String(m).padStart(2,'0')}-${String(dd).padStart(2,'0')}`, label=formatDateStr(y,m,dd);
-  const curLabel=document.getElementById('inp-date').value, all=gd();
-  const curSaved=all.some(r=>r.date===curLabel), nextSaved=all.some(r=>r.date===label);
-  let msg=`지금 작성 화면의 내용을 다음날(${label})로 복사합니다.\n\n• 날짜만 다음날로 바뀌고 기본정보·작업자·작업내용·예고 등은 그대로 복사됩니다.\n• 날씨·관수·자재 사용·특이사항·TDR·휴무 체크는 초기화됩니다.\n• 다음날 휴무·연차 계획이 있으면 미리 체크합니다.`;
-  if(!curSaved) msg+=`\n\n⚠️ 현재 날짜(${curLabel}) 기록은 아직 저장되지 않았습니다. 복사하면 현재 날짜 내용은 저장되지 않으니, 먼저 「저장하기」를 하세요.`;
-  if(nextSaved) msg+=`\n\n⚠️ 다음날 기록이 이미 저장되어 있습니다. 복사 후 저장하면 그 기록을 덮어씁니다.`;
-  if(!confirm(msg)) return;
-  /* 날짜 → 다음날 */
-  pk.value=iso; document.getElementById('inp-date').value=label;
+/* 지금 작성 화면을 iso 날짜로 옮겨 이어서 작성 (기본정보·작업자·작업내용 유지 / 날씨·관수·자재 사용·특이사항·TDR·휴무 체크 비움 / 그날 계획 반영) */
+function copyFormToDate(iso){
+  const [y,m,dd]=iso.split('-').map(Number), label=formatDateStr(y,m,dd);
+  const pk=document.getElementById('inp-date-picker');
+  pk.value=iso; pk.dataset.prev=iso; document.getElementById('inp-date').value=label;
   _tempManualNav=false; _gpManualNav=false; _rainYearManualNav=false; _rainManualNav=false; _irrManualNav=false; window._bsManualNav={};
   _curWeatherMeta={date:iso,fetchedAt:null,badges:{}}; applyWeatherMetaToUI(_curWeatherMeta);
-  /* 날씨 초기화 */
   ['w-temp','w-feel','w-humid','w-wind','w-sky','w-avg','w-avgh','w-minmaxh','w-month-rain','w-year-rain','w-minmax'].forEach(id=>{const el=document.getElementById(id); if(el) el.textContent='--';});
   ['inp-rain','inp-snow','inp-wdir','inp-weather-note','inp-notes','irr-note'].forEach(id=>{const el=document.getElementById(id); if(el) el.value='';});
   {const rg=document.getElementById('rain-chart-container'); if(rg) rg.innerHTML='<div style="font-size:11px;color:#aaa;padding:10px;">자동 불러오기 후 표시됩니다</div>';}
-  /* 관수량·자재 사용·TDR 초기화 (날마다 다른 값) */
   getIrrZones().flatMap(z=>[`irr-${z.key}-auto`,`irr-${z.key}-man`]).forEach(id=>{const el=document.getElementById(id); if(el) el.value='';});
   if(typeof calcIrrTotal==='function'){ try{ calcIrrTotal(); }catch(e){} }
   matUseRows=[]; matAreaBlocks=[]; matAreaIdxCounter=0; matItemIdxCounter=0; renderAreaBlocks();
   clearTdrVals();
-  /* 작업자: 휴무·연차 체크 초기화 후 다음날 계획 반영 */
   curWorkers.forEach(w=>{ w.off=false; w.leave=false; });
   if(typeof _regPlanMarks!=='undefined') _regPlanMarks={iso:'',names:{}};
   renderWorkers(); applyRegPlansToWorkers();
   renderTempChart(); renderElapsedItems();
+  if(typeof updateStatManualBadges==='function') updateStatManualBadges();
   markDirty();
+  return label;
+}
+function copyToNextDay(){
+  const pk=document.getElementById('inp-date-picker'); const curIso=pk&&pk.value;
+  if(!curIso){ showToast('날짜를 먼저 선택하세요'); return; }
+  const d=new Date(curIso+'T00:00:00'); d.setDate(d.getDate()+1);
+  onDatePick(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);
+}
+/* ── 날짜 이동 안전장치 ──
+   · 저장된 기록이 있는 날짜: 저장 안 한 변경이 있으면 「저장하고 이동 / 저장 안 하고 이동 / 취소」
+   · 기록이 없는 날짜: 「복사해서 작성 / 빈 양식으로 시작 / 취소」 (+ 현재 날짜 먼저 저장)
+   · 취소하면 날짜·내용 모두 그대로 (예전엔 취소해도 날짜만 바뀌어, 저장 시 다른 날짜 기록을 덮어쓸 수 있었음) */
+var _formDirty=false;
+document.addEventListener('input',e=>{ const t=e.target; if(t&&t.id!=='inp-date-picker'&&t.closest&&t.closest('#panel-write')) _formDirty=true; },true);
+document.addEventListener('change',e=>{ const t=e.target; if(t&&t.id!=='inp-date-picker'&&t.closest&&t.closest('#panel-write')) _formDirty=true; },true);
+function _isoOfLabel(label){ const m=String(label||'').match(/(\d+)년\s*(\d+)월\s*(\d+)일/); if(!m) return ''; const yy=+m[1]; return `${yy<50?2000+yy:1900+yy}-${String(+m[2]).padStart(2,'0')}-${String(+m[3]).padStart(2,'0')}`; }
+function _dateChooser(title,body,buttons,saveOpt){
+  return new Promise(res=>{
+    const w=document.createElement('div');
+    w.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10150;display:flex;align-items:center;justify-content:center;padding:14px;';
+    w.innerHTML=`<div style="background:#fff;border-radius:14px;max-width:380px;width:100%;max-height:92vh;overflow:auto;box-shadow:0 10px 40px rgba(0,0,0,.3);">
+      <div style="background:linear-gradient(135deg,#2d6a1e,#4a9a2e);color:#fff;padding:13px 16px;font-size:14px;font-weight:800;">📅 ${title}</div>
+      <div style="padding:13px 16px 6px;font-size:12.5px;color:#333;line-height:1.65;">${body}</div>
+      ${saveOpt?`<label style="display:flex;align-items:center;gap:6px;margin:4px 16px 2px;font-size:12px;color:#c0392b;font-weight:700;cursor:pointer;"><input type="checkbox" id="dc-save" checked style="width:15px;height:15px;"> ${saveOpt}</label>`:''}
+      <div style="padding:4px 16px 14px;">${buttons.map(b=>`<button data-k="${b.k}" style="width:100%;text-align:left;padding:10px 12px;border-radius:9px;margin-top:7px;cursor:pointer;font-size:13px;font-weight:800;border:1.5px solid ${b.bd};background:${b.bg};color:${b.c};">${b.t}${b.sub?`<div style="font-size:11px;font-weight:500;opacity:.85;margin-top:2px;">${b.sub}</div>`:''}</button>`).join('')}</div></div>`;
+    document.body.appendChild(w);
+    w.querySelectorAll('button[data-k]').forEach(bt=>bt.onclick=()=>{ const sv=!!w.querySelector('#dc-save')?.checked; w.remove(); res({k:bt.dataset.k,save:sv}); });
+  });
+}
+function onTodayBtn(){
+  const t=new Date(); onDatePick(`${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`);
+}
+async function onDatePick(val){
+  const pk=document.getElementById('inp-date-picker');
+  const curLabel=document.getElementById('inp-date').value||'';
+  const prev=_isoOfLabel(curLabel)||pk.dataset.prev||'';
+  pk.value=prev;                                   /* 결정 전까지 날짜는 그대로 */
+  if(!val||val===prev) return;
+  const [y,m,d]=val.split('-').map(Number), label=formatDateStr(y,m,d);
+  const all=gd(), idx=all.findIndex(r=>r.date===label);
+  const curSaved=all.some(r=>r.date===curLabel);
+  const dirty=_formDirty;
+  const doSave=()=>{ if(!curLabel) return; _saveReportBusy=false; saveReport({noConfirm:true}); };
+  if(idx>=0){
+    let k='go';
+    if(dirty){
+      k=(await _dateChooser('다른 날짜로 이동',`<b>${label}</b>에는 저장된 기록이 있습니다.<br>지금 화면(<b>${curLabel||'-'}</b>)에 저장하지 않은 변경이 있습니다.`,[
+        {k:'save',t:'💾 저장하고 이동',sub:`${curLabel} 저장 후 ${label} 기록을 불러옴`,bg:'#2d6a1e',c:'#fff',bd:'#2d6a1e'},
+        {k:'go',t:'저장 안 하고 이동',sub:'지금 변경은 버리고 그 날짜 기록을 불러옴',bg:'#fff',c:'#c0392b',bd:'#e6b0aa'},
+        {k:'cancel',t:'취소',sub:'날짜와 작성 내용 그대로',bg:'#fff',c:'#555',bd:'#ccc'}])).k;
+    }
+    if(k==='cancel') return;
+    if(k==='save') doSave();
+    pk.value=val; pk.dataset.prev=val;
+    applyDatePicker(val,true);
+    showToast(`📅 ${label} 기록을 불러왔습니다`);
+    return;
+  }
+  const r=await _dateChooser('새 날짜로 이동',`<b>${label}</b>에는 저장된 기록이 없습니다.<br>지금 작성 내용(<b>${curLabel||'-'}</b>)을 복사해서 시작할까요?`,[
+    {k:'copy',t:'📋 복사해서 작성',sub:'기본정보·작업자·작업내용 유지 · 날씨·관수·자재 사용·특이사항·TDR·휴무 체크는 비움 · 그날 휴무·연차 계획 반영',bg:'#2d6a1e',c:'#fff',bd:'#2d6a1e'},
+    {k:'blank',t:'📄 빈 양식으로 시작',sub:'「초기화」처럼 비운 상태로 그 날짜 작성',bg:'#fff',c:'#185FA5',bd:'#85B7EB'},
+    {k:'cancel',t:'취소',sub:'날짜와 작성 내용 그대로',bg:'#fff',c:'#555',bd:'#ccc'}],
+    (dirty&&curLabel)?`먼저 지금 날짜(${curLabel})를 저장${curSaved?' (변경 반영)':''}`:'');
+  if(r.k==='cancel') return;
+  if(r.save && dirty && curLabel) doSave();
+  if(r.k==='copy'){ copyFormToDate(val); window.scrollTo(0,0); showToast(`✅ ${label}로 복사했습니다. 날씨 「자동 불러오기」 후 작성·저장하세요.`,4000); return; }
+  clearForm(true);
+  pk.value=val; pk.dataset.prev=val;
+  applyDatePicker(val,true);
+  _formDirty=false;
   window.scrollTo(0,0);
-  showToast(`✅ ${label}로 복사했습니다. 날씨 「자동 불러오기」 후 작성·저장하세요.`,4000);
+  showToast(`📄 ${label} 빈 양식으로 시작합니다`);
 }
 function copyToToday(idx){
   const r=gd()[idx];
@@ -6858,6 +6922,8 @@ function loadForEdit(idx,silent){
   updateStatManualBadges();
   applyWeatherMetaToUI(_curWeatherMeta);
   if(!silent) showToast(`"${r.date}" 기록을 불러왔습니다. 수정 후 저장하세요.`);
+  _formDirty=false;
+  {const pk=document.getElementById('inp-date-picker'); if(pk) pk.dataset.prev=pk.value;}
 }
 
 /* ── 상세 모달 ── */
@@ -10594,6 +10660,8 @@ function checkBackupReminder(){
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
   {date:'2026-11-08',items:[
+    '🐞 작성 탭 날짜 선택 시 안내창이 두 번 뜨고, 취소해도 날짜가 바뀌어 다른 날짜 기록을 덮어쓸 수 있던 문제 수정',
+    '📅 날짜 이동 안전장치: 기록 있는 날짜는 「저장하고 이동 / 저장 안 하고 이동 / 취소」, 기록 없는 날짜는 「복사해서 작성 / 빈 양식으로 시작 / 취소」 (+ 현재 날짜 먼저 저장) — 「오늘」·「다음날로 복사」도 같은 방식',
     '✏️ 작업자 섹션에서 출근·휴무·연차를 체크하면 작업내용의 출근자 칩·팝업에 바로 반영 (저장·동기화 없이)']},
   {date:'2026-11-07',items:[
     '✏️ 작업내용 작업자 입력: ① 출근 시간 옆 정규직 출근자 칩, ② 작업자 칸에 커서를 두면 뜨는 출근자 팝업 — 누르면 「박진서, 손준규」처럼 한 칸에 쉼표로 이어서 입력',
@@ -11272,7 +11340,7 @@ function renderElapsedItems(){
   }).join('');
 }
 
-function applyDatePicker(val){
+function applyDatePicker(val,silentLoad){
   if(!val)return;
   const[yyyy,mm,dd]=val.split('-').map(Number);
   document.getElementById('inp-date').value=formatDateStr(yyyy,mm,dd);
@@ -11293,7 +11361,8 @@ function applyDatePicker(val){
   const dateLabel=formatDateStr(yyyy,mm,dd);
   const idx=gd().findIndex(r=>r.date===dateLabel);
   if(idx>=0){
-    loadForEdit(idx);
+    loadForEdit(idx,!!silentLoad);
+    if(silentLoad) _formDirty=false;
   } else {
     /* 기록이 없는 새 날짜로 이동 — 이전 날짜의 "마지막 불러온 시각"/실측 배지가
        그대로 남아있으면 혼동을 주므로 비워준다 */
