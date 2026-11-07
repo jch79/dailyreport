@@ -2878,6 +2878,9 @@ function toggleWorkerLeave(idx, chk){
 
 /* 작업자 집계 헤더 숫자만 업데이트 (전체 재렌더 없이) */
 function updateWorkerSummary(){
+  /* 출근·휴무·연차 체크가 바뀌면 작업내용의 출근자 칩·팝업도 바로 갱신 */
+  try{ if(typeof renderTaskAttendChips==='function') renderTaskAttendChips();
+    const pop=document.getElementById('tw-pop'); if(pop&&pop.style.display==='block'&&pop._el&&typeof twShowPop==='function') twShowPop(pop._el); }catch(e){}
   let reg=0,daily=0,regOff=0,dailyOff=0,regLeave=0;
   curWorkers.forEach(w=>{
     if(w.type==='정규직'){reg++;if(w.off){if(w.leave)regLeave++;else regOff++;}}
@@ -10590,6 +10593,8 @@ function checkBackupReminder(){
    · 관리자 공지: Firestore shared/notices 문서의 items 배열(모든 기기 실시간 공유). 관리자만 작성·수정·삭제. 항상 맨 위 고정
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
+  {date:'2026-11-08',items:[
+    '✏️ 작업자 섹션에서 출근·휴무·연차를 체크하면 작업내용의 출근자 칩·팝업에 바로 반영 (저장·동기화 없이)']},
   {date:'2026-11-07',items:[
     '✏️ 작업내용 작업자 입력: ① 출근 시간 옆 정규직 출근자 칩, ② 작업자 칸에 커서를 두면 뜨는 출근자 팝업 — 누르면 「박진서, 손준규」처럼 한 칸에 쉼표로 이어서 입력',
     '✏️ 작성 탭 기본정보에 「📋 다음날로 복사」 — 지금 화면 내용을 다음날로 이어서 작성 (날씨·관수·자재 사용·특이사항·TDR·휴무 체크 초기화, 다음날 휴무·연차 계획 미리 체크)']},
