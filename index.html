@@ -5619,12 +5619,26 @@ function buildRainYearlyChartSVG(dataByYear,years,loadingYears){
 /* 요청: 하루 단위 연도별 비교 목록은 한눈에 안 들어와서, 클릭한 날짜가 속한
    "그 달"을 달력 형태로 보여주는 방식으로 교체(연도별로 달력 3개를 위아래로 나열,
    해당 날짜 칸은 강조 표시) */
+/* 일보에 적어둔 적설량(cm) — 날짜(iso) 맵. 지금 작성 중인 날짜는 화면의 적설량 칸 값 사용 */
+function getSnowMapFromRecords(year){
+  const map={}, pre=year+'-';
+  gd().forEach(r=>{
+    const m=r.date?.match(/(\d+)년\s*(\d+)월\s*(\d+)일/); if(!m) return;
+    const yy=parseInt(m[1]); const iso=`${yy<50?2000+yy:1900+yy}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+    if(!iso.startsWith(pre)) return;
+    const v=parseFloat(r.weather?.snow); if(!isNaN(v)&&v>0) map[iso]=v;
+  });
+  const cur=(typeof getPickerISO==='function'&&getPickerISO())||'';
+  if(cur.startsWith(pre)){ const el=document.getElementById('inp-snow'); if(el&&el.value!==''){ const v=parseFloat(el.value); if(!isNaN(v)&&v>0) map[cur]=v; else delete map[cur]; } }
+  return map;
+}
 function buildRainMonthCalendar(year,mm,highlightDd,color){
   const today=new Date();
   const first=new Date(year,mm-1,1);
   const daysInMonth=new Date(year,mm,0).getDate();
   const startWeekday=first.getDay(); /* 0=일 */
   const map=getRainYearMap(year); /* 차트·누적과 같은 기준(작성 중 값 > 수동 > 일보 > 기상청) */
+  const snowMap=getSnowMapFromRecords(year); /* 일보의 적설량(cm) — 눈 온 날 구분용 */
   const wdNames=['일','월','화','수','목','금','토'];
   let cells='';
   for(let i=0;i<startWeekday;i++) cells+=`<div></div>`;
@@ -5638,14 +5652,16 @@ function buildRainMonthCalendar(year,mm,highlightDd,color){
     if(isFuture) inner=`<div style="font-size:9px;color:#333;">${d}</div>`;
     else if(v==null) inner=`<div style="font-size:9px;color:#333;">${d}</div><div style="font-size:8px;color:#ccc;">-</div>`;
     else inner=`<div style="font-size:9px;color:#333;">${d}</div><div style="font-size:9px;font-weight:700;color:${v>0?color:'#ccc'};">${v>0?v.toFixed(1):'0'}</div>`;
-    cells+=`<div style="aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:6px;background:${isHi?color:(v>0?color+'1a':'transparent')};${isHi?'color:#fff;':''}">${isHi?`<div style="font-size:9px;font-weight:700;">${d}</div><div style="font-size:9px;font-weight:700;">${v!=null?(v>0?v.toFixed(1):'0'):'-'}</div>`:inner}</div>`;
+    const sn=isFuture?null:snowMap[iso];
+    const snowLine=sn?`<div style="font-size:8px;font-weight:800;line-height:1.1;color:${isHi?'#fff':'#1b6fb5'};white-space:nowrap;">❄️${+sn.toFixed(1)}cm</div>`:'';
+    cells+=`<div style="aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:6px;background:${isHi?color:(v>0?color+'1a':(sn?'#e8f2fb':'transparent'))};${isHi?'color:#fff;':''}">${isHi?`<div style="font-size:9px;font-weight:700;">${d}</div><div style="font-size:9px;font-weight:700;">${v!=null?(v>0?v.toFixed(1):'0'):'-'}</div>`:inner}${snowLine}</div>`;
   }
   const monthTotal=Object.keys(map).filter(k=>k.startsWith(`${year}-${String(mm).padStart(2,'0')}`)&&k<=`${year}-${String(mm).padStart(2,'0')}-31`).reduce((s,k)=>s+(map[k]||0),0);
   return `
     <div style="margin-bottom:14px;">
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px;">
         <span style="font-weight:700;color:${color};font-size:13px;">${year}년 ${mm}월</span>
-        <span style="font-size:11px;color:#999;">월합계 <b style="color:${color};">${monthTotal.toFixed(1)}mm</b></span>
+        <span style="font-size:11px;color:#999;">월합계 <b style="color:${color};">${monthTotal.toFixed(1)}mm</b>${(()=>{const ks=Object.keys(snowMap).filter(k=>k.startsWith(`${year}-${String(mm).padStart(2,'0')}`)); return ks.length?` · <b style="color:#1b6fb5;">❄️ ${ks.length}일</b>`:'';})()}</span>
       </div>
       <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:3px;">
         ${wdNames.map(w=>`<div style="text-align:center;font-size:9px;color:#aaa;">${w}</div>`).join('')}
@@ -10671,6 +10687,7 @@ function checkBackupReminder(){
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
   {date:'2026-11-08',items:[
+    '❄️ 강우량 달력 팝업: 일보에 적설량을 적은 날은 ❄️ 적설(cm) 표시 + 월 적설일수 (강우량 숫자는 눈을 녹인 물 환산 강수량)',
     '📈 날짜 이동 후 기온추이·볼스피드·강우·GP 차트가 이전 날짜 값으로 남아 있던 문제 수정 (이동 직후 새 날짜 기준으로 다시 그림)',
     '🐞 작성 탭 날짜 선택 시 안내창이 두 번 뜨고, 취소해도 날짜가 바뀌어 다른 날짜 기록을 덮어쓸 수 있던 문제 수정',
     '📅 날짜 이동 안전장치: 기록 있는 날짜는 「저장하고 이동 / 저장 안 하고 이동 / 취소」, 기록 없는 날짜는 「복사해서 작성 / 빈 양식으로 시작 / 취소」 (+ 현재 날짜 먼저 저장) — 「오늘」·「다음날로 복사」도 같은 방식',
@@ -17539,6 +17556,7 @@ async function skExportXlsx(){
       <div class="modal-ttl">🌧️ 이 달의 강우량</div>
       <button class="btn btn-sm" onclick="document.getElementById('rain-year-day-modal').style.display='none'">✕ 닫기</button>
     </div>
+    <div style="font-size:10.5px;color:#888;padding:6px 2px 0;line-height:1.5;">숫자 = 강수량(mm, 눈은 녹인 물로 환산) · <b style="color:#1b6fb5;">❄️</b> = 일보에 적은 적설량(cm)</div>
     <div id="rain-year-day-modal-body" style="padding:8px 2px 4px;font-size:13px;line-height:1.5;"></div>
   </div>
 </div>
