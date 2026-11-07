@@ -6669,6 +6669,15 @@ function copyToNextDay(){
    · 기록이 없는 날짜: 「복사해서 작성 / 빈 양식으로 시작 / 취소」 (+ 현재 날짜 먼저 저장)
    · 취소하면 날짜·내용 모두 그대로 (예전엔 취소해도 날짜만 바뀌어, 저장 시 다른 날짜 기록을 덮어쓸 수 있었음) */
 var _formDirty=false;
+/* 날짜 이동 후 작성 탭 차트(기온·볼스피드·강우·GP·관수)를 새 날짜 기준으로 다시 그림
+   (기록을 불러온 뒤 그려야 이전 날짜의 날씨칸 값이 새 날짜에 찍히지 않음) */
+function _refreshWriteCharts(){
+  try{ renderTempChart(); }catch(e){}
+  try{ const el=document.getElementById('bs-write-chart'); if(el) renderBsChartInto('bs-write-chart',gd(),true); }catch(e){}
+  try{ if(typeof renderRainChart==='function') renderRainChart(); }catch(e){}
+  try{ if(typeof renderGpWriteBox==='function') renderGpWriteBox(); }catch(e){}
+  try{ if(typeof renderIrrChart==='function') renderIrrChart(); }catch(e){}
+}
 document.addEventListener('input',e=>{ const t=e.target; if(t&&t.id!=='inp-date-picker'&&t.closest&&t.closest('#panel-write')) _formDirty=true; },true);
 document.addEventListener('change',e=>{ const t=e.target; if(t&&t.id!=='inp-date-picker'&&t.closest&&t.closest('#panel-write')) _formDirty=true; },true);
 function _isoOfLabel(label){ const m=String(label||'').match(/(\d+)년\s*(\d+)월\s*(\d+)일/); if(!m) return ''; const yy=+m[1]; return `${yy<50?2000+yy:1900+yy}-${String(+m[2]).padStart(2,'0')}-${String(+m[3]).padStart(2,'0')}`; }
@@ -6711,6 +6720,7 @@ async function onDatePick(val){
     if(k==='save') doSave();
     pk.value=val; pk.dataset.prev=val;
     applyDatePicker(val,true);
+    _refreshWriteCharts();
     showToast(`📅 ${label} 기록을 불러왔습니다`);
     return;
   }
@@ -6721,10 +6731,11 @@ async function onDatePick(val){
     (dirty&&curLabel)?`먼저 지금 날짜(${curLabel})를 저장${curSaved?' (변경 반영)':''}`:'');
   if(r.k==='cancel') return;
   if(r.save && dirty && curLabel) doSave();
-  if(r.k==='copy'){ copyFormToDate(val); window.scrollTo(0,0); showToast(`✅ ${label}로 복사했습니다. 날씨 「자동 불러오기」 후 작성·저장하세요.`,4000); return; }
+  if(r.k==='copy'){ copyFormToDate(val); _refreshWriteCharts(); window.scrollTo(0,0); showToast(`✅ ${label}로 복사했습니다. 날씨 「자동 불러오기」 후 작성·저장하세요.`,4000); return; }
   clearForm(true);
   pk.value=val; pk.dataset.prev=val;
   applyDatePicker(val,true);
+  _refreshWriteCharts();
   _formDirty=false;
   window.scrollTo(0,0);
   showToast(`📄 ${label} 빈 양식으로 시작합니다`);
@@ -10660,6 +10671,7 @@ function checkBackupReminder(){
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
   {date:'2026-11-08',items:[
+    '📈 날짜 이동 후 기온추이·볼스피드·강우·GP 차트가 이전 날짜 값으로 남아 있던 문제 수정 (이동 직후 새 날짜 기준으로 다시 그림)',
     '🐞 작성 탭 날짜 선택 시 안내창이 두 번 뜨고, 취소해도 날짜가 바뀌어 다른 날짜 기록을 덮어쓸 수 있던 문제 수정',
     '📅 날짜 이동 안전장치: 기록 있는 날짜는 「저장하고 이동 / 저장 안 하고 이동 / 취소」, 기록 없는 날짜는 「복사해서 작성 / 빈 양식으로 시작 / 취소」 (+ 현재 날짜 먼저 저장) — 「오늘」·「다음날로 복사」도 같은 방식',
     '✏️ 작업자 섹션에서 출근·휴무·연차를 체크하면 작업내용의 출근자 칩·팝업에 바로 반영 (저장·동기화 없이)']},
