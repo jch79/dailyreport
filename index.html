@@ -2872,7 +2872,20 @@ function toggleWorkerLeave(idx, chk){
       const taskInp = entry.querySelector('input[type="text"]');
       if(taskInp) taskInp.style.color='#aaa';
     }
+  } else {
+    /* 연차 해제 → 출근으로 (휴 칸은 연차 중엔 숨겨져 있으므로 같이 해제) */
+    curWorkers[idx].off = false;
+    if(entry){
+      const offChk = entry.querySelector('input[data-role="off-chk"]');
+      if(offChk) offChk.checked = false;
+      const spans = entry.querySelectorAll(':scope > span');
+      if(spans[1]){ spans[1].style.textDecoration=''; spans[1].style.color=''; }
+      const taskInp = entry.querySelector('input[type="text"]');
+      if(taskInp) taskInp.style.color='';
+    }
   }
+  /* 연차인 사람은 「휴」 칸을 숨겨 연차 하나만 보이게 (저장은 그대로 휴무+연차) */
+  if(entry){ const lbl=entry.querySelector('[data-role="off-lbl"]'); if(lbl) lbl.style.visibility=isLeave?'hidden':''; }
   updateWorkerSummary();
 }
 
@@ -2958,7 +2971,7 @@ function renderWorkers(){
           style="width:36px;font-size:11px;padding:2px 3px;border:1px solid #b5d4f4;border-radius:4px;background:#f5f9ff;color:#185FA5;font-weight:700;text-align:center;">
         <span style="font-size:9px;color:#888;">h</span>
       </div>
-      <label style="display:flex;align-items:center;gap:2px;font-size:10px;color:#888;white-space:nowrap;cursor:pointer;">
+      <label data-role="off-lbl" style="display:flex;align-items:center;gap:2px;font-size:10px;color:#888;white-space:nowrap;cursor:pointer;${w.leave?'visibility:hidden;':''}">
         <input type="checkbox" data-role="off-chk" ${w.off?'checked':''} onchange="toggleWorkerOff(${i},this)"> 휴
       </label>
       <label style="display:flex;align-items:center;gap:2px;font-size:10px;color:#8e44ad;white-space:nowrap;cursor:pointer;font-weight:600;">
@@ -5677,7 +5690,7 @@ function saveRainCalDayEdit(iso,rainStr,snowStr){
   if(idx>=0){
     if(!all[idx].weather) all[idx].weather={};
     all[idx].weather.rain=String(rain);
-    all[idx].weather.snow=snow?String(snow):'0';
+    all[idx].weather.snow=snow?String(snow):'';
     sd(all);
     clearStatManual(iso,'snow');   /* 일보가 있으면 적설량은 일보 값 하나로 */
   } else {
@@ -10755,6 +10768,9 @@ function checkBackupReminder(){
    · 관리자 공지: Firestore shared/notices 문서의 items 배열(모든 기기 실시간 공유). 관리자만 작성·수정·삭제. 항상 맨 위 고정
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
+  {date:'2026-11-10',items:[
+    '👤 작성 탭 정규직: 연차인 사람은 「휴」 칸을 숨기고 「연차」만 표시 (연차 해제 시 출근으로) — 통계·집계 방식은 그대로',
+  ]},
   {date:'2026-11-08',items:[
     '✏️ 강우량 달력 팝업에서 날짜를 누르면 그날 강우량·적설량 수정 — 일보가 있으면 일보에 바로 반영(클라우드 동기화), 없으면 팀 공유 수동값으로 저장',
     '❄️ 강우량 달력 팝업: 일보에 적설량을 적은 날은 ❄️ 적설(cm) 표시 + 월 적설일수 (강우량 숫자는 눈을 녹인 물 환산 강수량)',
