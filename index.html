@@ -1002,7 +1002,7 @@ textarea{resize:vertical;min-height:55px;}
 .workers-inline{display:flex;flex-wrap:wrap;align-items:center;gap:4px;padding:4px;min-height:34px;}
 .worker-tag{display:inline-flex;align-items:center;gap:3px;background:#e8f0fb;border:1.5px solid #85B7EB;border-radius:6px;padding:3px 6px;font-size:12px;white-space:nowrap;}
 .task-block.work .worker-tag{background:#e8f5e0;border-color:#97C459;}
-.worker-tag input{border:none;background:transparent;font-size:12px;padding:0;color:#1a1a1a;min-width:28px;width:auto;}
+.worker-tag input{border:none;background:transparent;font-size:12px;padding:0;color:#1a1a1a;min-width:2.4em;width:auto;}
 .worker-tag input:focus{outline:none;}
 .wtag-del{font-size:10px;color:#888;cursor:pointer;background:none;border:none;padding:0 1px;}
 .wtag-del:hover{color:#c0392b;}
@@ -2534,12 +2534,15 @@ function renderTasks(){
 }
 
 /* 작업자 칸 너비를 실제 글자 폭에 맞춤 (예전엔 글자 수×고정폭으로 계산해 이름 뒤 공백이 생김) */
+function _twEm(t){ /* 글자 종류별 폭(em) 합 — 글꼴 크기가 바뀌어도(휴대폰 글자 확대 등) 같이 늘어남 */
+  let w=0; for(const ch of String(t||'')){ w+= /[ᄀ-ᇿ㄰-㆏가-힯一-鿿]/.test(ch)?1.06 : /[A-Za-z0-9]/.test(ch)?0.66 : 0.42; }
+  return w;
+}
+const _twFS=(typeof CSS!=='undefined'&&CSS.supports&&CSS.supports('field-sizing','content'));
 function twFitW(el){
   try{
-    if(!el.isConnected) return;
-    el.style.width='1px';                    /* 줄였다가 실제 내용 폭(scrollWidth)만큼 다시 늘림 */
-    const w=el.value?el.scrollWidth:Math.max(el.scrollWidth,28);
-    el.style.width=Math.min(320,Math.max(28,w+2))+'px';
+    if(_twFS){ el.style.fieldSizing='content'; el.style.width='auto'; el.style.minWidth='2.4em'; el.style.maxWidth='26em'; return; }
+    el.style.width=Math.min(26,Math.max(2.4,_twEm(el.value||'이름')+0.6))+'em';
   }catch(e){}
 }
 function buildTaskRow(si,ti,task,cls){
@@ -2552,7 +2555,7 @@ function buildTaskRow(si,ti,task,cls){
   const nightVal=task.night!==undefined?task.night:false;
   const workersHtml=task.workers.map((w,wi)=>`
     <span class="worker-tag">
-      <input type="text" class="tw-inp" data-si="${si}" data-ti="${ti}" data-wi="${wi}" value="${w}" placeholder="이름" style="width:${Math.min(320,Math.max(30,(w.length||2)*12+4))}px;max-width:320px;"
+      <input type="text" class="tw-inp" data-si="${si}" data-ti="${ti}" data-wi="${wi}" value="${w}" placeholder="이름" style="width:${Math.min(26,Math.max(2.4,_twEm(w||'이름')+0.6))}em;max-width:26em;"
         onfocus="twFocus(${si},${ti},${wi},this)" onblur="twBlur()"
         oninput="setWorkerVal(${si},${ti},${wi},this.value);twFitW(this)">
       <button class="wtag-del" onclick="removeWorkerField(${si},${ti},${wi})">&#10005;</button>
@@ -10781,6 +10784,7 @@ function checkBackupReminder(){
 const APP_CHANGELOG=[
   {date:'2026-11-11',items:[
     '↔️ 작업내용 표: 작업자 이름 뒤 불필요한 공백 제거(실제 글자 폭에 맞춤) · 비고 칸 폭 줄이고 작업자 칸 넓힘',
+    '🐞 휴대폰에서 작업자 이름이 잘려 보이던 문제 수정 (칸 너비를 글자 크기에 맞춰 자동 조절)',
   ]},
   {date:'2026-11-10',items:[
     '👤 작성 탭 정규직: 연차인 사람은 「휴」 칸을 숨기고 「연차」만 표시 (연차 해제 시 출근으로) — 통계·집계 방식은 그대로',
