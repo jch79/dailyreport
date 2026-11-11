@@ -962,8 +962,8 @@ textarea{resize:vertical;min-height:55px;}
 .task-block.work   .task-block-hdr{background:#3B6D11;color:#fff;border-radius:7px 7px 0 0;}
 .task-block.etc    .task-block-hdr{background:#5F5E5A;color:#fff;border-radius:7px 7px 0 0;}
 
-.task-col-hdr{display:grid;grid-template-columns:120px 34px 34px 34px 210px 140px 260px 30px 150px;gap:0;font-size:10px;font-weight:700;text-align:center;border-bottom:2px solid #c0c0c0;min-width:1012px;}
-.task-block.work .task-col-hdr{grid-template-columns:192px 34px 34px 34px 316px 140px 260px 30px 150px;min-width:1232px;}
+.task-col-hdr{display:grid;grid-template-columns:120px 34px 34px 34px 210px 140px 350px 30px 90px;gap:0;font-size:10px;font-weight:700;text-align:center;border-bottom:2px solid #c0c0c0;min-width:1042px;}
+.task-block.work .task-col-hdr{grid-template-columns:192px 34px 34px 34px 316px 140px 380px 30px 90px;min-width:1292px;}
 .task-block.mowing .task-col-hdr{background:#daeaf9;color:#0C447C;}
 .task-block.work   .task-col-hdr{background:#d4eac0;color:#27500A;}
 .task-block.etc    .task-col-hdr{background:#e8e7e3;color:#444;}
@@ -972,8 +972,8 @@ textarea{resize:vertical;min-height:55px;}
 .task-col-hdr .tl{text-align:left;padding-left:8px;}
 .task-col-hdr .task-remark-hdr{border-left:1.5px solid #c8c8c8;}
 
-.task-row{display:grid;grid-template-columns:120px 34px 34px 34px 210px 140px 260px 30px 150px;gap:0;align-items:stretch;border-top:1.5px solid #d8d8d8;min-width:1012px;}
-.task-block.work .task-row{grid-template-columns:192px 34px 34px 34px 316px 140px 260px 30px 150px;min-width:1232px;}
+.task-row{display:grid;grid-template-columns:120px 34px 34px 34px 210px 140px 350px 30px 90px;gap:0;align-items:stretch;border-top:1.5px solid #d8d8d8;min-width:1042px;}
+.task-block.work .task-row{grid-template-columns:192px 34px 34px 34px 316px 140px 380px 30px 90px;min-width:1292px;}
 .task-block.mowing .task-row:nth-child(even){background:#f2f8fd;}
 .task-block.work   .task-row:nth-child(even){background:#f2f9ec;}
 /* Work/Mowing/기타 표(헤더+행)를 한 덩어리로 가로 스크롤 — 열이 고정 폭이라
@@ -1002,7 +1002,7 @@ textarea{resize:vertical;min-height:55px;}
 .workers-inline{display:flex;flex-wrap:wrap;align-items:center;gap:4px;padding:4px;min-height:34px;}
 .worker-tag{display:inline-flex;align-items:center;gap:3px;background:#e8f0fb;border:1.5px solid #85B7EB;border-radius:6px;padding:3px 6px;font-size:12px;white-space:nowrap;}
 .task-block.work .worker-tag{background:#e8f5e0;border-color:#97C459;}
-.worker-tag input{border:none;background:transparent;font-size:12px;padding:0;color:#1a1a1a;min-width:40px;width:auto;}
+.worker-tag input{border:none;background:transparent;font-size:12px;padding:0;color:#1a1a1a;min-width:28px;width:auto;}
 .worker-tag input:focus{outline:none;}
 .wtag-del{font-size:10px;color:#888;cursor:pointer;background:none;border:none;padding:0 1px;}
 .wtag-del:hover{color:#c0392b;}
@@ -2529,9 +2529,19 @@ function renderTasks(){
     const secEl=document.getElementById(`sec-${si}`);
     sec.tasks.forEach((task,ti)=>secEl.appendChild(buildTaskRow(si,ti,task,sec.cls)));
   });
+  document.querySelectorAll('.tw-inp').forEach(twFitW);
   renderTaskAttendChips();
 }
 
+/* 작업자 칸 너비를 실제 글자 폭에 맞춤 (예전엔 글자 수×고정폭으로 계산해 이름 뒤 공백이 생김) */
+function twFitW(el){
+  try{
+    if(!el.isConnected) return;
+    el.style.width='1px';                    /* 줄였다가 실제 내용 폭(scrollWidth)만큼 다시 늘림 */
+    const w=el.value?el.scrollWidth:Math.max(el.scrollWidth,28);
+    el.style.width=Math.min(320,Math.max(28,w+2))+'px';
+  }catch(e){}
+}
 function buildTaskRow(si,ti,task,cls){
   const row=document.createElement('div');
   row.className='task-row';
@@ -2542,9 +2552,9 @@ function buildTaskRow(si,ti,task,cls){
   const nightVal=task.night!==undefined?task.night:false;
   const workersHtml=task.workers.map((w,wi)=>`
     <span class="worker-tag">
-      <input type="text" class="tw-inp" data-si="${si}" data-ti="${ti}" data-wi="${wi}" value="${w}" placeholder="이름" style="width:${Math.min(260,Math.max(44,(w.length||2)*10+16))}px;max-width:260px;"
+      <input type="text" class="tw-inp" data-si="${si}" data-ti="${ti}" data-wi="${wi}" value="${w}" placeholder="이름" style="width:${Math.min(320,Math.max(30,(w.length||2)*12+4))}px;max-width:320px;"
         onfocus="twFocus(${si},${ti},${wi},this)" onblur="twBlur()"
-        oninput="setWorkerVal(${si},${ti},${wi},this.value);this.style.width=Math.min(260,Math.max(44,(this.value.length||2)*10+16))+'px'">
+        oninput="setWorkerVal(${si},${ti},${wi},this.value);twFitW(this)">
       <button class="wtag-del" onclick="removeWorkerField(${si},${ti},${wi})">&#10005;</button>
     </span>`).join('');
   row.innerHTML=`
@@ -2581,6 +2591,7 @@ function taskTaFitAll(root){ (root||document).querySelectorAll('textarea.task-ta
 function refreshSection(si){
   const c=document.getElementById(`sec-${si}`);c.innerHTML='';
   curTasks[si].tasks.forEach((task,ti)=>c.appendChild(buildTaskRow(si,ti,task,curTasks[si].cls)));
+  c.querySelectorAll('.tw-inp').forEach(twFitW);
   requestAnimationFrame(()=>taskTaFitAll(c));
 }
 function setTask(si,ti,k,v){markDirty();curTasks[si].tasks[ti][k]=v;}
@@ -2647,7 +2658,7 @@ function pickAttendWorker(name){
   const cur=String(el.value||'').replace(/[\s,，、]+$/,'');
   el.value=cur?`${cur}, ${name}`:name;
   setWorkerVal(si,ti,wi,el.value);
-  el.style.width=Math.min(260,Math.max(44,(el.value.length||2)*10+16))+'px';
+  twFitW(el);
   el.focus(); try{ el.setSelectionRange(el.value.length,el.value.length); }catch(e){}
   _twFocus={si,ti,wi,at:Date.now()};
   renderTaskAttendChips(); twShowPop(el);
@@ -10768,6 +10779,9 @@ function checkBackupReminder(){
    · 관리자 공지: Firestore shared/notices 문서의 items 배열(모든 기기 실시간 공유). 관리자만 작성·수정·삭제. 항상 맨 위 고정
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
+  {date:'2026-11-11',items:[
+    '↔️ 작업내용 표: 작업자 이름 뒤 불필요한 공백 제거(실제 글자 폭에 맞춤) · 비고 칸 폭 줄이고 작업자 칸 넓힘',
+  ]},
   {date:'2026-11-10',items:[
     '👤 작성 탭 정규직: 연차인 사람은 「휴」 칸을 숨기고 「연차」만 표시 (연차 해제 시 출근으로) — 통계·집계 방식은 그대로',
   ]},
