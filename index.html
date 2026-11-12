@@ -10782,6 +10782,10 @@ function checkBackupReminder(){
    · 관리자 공지: Firestore shared/notices 문서의 items 배열(모든 기기 실시간 공유). 관리자만 작성·수정·삭제. 항상 맨 위 고정
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
+  {date:'2026-11-12',items:[
+    '📒 자재입출고 수불내역: 비고와 입력 사이에 「현재고」(그 입출고 직후 재고) 표시 — 화면에서만 보이고 엑셀 내보내기엔 포함 안 됨, 0 이하는 빨간색',
+    '↩️ 입출고 등록: 저장·초기화 옆 「취소」 버튼 — 들어오기 직전 화면(재고현황·수불내역 등)으로 돌아감 (작성 중이면 한 번 확인)',
+  ]},
   {date:'2026-11-11',items:[
     '↔️ 작업내용 표: 작업자 이름 뒤 불필요한 공백 제거(실제 글자 폭에 맞춤) · 비고 칸 폭 줄이고 작업자 칸 넓힘',
     '🐞 휴대폰에서 작업자 이름이 잘려 보이던 문제 수정 (칸 너비를 글자 크기에 맞춰 자동 조절)',
@@ -16343,6 +16347,7 @@ function showPdfGuide(ri){
       <div style="display:flex;gap:8px;margin-top:12px;">
         <button class="sk-btn pri io-in" style="flex:1;padding:10px;font-size:14px;" onclick="skSaveTx()" id="sk-e-save">저장</button>
         <button class="sk-btn" onclick="skResetEntry()">초기화</button>
+        <button class="sk-btn" onclick="skCancelEntry()" style="color:#666;">취소</button>
       </div>
       <div class="sk-note" id="sk-e-editing"></div>
     </div>
@@ -16479,7 +16484,9 @@ function skStats(){
 function skItemById(id){return _skItems.find(i=>i.id===id);}
 
 /* ── 화면 전환 ── */
+let _skPrevView='stock';   /* 입출고 등록에 들어오기 직전 화면 — 「취소」 시 돌아갈 곳 */
 function skView(v){
+  if(v==='entry' && _skViewName!=='entry') _skPrevView=_skViewName||'stock';
   _skViewName=v;
   ['stock','entry','log','items','vendor'].forEach(n=>{const e=document.getElementById('sk-v-'+n); if(e)e.style.display=(n===v)?'':'none';});
   document.querySelectorAll('[data-sk-view]').forEach(b=>b.classList.toggle('on',b.dataset.skView===v));
@@ -16660,6 +16667,14 @@ function skResetEntry(){
   document.getElementById('sk-e-editing').textContent=''; document.getElementById('sk-e-save').textContent='저장';
   skRenderSel();
 }
+/* 입출고 등록 「취소」: 작성 내용 버리고 들어오기 직전 화면(재고현황·수불내역 등)으로 */
+function skCancelEntry(){
+  const typed=!_skEditingTxId && (_skMulti.length || ['sk-e-item','sk-e-place','sk-e-note'].some(i=>(document.getElementById(i)?.value||'').trim()));
+  if(typed && !confirm('작성 중인 내용을 버리고 돌아갈까요?')) return;
+  skResetEntry();
+  const back=(_skPrevView&&_skPrevView!=='entry')?_skPrevView:'stock';
+  skView(back);
+}
 async function skSaveTx(){
   if(!skCanEdit()){showToast('입출고 등록 권한이 없습니다');return;}
   if(!_skMulti.length){showToast('제품을 검색해서 선택해 주세요');return;}
@@ -16713,14 +16728,18 @@ function skRenderLog(){
   const list=_skTx.filter(t=>(!m||String(t.date).startsWith(m))&&(!io||t.io===io)&&(!q||skNorm((skItemById(t.itemId)?.name||t.itemName)+t.place+t.note).includes(q)))
     .sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.ts||0)-(a.ts||0));
   let si=0,so=0; list.forEach(t=>t.io==='입고'?si+=skNum(t.qty):so+=skNum(t.qty));
+  /* 현재고(그 입출고 직후 재고) — 필터와 상관없이 전체 내역을 날짜순(같은 날은 입력순)으로 누적. 화면 표시용(엑셀 내보내기엔 없음) */
+  const bal={}; { const run={}; _skItems.forEach(it=>run[it.id]=skNum(it.carry));
+    [..._skTx].sort((a,b)=>(a.date||'').localeCompare(b.date||'')||(a.ts||0)-(b.ts||0)).forEach(t=>{
+      if(!(t.itemId in run)) return; run[t.itemId]+= (t.io==='입고'?1:-1)*skNum(t.qty); bal[t.id]=run[t.itemId]; }); }
   const ce=skCanEdit();
-  document.getElementById('sk-log-tbl').innerHTML=`<thead><tr><th>일자</th><th>제품명</th>${skPestTh()}<th>규격</th><th>구분</th><th>수량</th><th>단위</th><th>사용처</th><th>비고</th><th>입력</th>${ce?'<th></th>':''}</tr></thead><tbody>
+  document.getElementById('sk-log-tbl').innerHTML=`<thead><tr><th>일자</th><th>제품명</th>${skPestTh()}<th>규격</th><th>구분</th><th>수량</th><th>단위</th><th>사용처</th><th>비고</th><th title="그 입출고 직후 재고">현재고</th><th>입력</th>${ce?'<th></th>':''}</tr></thead><tbody>
     ${list.map(t=>{const it=skItemById(t.itemId);return `<tr><td style="white-space:nowrap;">${skEsc(t.date)}</td><td class="l"><b>${skEsc(it?.name||t.itemName)}</b>${skPestSub(it||{name:t.itemName})}</td>${skPestTd(it||{name:t.itemName})}<td>${skEsc(it?.spec||t.spec||'')}</td>
       <td><span class="sk-tag ${t.io==='입고'?'in':'out'}">${t.io}</span></td><td><b>${skFmt(skNum(t.qty))}</b></td><td>${skEsc(it?.unit||t.unit||'')}</td>
-      <td class="l">${skEsc(t.place||'')}</td><td class="l">${skEsc(t.note||'')}</td><td style="font-size:10px;color:#99a;">${skEsc(String(t.by||'').split('@')[0])}</td>
+      <td class="l">${skEsc(t.place||'')}</td><td class="l">${skEsc(t.note||'')}</td><td style="white-space:nowrap;font-weight:800;color:${t.id in bal?(bal[t.id]<=0?'#c0392b':'#185FA5'):'#bbb'};">${t.id in bal?skFmt(Math.round(bal[t.id]*1000)/1000):'-'}</td><td style="font-size:10px;color:#99a;">${skEsc(String(t.by||'').split('@')[0])}</td>
       ${ce?`<td style="white-space:nowrap;"><button class="sk-btn" style="padding:3px 7px;font-size:11px;" onclick="skEditTx('${t.id}')">수정</button> <button class="sk-btn" style="padding:3px 7px;font-size:11px;color:#c0392b;border-color:#e6b0aa;" onclick="skDelTx('${t.id}')">삭제</button></td>`:''}</tr>`;}).join('')
-      ||`<tr><td colspan="${10+skPestCols()}" style="padding:20px;color:#999;">내역이 없습니다</td></tr>`}
-    ${list.length?`<tr style="background:#f4f8fc;font-weight:800;"><td colspan="${3+skPestCols()}">합계 (${list.length}건)</td><td colspan="${ce?7:6}" class="l">입고 ${skFmt(si)} · 출고 ${skFmt(so)}</td></tr>`:''}</tbody>`;
+      ||`<tr><td colspan="${11+skPestCols()}" style="padding:20px;color:#999;">내역이 없습니다</td></tr>`}
+    ${list.length?`<tr style="background:#f4f8fc;font-weight:800;"><td colspan="${3+skPestCols()}">합계 (${list.length}건)</td><td colspan="${ce?8:7}" class="l">입고 ${skFmt(si)} · 출고 ${skFmt(so)}</td></tr>`:''}</tbody>`;
 }
 function skEditTx(id){
   const t=_skTx.find(x=>x.id===id); if(!t) return;
