@@ -1003,6 +1003,10 @@ textarea{resize:vertical;min-height:55px;}
 .worker-tag{display:inline-flex;align-items:center;gap:3px;background:#e8f0fb;border:1.5px solid #85B7EB;border-radius:6px;padding:3px 6px;font-size:12px;white-space:nowrap;}
 .task-block.work .worker-tag{background:#e8f5e0;border-color:#97C459;}
 .worker-tag input{border:none;background:transparent;font-size:12px;padding:0;color:#1a1a1a;min-width:2.4em;width:auto;}
+.tw-sz{display:inline-grid;align-items:center;max-width:26em;font-size:12px;}
+.tw-sz::after{content:attr(data-v);grid-area:1/1;visibility:hidden;white-space:pre;height:0;overflow:hidden;font:inherit;padding:0 3px 0 1px;}
+.tw-sz input.tw-inp{grid-area:1/1;width:100%;min-width:2.4em;font-family:inherit;font-size:inherit;letter-spacing:normal;padding:0 1px;border:0;box-sizing:border-box;}
+.tw-sz input.tw-inp:focus{border:0;box-shadow:0 0 0 1px #999;background:#fff;border-radius:3px;}
 .worker-tag input:focus{outline:none;}
 .wtag-del{font-size:10px;color:#888;cursor:pointer;background:none;border:none;padding:0 1px;}
 .wtag-del:hover{color:#c0392b;}
@@ -2534,16 +2538,9 @@ function renderTasks(){
 }
 
 /* 작업자 칸 너비를 실제 글자 폭에 맞춤 (예전엔 글자 수×고정폭으로 계산해 이름 뒤 공백이 생김) */
-function _twEm(t){ /* 글자 종류별 폭(em) 합 — 글꼴 크기가 바뀌어도(휴대폰 글자 확대 등) 같이 늘어남 */
-  let w=0; for(const ch of String(t||'')){ w+= /[ᄀ-ᇿ㄰-㆏가-힯一-鿿]/.test(ch)?1.06 : /[A-Za-z0-9]/.test(ch)?0.66 : 0.42; }
-  return w;
-}
-const _twFS=(typeof CSS!=='undefined'&&CSS.supports&&CSS.supports('field-sizing','content'));
+/* 작업자 칸 너비: 숨은 글자(같은 글꼴)로 브라우저가 직접 폭을 정함 → 글꼴·글자 확대·화면 숨김 상태와 상관없이 잘리지 않음 */
 function twFitW(el){
-  try{
-    if(_twFS){ el.style.fieldSizing='content'; el.style.width='auto'; el.style.minWidth='2.4em'; el.style.maxWidth='26em'; return; }
-    el.style.width=Math.min(26,Math.max(2.4,_twEm(el.value||'이름')+0.6))+'em';
-  }catch(e){}
+  const w=el&&el.parentElement; if(w&&w.classList.contains('tw-sz')) w.dataset.v=el.value||el.placeholder||'이름';
 }
 function buildTaskRow(si,ti,task,cls){
   const row=document.createElement('div');
@@ -2555,9 +2552,9 @@ function buildTaskRow(si,ti,task,cls){
   const nightVal=task.night!==undefined?task.night:false;
   const workersHtml=task.workers.map((w,wi)=>`
     <span class="worker-tag">
-      <input type="text" class="tw-inp" data-si="${si}" data-ti="${ti}" data-wi="${wi}" value="${w}" placeholder="이름" style="width:${Math.min(26,Math.max(2.4,_twEm(w||'이름')+0.6))}em;max-width:26em;"
+      <span class="tw-sz" data-v="${String(w||'이름').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')}"><input type="text" class="tw-inp" data-si="${si}" data-ti="${ti}" data-wi="${wi}" value="${String(w).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')}" placeholder="이름" size="1"
         onfocus="twFocus(${si},${ti},${wi},this)" onblur="twBlur()"
-        oninput="setWorkerVal(${si},${ti},${wi},this.value);twFitW(this)">
+        oninput="setWorkerVal(${si},${ti},${wi},this.value);twFitW(this)"></span>
       <button class="wtag-del" onclick="removeWorkerField(${si},${ti},${wi})">&#10005;</button>
     </span>`).join('');
   row.innerHTML=`
@@ -10784,6 +10781,8 @@ function checkBackupReminder(){
 const APP_CHANGELOG=[
   {date:'2026-11-12',items:[
     '📒 자재입출고 수불내역: 비고와 입력 사이에 「현재고」(그 입출고 직후 재고) 표시 — 화면에서만 보이고 엑셀 내보내기엔 포함 안 됨, 0 이하는 빨간색',
+    '💰 자재입출고 재고현황·수불내역: 단위 다음에 「단가」 칸 추가 (수불내역은 그 입출고 당시 단가)',
+    '🐞 작업내용 표 작업자 이름이 일부 잘려 보이던 문제 수정 (작업표 입력칸의 기본 여백이 이름 칸에도 적용되던 원인 제거 · 글꼴과 상관없이 이름 길이에 딱 맞춤)',
     '↩️ 입출고 등록: 저장·초기화 옆 「취소」 버튼 — 들어오기 직전 화면(재고현황·수불내역 등)으로 돌아감 (작성 중이면 한 번 확인)',
   ]},
   {date:'2026-11-11',items:[
@@ -16541,15 +16540,15 @@ function skRenderStock(){
   const rows=list.map(it=>{const s=st[it.id];
     return `<tr class="click" onclick="skShowItem('${it.id}')">
       <td class="l"><b>${skEsc(it.name)}</b><div style="font-size:10.5px;color:#889;">${skEsc(it.use||'')}</div>${skPestSub(it)}</td>
-      ${skPestTd(it)}<td>${skEsc(it.spec||'')}</td><td>${skEsc(it.unit||'')}</td>
+      ${skPestTd(it)}<td>${skEsc(it.spec||'')}</td><td>${skEsc(it.unit||'')}</td><td style="white-space:nowrap;">${skNum(it.price)?skFmt(skNum(it.price)):''}</td>
       <td class="sk-stock ${s.stock<=0?'sk-low':''}">${skFmt(s.stock)}</td>
       ${amtCol?`<td style="font-weight:700;color:#185FA5;white-space:nowrap;">${skFmt(Math.round(am[it.id][so]))}</td>`:''}
       <td>${skFmt(skNum(it.carry))}</td>
       <td class="${s.in?'':'sk-zero'}">${skFmt(s.in)}</td><td class="${s.out?'':'sk-zero'}">${skFmt(s.out)}</td>
       <td style="font-size:11px;">${s.lastIn?s.lastIn.slice(5):''}</td><td style="font-size:11px;">${s.lastOut?s.lastOut.slice(5):''}</td>
       <td style="font-size:11px;">${skEsc(it.vendor||'')}</td></tr>`;}).join('');
-  document.getElementById('sk-stock-tbl').innerHTML=`<thead><tr><th>제품명</th>${skPestTh()}<th>규격</th><th>단위</th><th>현재고</th>${amtCol?`<th>${amtCol}(원)</th>`:''}<th>이월</th><th>입고</th><th>출고</th><th>최종입고</th><th>최종출고</th><th>납품업체</th></tr></thead>
-    <tbody>${rows||`<tr><td colspan="${(amtCol?11:10)+skPestCols()}" style="padding:22px;color:#999;">${_skItems.length?'검색 결과가 없습니다':'등록된 품목이 없습니다. 상단 「📥 엑셀 가져오기」로 기존 사용장부를 불러오세요.'}</td></tr>`}</tbody>`;
+  document.getElementById('sk-stock-tbl').innerHTML=`<thead><tr><th>제품명</th>${skPestTh()}<th>규격</th><th>단위</th><th>단가</th><th>현재고</th>${amtCol?`<th>${amtCol}(원)</th>`:''}<th>이월</th><th>입고</th><th>출고</th><th>최종입고</th><th>최종출고</th><th>납품업체</th></tr></thead>
+    <tbody>${rows||`<tr><td colspan="${(amtCol?12:11)+skPestCols()}" style="padding:22px;color:#999;">${_skItems.length?'검색 결과가 없습니다':'등록된 품목이 없습니다. 상단 「📥 엑셀 가져오기」로 기존 사용장부를 불러오세요.'}</td></tr>`}</tbody>`;
 }
 
 /* ── 품목 상세(내역) ── */
@@ -16733,13 +16732,13 @@ function skRenderLog(){
     [..._skTx].sort((a,b)=>(a.date||'').localeCompare(b.date||'')||(a.ts||0)-(b.ts||0)).forEach(t=>{
       if(!(t.itemId in run)) return; run[t.itemId]+= (t.io==='입고'?1:-1)*skNum(t.qty); bal[t.id]=run[t.itemId]; }); }
   const ce=skCanEdit();
-  document.getElementById('sk-log-tbl').innerHTML=`<thead><tr><th>일자</th><th>제품명</th>${skPestTh()}<th>규격</th><th>구분</th><th>수량</th><th>단위</th><th>사용처</th><th>비고</th><th title="그 입출고 직후 재고">현재고</th><th>입력</th>${ce?'<th></th>':''}</tr></thead><tbody>
+  document.getElementById('sk-log-tbl').innerHTML=`<thead><tr><th>일자</th><th>제품명</th>${skPestTh()}<th>규격</th><th>구분</th><th>수량</th><th>단위</th><th>단가</th><th>사용처</th><th>비고</th><th title="그 입출고 직후 재고">현재고</th><th>입력</th>${ce?'<th></th>':''}</tr></thead><tbody>
     ${list.map(t=>{const it=skItemById(t.itemId);return `<tr><td style="white-space:nowrap;">${skEsc(t.date)}</td><td class="l"><b>${skEsc(it?.name||t.itemName)}</b>${skPestSub(it||{name:t.itemName})}</td>${skPestTd(it||{name:t.itemName})}<td>${skEsc(it?.spec||t.spec||'')}</td>
-      <td><span class="sk-tag ${t.io==='입고'?'in':'out'}">${t.io}</span></td><td><b>${skFmt(skNum(t.qty))}</b></td><td>${skEsc(it?.unit||t.unit||'')}</td>
+      <td><span class="sk-tag ${t.io==='입고'?'in':'out'}">${t.io}</span></td><td><b>${skFmt(skNum(t.qty))}</b></td><td>${skEsc(it?.unit||t.unit||'')}</td><td style="white-space:nowrap;">${skTxPrice(t)?skFmt(skTxPrice(t)):''}</td>
       <td class="l">${skEsc(t.place||'')}</td><td class="l">${skEsc(t.note||'')}</td><td style="white-space:nowrap;font-weight:800;color:${t.id in bal?(bal[t.id]<=0?'#c0392b':'#185FA5'):'#bbb'};">${t.id in bal?skFmt(Math.round(bal[t.id]*1000)/1000):'-'}</td><td style="font-size:10px;color:#99a;">${skEsc(String(t.by||'').split('@')[0])}</td>
       ${ce?`<td style="white-space:nowrap;"><button class="sk-btn" style="padding:3px 7px;font-size:11px;" onclick="skEditTx('${t.id}')">수정</button> <button class="sk-btn" style="padding:3px 7px;font-size:11px;color:#c0392b;border-color:#e6b0aa;" onclick="skDelTx('${t.id}')">삭제</button></td>`:''}</tr>`;}).join('')
-      ||`<tr><td colspan="${11+skPestCols()}" style="padding:20px;color:#999;">내역이 없습니다</td></tr>`}
-    ${list.length?`<tr style="background:#f4f8fc;font-weight:800;"><td colspan="${3+skPestCols()}">합계 (${list.length}건)</td><td colspan="${ce?8:7}" class="l">입고 ${skFmt(si)} · 출고 ${skFmt(so)}</td></tr>`:''}</tbody>`;
+      ||`<tr><td colspan="${12+skPestCols()}" style="padding:20px;color:#999;">내역이 없습니다</td></tr>`}
+    ${list.length?`<tr style="background:#f4f8fc;font-weight:800;"><td colspan="${3+skPestCols()}">합계 (${list.length}건)</td><td colspan="${ce?9:8}" class="l">입고 ${skFmt(si)} · 출고 ${skFmt(so)}</td></tr>`:''}</tbody>`;
 }
 function skEditTx(id){
   const t=_skTx.find(x=>x.id===id); if(!t) return;
