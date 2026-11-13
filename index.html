@@ -10802,6 +10802,7 @@ const APP_CHANGELOG=[
   {date:'2026-11-14',items:[
     '🐞 통계 팀수 차트: 데이터가 한 달치뿐일 때 차트 영역 그리기 오류(콘솔 오류) 수정',
     '🛠 자재입출고 선입선출 계산: 같은 순간에 품목·내역이 바뀌어도 이전 계산값을 쓰지 않도록 보강',
+    '✏️ 입출고 등록(입고): 선택한 품목마다 「단가」 칸 — 입력 화면에서 바로 단가 수정(직전 입고 단가 대비 ▲▼ 표시), 저장 전 단가 확인 팝업에도 그대로 반영 · 입고 금액 합계도 입력 단가로 계산',
     '🏷 재고현황 단가 칸: 단가가 여러 가지면 평균 대신 「단가 ×수량」을 줄마다 표시 · 보기 선택에 「단가 여러 개」 필터 추가 · 재고금액 세부 내역에서 단가별(입고 묶음별) 줄로 나눠 표시',
     '💲 자재입출고 입고 저장 시 「입고 단가 확인」 팝업 — 품목별 직전 입고 단가와 비교해 변동(▲▼ 금액·%) 표시, 그 자리에서 수정 후 저장 · 바뀐 단가는 선택 시 품목 단가(농약·비료·모래는 자재정보 단가도)에 반영',
     '📑 엑셀 일일수불대장: 출고 한 건이 여러 단가에 걸치면 단가별로 줄을 나눠 「선입선출 수량 × 실제 단가」로 표시 (앱 내역은 1건 그대로) · 관리대장 단가는 평균 대신 남은 재고의 실제 입고 단가 · 화면 수불내역도 단가별로 표시',
@@ -16659,6 +16660,21 @@ function skAddMore(){
   setTimeout(()=>{ q.focus(); skSuggest(); },250);
 }
 function skSetSelQty(id,v){ const m=_skMulti.find(x=>x.id===id); if(m) m.qty=v; skSelSummary(); skSelMark(id); }
+/* 입고 단가: 입력 화면에서 바로 수정 (비워 두면 기본값 = 수정 중인 내역 단가 › 직전 입고 단가 › 품목 단가) */
+function skSelDefPrice(id){
+  if(_skEditingTxId){ const o=_skTx.find(t=>t.id===_skEditingTxId); if(o&&o.itemId===id&&o.price!=null&&o.price!=='') return skNum(o.price); }
+  const l=(typeof skLastInPrice==='function')?skLastInPrice(id,_skEditingTxId):null; if(l) return l.price;
+  const it=skItemById(id); return it?skNum(it.price):0;
+}
+function skSelPrice(m){ return (m&&m.price!=null&&m.price!=='')?skNum(m.price):skSelDefPrice(m.id); }
+function skSetSelPrice(id,v){ const m=_skMulti.find(x=>x.id===id); if(m) m.price=v; skSelPriceHint(id); skSelSummary(); }
+function skSelPriceHint(id){
+  const el=document.getElementById('sk-ph-'+id), m=_skMulti.find(x=>x.id===id); if(!el||!m) return;
+  const l=(typeof skLastInPrice==='function')?skLastInPrice(id,_skEditingTxId):null, ref=l?l.price:skNum(skItemById(id)?.price), v=skSelPrice(m);
+  if(m.price===''){ el.innerHTML='<span style="color:#c0392b;">단가 입력</span>'; return; }
+  if(ref && v!==ref){ const d=v-ref; el.innerHTML=`<span style="color:${d>0?'#c0392b':'#185FA5'};">${d>0?'▲':'▼'}${skFmt(Math.abs(d))}</span>`; }
+  else el.innerHTML=`<span style="color:#99a;">${l?'직전과 같음':'품목 단가'}</span>`;
+}
 function skRemoveSel(id){ _skMulti=_skMulti.filter(m=>m.id!==id); skRenderSel(); const b=document.getElementById('sk-e-sugg'); if(b&&b.style.display==='block') skSuggest(); }
 function skSelMark(id){
   const m=_skMulti.find(x=>x.id===id), it=skItemById(id), row=document.getElementById('sk-sel-row-'+id); if(!m||!it||!row) return;
@@ -16670,7 +16686,7 @@ function skSelAvail(id){ let a=skStats()[id].stock; if(_skEditingTxId){ const ol
 function skSelSummary(){
   const el=document.getElementById('sk-e-iteminfo'); if(!el) return;
   if(!_skMulti.length){ el.innerHTML=''; return; }
-  let amt=0, n=0; _skMulti.forEach(m=>{ const it=skItemById(m.id); const q=skNum(m.qty); if(it&&q>0){ amt+=q*skNum(it.price); n++; } });
+  let amt=0, n=0; _skMulti.forEach(m=>{ const it=skItemById(m.id); const q=skNum(m.qty); if(it&&q>0){ amt+=q*(_skIo==='입고'?skSelPrice(m):skNum(it.price)); n++; } });
   el.innerHTML=`선택 <b>${_skMulti.length}</b>개 · 수량 입력 <b>${n}</b>개 · ${_skIo} 금액 <b style="color:${_skIo==='입고'?'#c0392b':'#185FA5'};">${skFmt(Math.round(amt))}원</b>`;
 }
 function skRenderSel(){
@@ -16678,20 +16694,26 @@ function skRenderSel(){
   const st=skStats();
   _skMulti=_skMulti.filter(m=>skItemById(m.id));
   box.innerHTML=_skMulti.length?`<div style="font-size:11px;color:#556;font-weight:700;margin:2px 0 4px;">선택한 품목 (${_skMulti.length})</div>`+_skMulti.map(m=>{ const it=skItemById(m.id);
-    return `<div id="sk-sel-row-${it.id}" style="display:flex;align-items:center;gap:8px;border:1.5px solid #dfe9f3;border-radius:9px;padding:7px 9px;margin-bottom:5px;background:#fff;">
-      <div style="flex:1;min-width:0;">
+    return `<div id="sk-sel-row-${it.id}" style="display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;border:1.5px solid #dfe9f3;border-radius:9px;padding:7px 9px;margin-bottom:5px;background:#fff;">
+      <div style="flex:1 1 200px;min-width:0;">
         <div style="font-size:13px;font-weight:800;color:#234;word-break:break-all;">${skEsc(it.name)} <span style="font-weight:500;color:#889;font-size:12px;">${skEsc(it.spec||'')}</span></div>
-        ${skPestSub(it,true)}<div style="font-size:11px;color:#667;">단가 <b>${it.price?skFmt(skNum(it.price))+'원':'-'}</b> · 현재고 <b style="color:#185FA5;">${skFmt(st[it.id].stock)}${skEsc(it.unit||'')}</b></div>
+        ${skPestSub(it,true)}<div style="font-size:11px;color:#667;">${_skIo==='입고'?(()=>{ const l=skLastInPrice(it.id,_skEditingTxId); return l?`직전 입고 <b>${skFmt(l.price)}원</b> <span style="color:#99a;">(${skEsc(String(l.date).slice(5))})</span>`:`품목 단가 <b>${it.price?skFmt(skNum(it.price))+'원':'-'}</b>`; })():`단가 <b>${it.price?skFmt(skNum(it.price))+'원':'-'}</b>`} · 현재고 <b style="color:#185FA5;">${skFmt(st[it.id].stock)}${skEsc(it.unit||'')}</b></div>
         <div class="sk-sel-warn" style="display:none;font-size:11px;color:#c0392b;font-weight:700;">현재고보다 많은 출고 수량</div>
       </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-left:auto;">
       <input id="sk-q-${it.id}" type="number" inputmode="decimal" min="0" step="any" placeholder="수량" value="${skEsc(m.qty)}" oninput="skSetSelQty('${it.id}',this.value)"
         style="width:78px;font-size:14px;padding:7px 8px;border:1.5px solid #cfdcea;border-radius:8px;text-align:right;flex-shrink:0;">
       <span style="font-size:12px;color:#667;min-width:22px;flex-shrink:0;">${skEsc(it.unit||'')}</span>
+      ${_skIo==='입고'?`<div style="display:flex;flex-direction:column;align-items:flex-end;flex-shrink:0;">
+        <div style="display:flex;align-items:center;gap:3px;"><span style="font-size:10.5px;color:#a8261b;font-weight:700;">단가</span><input id="sk-p-${it.id}" type="number" inputmode="numeric" min="0" step="any" placeholder="단가" value="${m.price!=null?skEsc(m.price):skSelDefPrice(it.id)||''}" oninput="skSetSelPrice('${it.id}',this.value)"
+          style="width:96px;font-size:13px;padding:6px 7px;border:1.5px solid #e6b0aa;border-radius:8px;text-align:right;font-weight:700;"><span style="font-size:11px;color:#667;">원</span></div>
+        <div id="sk-ph-${it.id}" style="font-size:10px;font-weight:700;margin-top:1px;"></div></div>`:''}
       <button onclick="skRemoveSel('${it.id}')" title="선택 해제" style="border:none;background:none;color:#c0392b;font-size:16px;cursor:pointer;flex-shrink:0;padding:2px 4px;">✕</button>
+      </div>
     </div>`; }).join(''):'';
   if(_skMulti.length) box.innerHTML+=`<button class="sk-btn" onclick="skAddMore()" style="width:100%;margin-top:2px;padding:8px;border:1.5px dashed #185FA5;color:#185FA5;background:#f4f8fc;font-weight:800;">＋ 제품 추가</button>`;
   { const q=document.getElementById('sk-e-item'); if(q) q.placeholder=_skMulti.length?'다른 제품을 검색해 추가 (쉼표·띄어쓰기로 여러 개)':'예: 레듀샤, G85, 새들티 (쉼표·띄어쓰기로 여러 개 검색)'; }
-  _skMulti.forEach(m=>skSelMark(m.id));
+  _skMulti.forEach(m=>{ skSelMark(m.id); if(_skIo==='입고') skSelPriceHint(m.id); });
   skSelSummary();
 }
 function skShowItemInfo(){ skRenderSel(); }
@@ -16722,7 +16744,7 @@ function skAskInPrices(rows){
   return new Promise(res=>{
     const old=_skEditingTxId?_skTx.find(t=>t.id===_skEditingTxId):null;
     const info=rows.map(r=>{ const last=skLastInPrice(r.it.id,_skEditingTxId); const ref=last?last.price:skNum(r.it.price);
-      const cur=(old&&old.itemId===r.it.id&&old.price!=null&&old.price!=='')?skNum(old.price):ref; return {r,last,ref,cur}; });
+      const cur=r.price!=null?r.price:(old&&old.itemId===r.it.id&&old.price!=null&&old.price!=='')?skNum(old.price):ref; return {r,last,ref,cur}; });
     const w=document.createElement('div'); w.id='sk-inprice';
     w.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10300;display:flex;align-items:center;justify-content:center;padding:14px;';
     w.innerHTML=`<div style="background:#fff;border-radius:14px;max-width:560px;width:100%;max-height:92vh;overflow:auto;box-shadow:0 10px 40px rgba(0,0,0,.3);">
@@ -16776,7 +16798,7 @@ async function skSaveTx(){
   if(!_skMulti.length){showToast('제품을 검색해서 선택해 주세요');return;}
   const date=document.getElementById('sk-e-date').value;
   if(!date){showToast('일자를 입력해 주세요');return;}
-  const rows=_skMulti.map(m=>({it:skItemById(m.id),qty:skNum(m.qty)})).filter(r=>r.it);
+  const rows=_skMulti.map(m=>({it:skItemById(m.id),qty:skNum(m.qty),price:(m.price!=null&&m.price!=='')?skNum(m.price):null})).filter(r=>r.it);
   const noQty=rows.filter(r=>!(r.qty>0));
   if(noQty.length){ showToast(`수량을 입력해 주세요: ${noQty.map(r=>r.it.name).slice(0,3).join(', ')}${noQty.length>3?' 외 '+(noQty.length-3)+'개':''}`); const f=document.getElementById('sk-q-'+noQty[0].it.id); if(f) f.focus(); return; }
   if(_skIo==='출고'){
