@@ -7944,7 +7944,7 @@ function renderStats(){
       cGrid+=`<text x="${CPL-6}" y="${(gy+3).toFixed(1)}" font-size="9" fill="#bbb" text-anchor="end">${Math.round(gv)}</text>`;
     }
     /* 곡선 아래 영역 채우기(그라데이션) */
-    const areaPath=`${smoothPath(pts)} L${pts[n-1].x.toFixed(1)},${(CPT+ccH).toFixed(1)} L${pts[0].x.toFixed(1)},${(CPT+ccH).toFixed(1)} Z`;
+    const areaPath=n>=2?`${smoothPath(pts)} L${pts[n-1].x.toFixed(1)},${(CPT+ccH).toFixed(1)} L${pts[0].x.toFixed(1)},${(CPT+ccH).toFixed(1)} Z`:'';   /* 한 달치뿐이면 영역 없음 */
     const linePath=smoothPath(pts);
     const dots=pts.map(p=>{
       const avg=p.m.days>0?(p.m.total/p.m.days).toFixed(1):0;
@@ -10800,6 +10800,9 @@ function checkBackupReminder(){
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
   {date:'2026-11-14',items:[
+    '🐞 통계 팀수 차트: 데이터가 한 달치뿐일 때 차트 영역 그리기 오류(콘솔 오류) 수정',
+    '🛠 자재입출고 선입선출 계산: 같은 순간에 품목·내역이 바뀌어도 이전 계산값을 쓰지 않도록 보강',
+    '📤 자재입출고 엑셀 내보내기도 선입선출 금액으로 — 관리대장 출고금액·재고금액, 일일수불대장 출고 단가·금액을 앱 계산값으로 채움 (기본 형식은 「재고금액」 칸 추가, 양식 그대로 내보내기는 해당 함수 칸만 숫자로)',
     '⚠️ 작업내용 표: 휴무·연차인 사람이 작업자 칸에 들어가 있으면 칩을 빨갛게 표시하고 칩 안에 「⚠ 이름 휴무/연차」 표시 (작업자 섹션 체크 즉시 반영)',
   ]},
   {date:'2026-11-13',items:[
@@ -17043,7 +17046,8 @@ let _skFifoCache=null, _skFifoSig='';
 function skCarryPrice(it){ const v=it&&it.carryPrice; return (v!=null&&v!=='')?skNum(v):skNum(it&&it.price); }
 function skFifo(){
   /* 한 번 화면을 그리는 동안(같은 작업 순서 안)에는 계산 결과를 재사용, 다음 순서에서 새로 계산 */
-  if(_skFifoCache && _skFifoSig==='live') return _skFifoCache;
+  /* 목록이 바뀌었으면(배열 교체·개수 변화) 같은 순서 안이라도 다시 계산 */
+  if(_skFifoCache && _skFifoSig==='live' && _skFifoCache.tx===_skTx && _skFifoCache.it===_skItems && _skFifoCache.n===_skTx.length+'/'+_skItems.length) return _skFifoCache;
   _skFifoSig='live'; setTimeout(()=>{ _skFifoSig=''; },0);
   const items={}, outCost={};
   _skItems.forEach(it=>{ const c=skNum(it.carry); items[it.id]={lots:c>0?[{qty:c,price:skCarryPrice(it),date:'이월'}]:[],deficit:c<0?-c:0,lastPrice:skCarryPrice(it)}; });
@@ -17061,7 +17065,7 @@ function skFifo(){
     }
   });
   Object.values(items).forEach(r=>{ r.amt=r.lots.reduce((a,l)=>a+l.qty*l.price,0); r.qty=r.lots.reduce((a,l)=>a+l.qty,0); r.unit=r.qty>0?r.amt/r.qty:0; r.prices=[...new Set(r.lots.map(l=>l.price))]; });
-  _skFifoCache={items,outCost};
+  _skFifoCache={items,outCost,tx:_skTx,it:_skItems,n:_skTx.length+'/'+_skItems.length};
   return _skFifoCache;
 }
 function skStockAmt(id){ const r=skFifo().items[id]; return r?r.amt:0; }
@@ -17316,7 +17320,9 @@ function _tplFillTable(sheetXml,tableXml,data,minTail){
   /* 표 크기는 양식 크기를 유지(내역이 양식 줄 수를 넘을 때만 늘림) — 표 범위를 직접 가리키는 다른 수식이 깨지지 않도록 */
   const oldN=oldEnd-first+1;
   const N=Math.max(1,oldN,data.length+(minTail||0)), newEnd=first+N-1;
-  const cellXml=(c,r,val,blank)=>{ const p=proto[c], R=_tplColStr(c)+r, s=p.s!=null?` s="${p.s}"`:'', cm=p.cm!=null?` cm="${p.cm}"`:'';
+  const cellXml=(c,r,val,blank,fv)=>{ const p=proto[c], R=_tplColStr(c)+r, s=p.s!=null?` s="${p.s}"`:'', cm=p.cm!=null?` cm="${p.cm}"`:'';
+    /* 앱이 계산한 값(선입선출 금액 등)은 함수 칸이라도 숫자로 넣음 */
+    if(fv && Object.prototype.hasOwnProperty.call(fv,p.head)){ const v=fv[p.head]; if(v==null||v==='') return `<c r="${R}"${s}/>`; return (typeof v==='number'&&isFinite(v))?`<c r="${R}"${s}><v>${v}</v></c>`:`<c r="${R}"${s} t="inlineStr"><is><t xml:space="preserve">${_tplEsc(v)}</t></is></c>`; }
     if(p.isF&&blank&&!tailF) return `<c r="${R}"${s}/>`;
     if(p.isF) return `<c r="${R}"${s}${cm}><f${p.arr?` t="array" ref="${R}"`:''}>${p.fText}</f></c>`;
     if(val==null||val==='') return `<c r="${R}"${s}/>`;
@@ -17327,7 +17333,7 @@ function _tplFillTable(sheetXml,tableXml,data,minTail){
     if(r<=newEnd){
       if(!o){ o={attrs:protoRow,cells:new Map()}; rows.set(r,o); } else o.attrs=protoRow;
       const d=data[r-first]; const blank=!d;
-      for(let c=c0;c<=c1;c++) o.cells.set(c,cellXml(c,r,(d||{})[proto[c].head],blank));
+      for(let c=c0;c<=c1;c++) o.cells.set(c,cellXml(c,r,(d||{})[proto[c].head],blank,d&&d.__fv));
     } else if(o){ for(let c=c0;c<=c1;c++) o.cells.delete(c); }
   }
   let maxR=1,maxC=1; rows.forEach((o,r)=>{ if(o.cells.size){ maxR=Math.max(maxR,r); maxC=Math.max(maxC,...o.cells.keys()); } });
@@ -17399,6 +17405,12 @@ async function skFillTemplate(buf,items,tx,XLSXlib,JSZipLib){
     results.push({T:T_ITEMS,data,minTail:0});
   }
   /* 2) 관리대장: 양식 순서 유지 · 상표명/제품명과 이월재고만 앱 값, 나머지 입력 칸(구분·세목 등)은 양식 값 */
+  /* 선입선출 금액 (화면과 같은 계산) — 관리대장 출고금액·재고금액, 일일수불 출고 단가·금액에 숫자로 넣음 */
+  const _ff=(typeof skFifo==='function')?skFifo():null;
+  const _outSum={}; if(_ff) tx.forEach(t=>{ if(t.io!=='입고') _outSum[t.itemId]=(_outSum[t.itemId]||0)+(_ff.outCost[t.id]||0); });
+  const ledFv=(H,it)=>{ if(!_ff||!it) return null; const fv={}; const r=_ff.items[it.id];
+    H.forEach(h=>{ const k=hk(h).replace(/\s/g,''); if(k==='출고금액') fv[h]=Math.round(_outSum[it.id]||0); else if(/재고금액|현재고금액|재고액/.test(k)) fv[h]=Math.round(r?r.amt:0); });
+    return Object.keys(fv).length?fv:null; };
   if(T_LED){
     const g=geo(T_LED), H=T_LED.heads, sn=T_LED.sheet.name, ni=nameIdxOf(T_LED), ci=H.findIndex(h=>hk(h).startsWith('전년도'));
     const used=new Set(), data=[], def={};
@@ -17408,11 +17420,12 @@ async function skFillTemplate(buf,items,tx,XLSXlib,JSZipLib){
       const nm=cellV(sn,r,g.c0+ni); const it=byKey[key(nm)];
       if(!nm||!it||used.has(it.id)) continue; used.add(it.id);
       const o={}; H.forEach((h,i)=>{ if(i===ni) o[h]=it.name; else if(i===ci){ const tv=cellV(sn,r,g.c0+ci); o[h]=(tv===''||tv==null)&&!num(it.carry)?'':num(it.carry); } else o[h]=cellV(sn,r,g.c0+i); });
+      { const fv=ledFv(H,it); if(fv) o.__fv=fv; }
       data.push(o);
     }
     /* 새 품목(이월재고나 입출고가 있는 것만) — 구분·세목처럼 반복되는 입력값은 양식 첫 값으로 채움 */
     const defKeys=H.filter((h,i)=>i!==ni&&i!==ci&&/^(구분|세목)/.test(hk(h)));
-    items.filter(it=>!used.has(it.id)&&(num(it.carry)||usedIds.has(it.id))).forEach(it=>{ const o={}; defKeys.forEach(h=>o[h]=def[h]||''); o[H[ni]]=it.name; if(ci>=0)o[H[ci]]=num(it.carry); data.push(o); });
+    items.filter(it=>!used.has(it.id)&&(num(it.carry)||usedIds.has(it.id))).forEach(it=>{ const o={}; defKeys.forEach(h=>o[h]=def[h]||''); o[H[ni]]=it.name; if(ci>=0)o[H[ci]]=num(it.carry); { const fv=ledFv(H,it); if(fv) o.__fv=fv; } data.push(o); });
     results.push({T:T_LED,data,minTail:0});
   }
   /* 3) 일일수불 표: 일자순 앱 내역 전체 — 사용량/㎡ 같은 그 밖의 입력 칸은 가져올 때 보관한 값 */
@@ -17424,7 +17437,11 @@ async function skFillTemplate(buf,items,tx,XLSXlib,JSZipLib){
     /* 줄 순서: 마지막으로 가져온 엑셀의 순서 그대로, 그 뒤 앱에서 입력한 내역은 입력 순서대로 이어 붙임 */
     const data=[...tx].sort((a,b)=>(a.ts||0)-(b.ts||0)||String(a.date||'9999').localeCompare(String(b.date||'9999'))).map(t=>{ const o={};
       H.forEach(h=>{ const v=xv(t.x,h); if(v!==undefined) o[h]=v; });
-      if(hD)o[hD]=serial(t.date); if(hN)o[hN]=idName[t.itemId]||t.itemName||''; if(hP)o[hP]=t.place||''; if(hIO)o[hIO]=t.io; if(hQ)o[hQ]=num(t.qty); if(hR)o[hR]=t.note||''; return o; });
+      if(hD)o[hD]=serial(t.date); if(hN)o[hN]=idName[t.itemId]||t.itemName||''; if(hP)o[hP]=t.place||''; if(hIO)o[hIO]=t.io; if(hQ)o[hQ]=num(t.qty); if(hR)o[hR]=t.note||'';
+      if(_ff && t.io!=='입고' && _ff.outCost[t.id]!=null){ const q=num(t.qty), c=_ff.outCost[t.id], fv={};
+        H.forEach(h=>{ const k=hk(h).replace(/\s/g,''); if(k==='단가') fv[h]=q>0?Math.round(c/q):''; else if(k==='금액'||k==='출고금액') fv[h]=Math.round(c); });
+        if(Object.keys(fv).length) o.__fv=fv; }
+      return o; });
     results.push({T:T_DAY,data,minTail:3});
   }
   for(const x of results){
@@ -17631,18 +17648,20 @@ async function skExportXlsx(){
     await skLoadXlsx();
     const st=skStats(), yr=skToday().slice(0,4);
     const items=[..._skItems].sort((a,b)=>st[b.id].stock-st[a.id].stock||a.name.localeCompare(b.name,'ko'));
-    const led=[[`${SK_LEDGERS[_skLedger].label} 관리 대장(${yr}년도)`],['구 분','제  품  명','규 격','용   도','단 위','현재수량','입고수량','출고수량','최종입고','최종출고','전년도  이월재고','단 가','입고금액','출고금액','비  고  (납품업체)']];
-    items.forEach(it=>{const s=st[it.id],p=skNum(it.price);led.push(['구매자재',it.name,it.spec||'',it.use||'',it.unit||'',s.stock,s.in,s.out,s.lastIn,s.lastOut,skNum(it.carry),p,s.in*p,s.out*p,it.vendor||'']);});
+    /* 금액은 선입선출(화면과 같은 계산): 입고금액=입고 수량×입고단가 합, 출고금액=선입선출 원가 합, 재고금액=남은 재고의 입고단가 합, 단가=남은 재고 단가(여러 가지면 평균) */
+    const ff=skFifo(), inA={}, outA={}; _skTx.forEach(t=>{ const m=t.io==='입고'?inA:outA; m[t.itemId]=(m[t.itemId]||0)+skTxCost(t); });
+    const led=[[`${SK_LEDGERS[_skLedger].label} 관리 대장(${yr}년도)`],['구 분','제  품  명','규 격','용   도','단 위','현재수량','입고수량','출고수량','최종입고','최종출고','전년도  이월재고','단 가','입고금액','출고금액','재고금액','비  고  (납품업체)']];
+    items.forEach(it=>{const s=st[it.id],r=ff.items[it.id]||{},p=r.qty>0?Math.round(r.unit):skNum(it.price);led.push(['구매자재',it.name,it.spec||'',it.use||'',it.unit||'',s.stock,s.in,s.out,s.lastIn,s.lastOut,skNum(it.carry),p,Math.round(inA[it.id]||0),Math.round(outA[it.id]||0),Math.round(r.amt||0),it.vendor||'']);});
     const tx=[..._skTx].sort((a,b)=>(a.date||'').localeCompare(b.date||'')||(a.ts||0)-(b.ts||0));
     const run={}; _skItems.forEach(it=>run[it.id]=skNum(it.carry));
     const daily=[[`${SK_LEDGERS[_skLedger].label} 일일수불대장(${yr}년도)`],['일자','제  품  명','규격','사 용 처','입출고','단 위','수량','비 고','현재고','단가','금액','입력자']];
-    tx.forEach(t=>{const it=skItemById(t.itemId)||{};const q=skNum(t.qty); if(run[t.itemId]!=null) run[t.itemId]+= t.io==='입고'?q:-q; const p=skTxPrice(t);
-      daily.push([t.date,it.name||t.itemName,it.spec||t.spec||'',t.place||'',t.io,it.unit||t.unit||'',q,t.note||'',run[t.itemId]??'',p||'',p?p*q:'',String(t.by||'').split('@')[0]]);});
+    tx.forEach(t=>{const it=skItemById(t.itemId)||{};const q=skNum(t.qty); if(run[t.itemId]!=null) run[t.itemId]+= t.io==='입고'?q:-q; const p=Math.round(skTxUnit(t)), a=Math.round(skTxCost(t));
+      daily.push([t.date,it.name||t.itemName,it.spec||t.spec||'',t.place||'',t.io,it.unit||t.unit||'',q,t.note||'',run[t.itemId]??'',p||'',a||'',String(t.by||'').split('@')[0]]);});
     const mst=[['S/K 품목 관리'],['구 분','규 격','단 위','단 가','용  도','비 고(납품업체)']];
     [..._skItems].sort((a,b)=>a.name.localeCompare(b.name,'ko')).forEach(it=>mst.push([it.name,it.spec||'',it.unit||'',skNum(it.price)||'',it.use||'',it.vendor||'']));
     const wb=XLSX.utils.book_new();
     const mk=(aoa,w)=>{const ws=XLSX.utils.aoa_to_sheet(aoa); ws['!cols']=w.map(x=>({wch:x})); ws['!merges']=[{s:{r:0,c:0},e:{r:0,c:Math.min(aoa[1].length-1,6)}}]; return ws;};
-    XLSX.utils.book_append_sheet(wb,mk(led,[9,30,14,30,6,9,9,9,11,11,10,10,11,11,16]),`${yr}년${SK_LEDGERS[_skLedger].label.replace(/\//g,'')}관리대장`);
+    XLSX.utils.book_append_sheet(wb,mk(led,[9,30,14,30,6,9,9,9,11,11,10,10,11,11,11,16]),`${yr}년${SK_LEDGERS[_skLedger].label.replace(/\//g,'')}관리대장`);
     XLSX.utils.book_append_sheet(wb,mk(daily,[11,30,14,22,7,6,7,22,8,9,10,10]),'일일수불대장');
     XLSX.utils.book_append_sheet(wb,mk(mst,[30,14,6,10,30,16]),'품목-스프링클러');
     XLSX.writeFile(wb,`${yr.slice(2)}년도 ${SK_LEDGERS[_skLedger].label} 사용장부_${skToday()}.xlsx`);
