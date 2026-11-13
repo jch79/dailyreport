@@ -10802,6 +10802,8 @@ const APP_CHANGELOG=[
   {date:'2026-11-14',items:[
     '🐞 통계 팀수 차트: 데이터가 한 달치뿐일 때 차트 영역 그리기 오류(콘솔 오류) 수정',
     '🛠 자재입출고 선입선출 계산: 같은 순간에 품목·내역이 바뀌어도 이전 계산값을 쓰지 않도록 보강',
+    '💲 자재입출고 입고 저장 시 「입고 단가 확인」 팝업 — 품목별 직전 입고 단가와 비교해 변동(▲▼ 금액·%) 표시, 그 자리에서 수정 후 저장 · 바뀐 단가는 선택 시 품목 단가(농약·비료·모래는 자재정보 단가도)에 반영',
+    '📑 엑셀 일일수불대장: 출고 한 건이 여러 단가에 걸치면 단가별로 줄을 나눠 「선입선출 수량 × 실제 단가」로 표시 (앱 내역은 1건 그대로) · 관리대장 단가는 평균 대신 남은 재고의 실제 입고 단가 · 화면 수불내역도 단가별로 표시',
     '📤 자재입출고 엑셀 내보내기도 선입선출 금액으로 — 관리대장 출고금액·재고금액, 일일수불대장 출고 단가·금액을 앱 계산값으로 채움 (기본 형식은 「재고금액」 칸 추가, 양식 그대로 내보내기는 해당 함수 칸만 숫자로)',
     '⚠️ 작업내용 표: 휴무·연차인 사람이 작업자 칸에 들어가 있으면 칩을 빨갛게 표시하고 칩 안에 「⚠ 이름 휴무/연차」 표시 (작업자 섹션 체크 즉시 반영)',
   ]},
@@ -16706,6 +16708,67 @@ function skCancelEntry(){
   const back=(_skPrevView&&_skPrevView!=='entry')?_skPrevView:'stock';
   skView(back);
 }
+/* ── 입고 저장 전 단가 확인 ──
+   선입선출 금액은 입고 단가로 정해지므로, 입고를 저장할 때마다 품목별 「직전 입고 단가」와 「이번 입고 단가」를 보여주고
+   변동이 있으면 그 자리에서 고쳐 저장. 바뀐 단가는 선택하면 품목 단가(농약·비료·모래는 자재정보 단가도)에 반영 */
+function skLastInPrice(itemId,excludeId){
+  const l=_skTx.filter(t=>t.itemId===itemId&&t.io==='입고'&&t.id!==excludeId&&t.price!=null&&t.price!=='')
+    .sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.ts||0)-(a.ts||0))[0];
+  return l?{price:skNum(l.price),date:l.date}:null;
+}
+function skAskInPrices(rows){
+  return new Promise(res=>{
+    const old=_skEditingTxId?_skTx.find(t=>t.id===_skEditingTxId):null;
+    const info=rows.map(r=>{ const last=skLastInPrice(r.it.id,_skEditingTxId); const ref=last?last.price:skNum(r.it.price);
+      const cur=(old&&old.itemId===r.it.id&&old.price!=null&&old.price!=='')?skNum(old.price):ref; return {r,last,ref,cur}; });
+    const w=document.createElement('div'); w.id='sk-inprice';
+    w.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10300;display:flex;align-items:center;justify-content:center;padding:14px;';
+    w.innerHTML=`<div style="background:#fff;border-radius:14px;max-width:560px;width:100%;max-height:92vh;overflow:auto;box-shadow:0 10px 40px rgba(0,0,0,.3);">
+      <div style="background:linear-gradient(135deg,#a8261b,#d9534f);color:#fff;padding:12px 16px;font-size:14px;font-weight:800;">⬇ 입고 단가 확인</div>
+      <div style="padding:10px 16px 2px;font-size:12px;color:#444;line-height:1.6;">재고금액·출고금액(선입선출)은 입고 단가로 계산됩니다. <b>단가가 바뀌었으면 「이번 입고 단가」를 고쳐</b> 저장하세요.</div>
+      <div style="padding:6px 16px;overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:420px;">
+        <thead><tr style="background:#f6f6f6;"><th style="padding:6px;text-align:left;">품목</th><th style="padding:6px;">수량</th><th style="padding:6px;">직전 입고 단가</th><th style="padding:6px;">이번 입고 단가</th></tr></thead>
+        <tbody>${info.map((x,i)=>`<tr style="border-bottom:1px solid #eee;">
+          <td style="padding:6px;"><b>${skEsc(x.r.it.name)}</b><div style="font-size:10.5px;color:#889;">${skEsc(x.r.it.spec||'')}</div></td>
+          <td style="padding:6px;text-align:center;white-space:nowrap;">${skFmt(x.r.qty)} ${skEsc(x.r.it.unit||'')}</td>
+          <td style="padding:6px;text-align:center;white-space:nowrap;">${x.ref?skFmt(x.ref)+'원':'<span style="color:#c0392b;">없음</span>'}<div style="font-size:10px;color:#99a;">${x.last?skEsc(x.last.date)+' 입고':'품목 단가'}</div></td>
+          <td style="padding:6px;text-align:center;"><input type="number" min="0" inputmode="numeric" data-i="${i}" value="${x.cur||''}" placeholder="단가" style="width:110px;padding:6px;border:1.5px solid #ccc;border-radius:7px;font-size:14px;font-weight:700;text-align:right;"><div data-d="${i}" style="font-size:10.5px;font-weight:700;margin-top:2px;"></div></td></tr>`).join('')}</tbody></table></div>
+      <label id="sk-ip-updwrap" style="display:none;align-items:center;gap:6px;margin:4px 16px 0;font-size:12px;font-weight:700;color:#185FA5;cursor:pointer;"><input type="checkbox" id="sk-ip-upd" checked style="width:15px;height:15px;"> 바뀐 단가를 품목 단가${(_skLedger==='pest'||_skLedger==='fert'||_skLedger==='sand')?'·자재정보 단가':''}에도 반영</label>
+      <div style="display:flex;gap:8px;padding:12px 16px 14px;">
+        <button id="sk-ip-cancel" style="flex:1;padding:10px;border-radius:9px;border:1.5px solid #ccc;background:#fff;color:#555;font-weight:700;font-size:13px;cursor:pointer;">취소 (다시 확인)</button>
+        <button id="sk-ip-ok" style="flex:2;padding:10px;border-radius:9px;border:none;background:#a8261b;color:#fff;font-weight:800;font-size:13px;cursor:pointer;">단가 확인 · 저장</button>
+      </div></div>`;
+    document.body.appendChild(w);
+    const upd=()=>{ let anyCh=false;
+      info.forEach((x,i)=>{ const inp=w.querySelector(`input[data-i="${i}"]`), d=w.querySelector(`[data-d="${i}"]`), v=skNum(inp.value);
+        if(inp.value===''){ d.textContent='단가를 입력하세요'; d.style.color='#c0392b'; inp.style.borderColor='#e57373'; return; }
+        if(x.ref && v!==x.ref){ const df=v-x.ref; d.textContent=`${df>0?'▲':'▼'} ${skFmt(Math.abs(df))}원 (${(df/x.ref*100).toFixed(1)}%) 변동`; d.style.color=df>0?'#c0392b':'#185FA5'; inp.style.borderColor=df>0?'#e57373':'#85B7EB'; }
+        else { d.textContent=x.ref?'변동 없음':'새 단가'; d.style.color='#2d6a1e'; inp.style.borderColor='#97C459'; }
+        if(v!==skNum(x.r.it.price)) anyCh=true; });
+      w.querySelector('#sk-ip-updwrap').style.display=anyCh?'flex':'none'; };
+    w.querySelectorAll('input[data-i]').forEach(el=>el.addEventListener('input',upd)); upd();
+    w.querySelector('#sk-ip-cancel').onclick=()=>{ w.remove(); res(null); };
+    w.querySelector('#sk-ip-ok').onclick=()=>{
+      const prices={}; let miss=null;
+      info.forEach((x,i)=>{ const inp=w.querySelector(`input[data-i="${i}"]`); if(inp.value===''&&!miss) miss=inp; prices[x.r.it.id]=skNum(inp.value); });
+      if(miss && !confirm('단가가 비어 있는 품목이 있습니다. 단가 0원으로 저장할까요?\n(재고금액이 0원으로 계산됩니다)')){ miss.focus(); return; }
+      const updItems=w.querySelector('#sk-ip-updwrap').style.display!=='none' && w.querySelector('#sk-ip-upd').checked;
+      w.remove(); res({prices,updItems});
+    };
+    setTimeout(()=>{ const f=w.querySelector('input[data-i]'); if(f){ f.focus(); f.select(); } },60);
+  });
+}
+/* 바뀐 입고 단가를 품목 단가(+자재정보 단가)에 반영 */
+async function skApplyInPrices(rows,prices){
+  const ch=rows.filter(r=>prices[r.it.id]!=null && prices[r.it.id]!==skNum(r.it.price));
+  if(!ch.length) return '';
+  if(!skCanMaster()) return ' · 품목 단가 반영은 품목 관리 권한이 없어 건너뜀';
+  try{ const bt=_fbDb.batch(); ch.forEach(r=>bt.set(_fbDb.collection(SK_COL_ITEMS).doc(r.it.id),{price:prices[r.it.id],updatedAt:firebase.firestore.FieldValue.serverTimestamp()},{merge:true})); await bt.commit(); }
+  catch(e){ console.warn(e); return ' · 품목 단가 반영 실패'; }
+  let mat=0;
+  try{ if(typeof getListByType==='function' && ['pest','fert','sand'].includes(_skLedger)){ const l=getListByType(_skLedger); ch.forEach(r=>{ const m=l.find(z=>z&&skNameKey(z.name)===skNameKey(r.it.name)); if(m){ m.price=String(prices[r.it.id]); mat++; } }); if(mat){ saveListByType(_skLedger,l); if(typeof renderMaterialsTable==='function') renderMaterialsTable(); } } }catch(e){ console.warn(e); }
+  return ` · 품목 단가 ${ch.length}개 갱신${mat?` (자재정보 ${mat}개 포함)`:''}`;
+}
 async function skSaveTx(){
   if(!skCanEdit()){showToast('입출고 등록 권한이 없습니다');return;}
   if(!_skMulti.length){showToast('제품을 검색해서 선택해 주세요');return;}
@@ -16718,9 +16781,12 @@ async function skSaveTx(){
     const over=rows.filter(r=>r.qty>skSelAvail(r.it.id));
     if(over.length && !confirm(`현재고보다 많은 출고 수량이 있습니다.\n\n${over.map(r=>`· ${r.it.name}: 출고 ${skFmt(r.qty)} / 현재고 ${skFmt(skSelAvail(r.it.id))}`).join('\n')}\n\n그래도 저장할까요?`)) return;
   }
+  /* 입고: 저장 전에 단가 변동 확인 */
+  let inP=null;
+  if(_skIo==='입고'){ inP=await skAskInPrices(rows); if(!inP) return; }
   const place=document.getElementById('sk-e-place').value.trim(), note=document.getElementById('sk-e-note').value.trim();
   const mk=r=>({date,itemId:r.it.id,itemName:r.it.name,spec:r.it.spec||'',unit:r.it.unit||'',io:_skIo,qty:r.qty,place,note,
-    price:skNum(r.it.price),vendor:r.it.vendor||'',ledger:_skLedger,by:_fbUser.email,updatedAt:firebase.firestore.FieldValue.serverTimestamp()});
+    price:(inP&&inP.prices[r.it.id]!=null)?inP.prices[r.it.id]:skNum(r.it.price),vendor:r.it.vendor||'',ledger:_skLedger,by:_fbUser.email,updatedAt:firebase.firestore.FieldValue.serverTimestamp()});
   const btn=document.getElementById('sk-e-save'); btn.disabled=true;
   try{
     if(_skEditingTxId){
@@ -16730,12 +16796,14 @@ async function skSaveTx(){
       bt.set(_fbDb.collection(SK_COL_TX).doc(_skEditingTxId),mk(rows[ri]),{merge:true});
       rows.forEach((r,i)=>{ if(i!==ri) bt.set(_fbDb.collection(SK_COL_TX).doc(),{...mk(r),ts:now+i,createdAt:firebase.firestore.FieldValue.serverTimestamp()}); });
       await bt.commit();
-      showToast(rows.length===1?`✅ ${rows[0].it.name} ${_skIo} ${skFmt(rows[0].qty)}${rows[0].it.unit||''} 수정됨`:`✅ 1건 수정 + ${rows.length-1}개 품목 ${_skIo} 추가 저장됨`);
+      const pm=(inP&&inP.updItems)?await skApplyInPrices(rows,inP.prices):'';
+      showToast((rows.length===1?`✅ ${rows[0].it.name} ${_skIo} ${skFmt(rows[0].qty)}${rows[0].it.unit||''} 수정됨`:`✅ 1건 수정 + ${rows.length-1}개 품목 ${_skIo} 추가 저장됨`)+pm,4000);
     } else {
       const now=Date.now(), bt=_fbDb.batch();
       rows.forEach((r,i)=>bt.set(_fbDb.collection(SK_COL_TX).doc(),{...mk(r),ts:now+i,createdAt:firebase.firestore.FieldValue.serverTimestamp()}));
       await bt.commit();
-      showToast(rows.length===1?`✅ ${rows[0].it.name} ${_skIo} ${skFmt(rows[0].qty)}${rows[0].it.unit||''} 저장됨`:`✅ ${rows.length}개 품목 ${_skIo} 저장됨`);
+      const pm=(inP&&inP.updItems)?await skApplyInPrices(rows,inP.prices):'';
+      showToast((rows.length===1?`✅ ${rows[0].it.name} ${_skIo} ${skFmt(rows[0].qty)}${rows[0].it.unit||''} 저장됨`:`✅ ${rows.length}개 품목 ${_skIo} 저장됨`)+pm,4000);
     }
     const keepDate=date, keepIo=_skIo; skResetEntry(); document.getElementById('sk-e-date').value=keepDate; skSetIo(keepIo);
   }catch(e){console.warn(e);showToast('⚠️ 저장 실패: '+(e.message||e));}
@@ -16766,7 +16834,7 @@ function skRenderLog(){
   const ce=skCanEdit();
   document.getElementById('sk-log-tbl').innerHTML=`<thead><tr><th>일자</th><th>제품명</th>${skPestTh()}<th>규격</th><th>구분</th><th>수량</th><th>단위</th><th>단가</th><th>사용처</th><th>비고</th><th title="그 입출고 직후 재고">현재고</th><th>입력</th>${ce?'<th></th>':''}</tr></thead><tbody>
     ${list.map(t=>{const it=skItemById(t.itemId);return `<tr><td style="white-space:nowrap;">${skEsc(t.date)}</td><td class="l"><b>${skEsc(it?.name||t.itemName)}</b>${skPestSub(it||{name:t.itemName})}</td>${skPestTd(it||{name:t.itemName})}<td>${skEsc(it?.spec||t.spec||'')}</td>
-      <td><span class="sk-tag ${t.io==='입고'?'in':'out'}">${t.io}</span></td><td><b>${skFmt(skNum(t.qty))}</b></td><td>${skEsc(it?.unit||t.unit||'')}</td><td style="white-space:nowrap;">${skTxUnit(t)?skFmt(Math.round(skTxUnit(t))):''}</td>
+      <td><span class="sk-tag ${t.io==='입고'?'in':'out'}">${t.io}</span></td><td><b>${skFmt(skNum(t.qty))}</b></td><td>${skEsc(it?.unit||t.unit||'')}</td><td style="white-space:nowrap;">${(()=>{ const ps=skTxParts(t); if(ps.length>1) return ps.map(x=>`<div style="font-size:10.5px;line-height:1.35;">${skFmt(x.price)} <span style="color:#889;">×${skFmt(x.qty)}</span></div>`).join(''); return skTxUnit(t)?skFmt(Math.round(skTxUnit(t))):''; })()}</td>
       <td class="l">${skEsc(t.place||'')}</td><td class="l">${skEsc(t.note||'')}</td><td style="white-space:nowrap;font-weight:800;color:${t.id in bal?(bal[t.id]<=0?'#c0392b':'#185FA5'):'#bbb'};">${t.id in bal?skFmt(Math.round(bal[t.id]*1000)/1000):'-'}</td><td style="font-size:10px;color:#99a;">${skEsc(String(t.by||'').split('@')[0])}</td>
       ${ce?`<td style="white-space:nowrap;"><button class="sk-btn" style="padding:3px 7px;font-size:11px;" onclick="skEditTx('${t.id}')">수정</button> <button class="sk-btn" style="padding:3px 7px;font-size:11px;color:#c0392b;border-color:#e6b0aa;" onclick="skDelTx('${t.id}')">삭제</button></td>`:''}</tr>`;}).join('')
       ||`<tr><td colspan="${12+skPestCols()}" style="padding:20px;color:#999;">내역이 없습니다</td></tr>`}
@@ -17049,7 +17117,7 @@ function skFifo(){
   /* 목록이 바뀌었으면(배열 교체·개수 변화) 같은 순서 안이라도 다시 계산 */
   if(_skFifoCache && _skFifoSig==='live' && _skFifoCache.tx===_skTx && _skFifoCache.it===_skItems && _skFifoCache.n===_skTx.length+'/'+_skItems.length) return _skFifoCache;
   _skFifoSig='live'; setTimeout(()=>{ _skFifoSig=''; },0);
-  const items={}, outCost={};
+  const items={}, outCost={}, outParts={};   /* outParts: 출고 한 건이 어느 단가 묶음에서 몇 개씩 빠졌는지 */
   _skItems.forEach(it=>{ const c=skNum(it.carry); items[it.id]={lots:c>0?[{qty:c,price:skCarryPrice(it),date:'이월'}]:[],deficit:c<0?-c:0,lastPrice:skCarryPrice(it)}; });
   [..._skTx].sort((a,b)=>(a.date||'').localeCompare(b.date||'')||(a.ts||0)-(b.ts||0)).forEach(t=>{
     const r=items[t.itemId]; if(!r) return; let q=skNum(t.qty); if(!(q>0)) { if(t.io!=='입고') outCost[t.id]=0; return; }
@@ -17058,19 +17126,24 @@ function skFifo(){
       const fill=Math.min(r.deficit,q); r.deficit-=fill; q-=fill;   /* 마이너스 재고부터 메움 */
       if(q>0) r.lots.push({qty:q,price:pr,date:t.date});
     } else {
-      let cost=0;
-      while(q>1e-9 && r.lots.length){ const l=r.lots[0], u=Math.min(l.qty,q); cost+=u*l.price; l.qty-=u; q-=u; r.lastPrice=l.price; if(l.qty<=1e-9) r.lots.shift(); }
-      if(q>1e-9){ cost+=q*r.lastPrice; r.deficit+=q; }
-      outCost[t.id]=cost;
+      let cost=0; const parts=[]; const addP=(u,pr)=>{ const lp=parts[parts.length-1]; if(lp&&lp.price===pr) lp.qty+=u; else parts.push({qty:u,price:pr}); };
+      while(q>1e-9 && r.lots.length){ const l=r.lots[0], u=Math.min(l.qty,q); cost+=u*l.price; addP(u,l.price); l.qty-=u; q-=u; r.lastPrice=l.price; if(l.qty<=1e-9) r.lots.shift(); }
+      if(q>1e-9){ cost+=q*r.lastPrice; addP(q,r.lastPrice); r.deficit+=q; }
+      parts.forEach(x=>x.qty=Math.round(x.qty*1000)/1000);
+      outCost[t.id]=cost; outParts[t.id]=parts;
     }
   });
   Object.values(items).forEach(r=>{ r.amt=r.lots.reduce((a,l)=>a+l.qty*l.price,0); r.qty=r.lots.reduce((a,l)=>a+l.qty,0); r.unit=r.qty>0?r.amt/r.qty:0; r.prices=[...new Set(r.lots.map(l=>l.price))]; });
-  _skFifoCache={items,outCost,tx:_skTx,it:_skItems,n:_skTx.length+'/'+_skItems.length};
+  _skFifoCache={items,outCost,outParts,tx:_skTx,it:_skItems,n:_skTx.length+'/'+_skItems.length};
   return _skFifoCache;
 }
 function skStockAmt(id){ const r=skFifo().items[id]; return r?r.amt:0; }
 /* 거래 금액: 입고 = 수량×입고단가, 출고 = 선입선출 원가 */
 function skTxCost(t){ if(t.io==='입고') return skTxAmt(t); const c=skFifo().outCost[t.id]; return c!=null?c:skTxAmt(t); }
+/* 출고 한 건의 단가별 나눔 — [{qty,price}] (입고는 한 줄) */
+function skTxParts(t){ if(t.io==='입고') return [{qty:skNum(t.qty),price:skTxPrice(t)}]; const ps=skFifo().outParts[t.id]; return (ps&&ps.length)?ps:[{qty:skNum(t.qty),price:skTxPrice(t)}]; }
+/* 엑셀·화면 표시용 단가: 남은 재고 중 가장 최근 입고 단가(평균 대신 실제 단가) */
+function skStockShowPrice(id,it){ const r=skFifo().items[id]; return (r&&r.lots.length)?r.lots[r.lots.length-1].price:skNum(it&&it.price); }
 function skTxUnit(t){ const q=skNum(t.qty); return t.io==='입고'?skTxPrice(t):(q>0?skTxCost(t)/q:skTxPrice(t)); }
 /* 남은 재고 단가 표시: 한 가지면 그 단가, 여러 가지면 평균 + 「n종」 */
 function skStockUnitHtml(id,it){
@@ -17438,10 +17511,12 @@ async function skFillTemplate(buf,items,tx,XLSXlib,JSZipLib){
     const data=[...tx].sort((a,b)=>(a.ts||0)-(b.ts||0)||String(a.date||'9999').localeCompare(String(b.date||'9999'))).map(t=>{ const o={};
       H.forEach(h=>{ const v=xv(t.x,h); if(v!==undefined) o[h]=v; });
       if(hD)o[hD]=serial(t.date); if(hN)o[hN]=idName[t.itemId]||t.itemName||''; if(hP)o[hP]=t.place||''; if(hIO)o[hIO]=t.io; if(hQ)o[hQ]=num(t.qty); if(hR)o[hR]=t.note||'';
-      if(_ff && t.io!=='입고' && _ff.outCost[t.id]!=null){ const q=num(t.qty), c=_ff.outCost[t.id], fv={};
-        H.forEach(h=>{ const k=hk(h).replace(/\s/g,''); if(k==='단가') fv[h]=q>0?Math.round(c/q):''; else if(k==='금액'||k==='출고금액') fv[h]=Math.round(c); });
-        if(Object.keys(fv).length) o.__fv=fv; }
-      return o; });
+      /* 출고가 여러 단가에 걸치면 단가별로 줄을 나눠 수량 × 실제 단가 (합계는 선입선출 원가와 같음) */
+      const ps=(_ff && t.io!=='입고' && _ff.outParts[t.id] && _ff.outParts[t.id].length)?_ff.outParts[t.id]:null;
+      if(!ps) return [o];
+      return ps.map(pt=>{ const o2={...o}; if(hQ) o2[hQ]=pt.qty; const fv={};
+        H.forEach(h=>{ const k=hk(h).replace(/\s/g,''); if(k==='단가') fv[h]=pt.price; else if(k==='금액'||k==='출고금액') fv[h]=Math.round(pt.qty*pt.price); });
+        if(Object.keys(fv).length) o2.__fv=fv; return o2; }); }).flat();
     results.push({T:T_DAY,data,minTail:3});
   }
   for(const x of results){
@@ -17648,15 +17723,17 @@ async function skExportXlsx(){
     await skLoadXlsx();
     const st=skStats(), yr=skToday().slice(0,4);
     const items=[..._skItems].sort((a,b)=>st[b.id].stock-st[a.id].stock||a.name.localeCompare(b.name,'ko'));
-    /* 금액은 선입선출(화면과 같은 계산): 입고금액=입고 수량×입고단가 합, 출고금액=선입선출 원가 합, 재고금액=남은 재고의 입고단가 합, 단가=남은 재고 단가(여러 가지면 평균) */
+    /* 금액은 선입선출(화면과 같은 계산): 입고금액=입고 수량×입고단가 합, 출고금액=선입선출 원가 합, 재고금액=남은 재고의 입고단가 합, 단가=남은 재고 중 가장 최근 입고 단가(평균 대신 실제 단가) */
     const ff=skFifo(), inA={}, outA={}; _skTx.forEach(t=>{ const m=t.io==='입고'?inA:outA; m[t.itemId]=(m[t.itemId]||0)+skTxCost(t); });
     const led=[[`${SK_LEDGERS[_skLedger].label} 관리 대장(${yr}년도)`],['구 분','제  품  명','규 격','용   도','단 위','현재수량','입고수량','출고수량','최종입고','최종출고','전년도  이월재고','단 가','입고금액','출고금액','재고금액','비  고  (납품업체)']];
-    items.forEach(it=>{const s=st[it.id],r=ff.items[it.id]||{},p=r.qty>0?Math.round(r.unit):skNum(it.price);led.push(['구매자재',it.name,it.spec||'',it.use||'',it.unit||'',s.stock,s.in,s.out,s.lastIn,s.lastOut,skNum(it.carry),p,Math.round(inA[it.id]||0),Math.round(outA[it.id]||0),Math.round(r.amt||0),it.vendor||'']);});
+    items.forEach(it=>{const s=st[it.id],r=ff.items[it.id]||{},p=skStockShowPrice(it.id,it);led.push(['구매자재',it.name,it.spec||'',it.use||'',it.unit||'',s.stock,s.in,s.out,s.lastIn,s.lastOut,skNum(it.carry),p,Math.round(inA[it.id]||0),Math.round(outA[it.id]||0),Math.round(r.amt||0),it.vendor||'']);});
     const tx=[..._skTx].sort((a,b)=>(a.date||'').localeCompare(b.date||'')||(a.ts||0)-(b.ts||0));
     const run={}; _skItems.forEach(it=>run[it.id]=skNum(it.carry));
     const daily=[[`${SK_LEDGERS[_skLedger].label} 일일수불대장(${yr}년도)`],['일자','제  품  명','규격','사 용 처','입출고','단 위','수량','비 고','현재고','단가','금액','입력자']];
-    tx.forEach(t=>{const it=skItemById(t.itemId)||{};const q=skNum(t.qty); if(run[t.itemId]!=null) run[t.itemId]+= t.io==='입고'?q:-q; const p=Math.round(skTxUnit(t)), a=Math.round(skTxCost(t));
-      daily.push([t.date,it.name||t.itemName,it.spec||t.spec||'',t.place||'',t.io,it.unit||t.unit||'',q,t.note||'',run[t.itemId]??'',p||'',a||'',String(t.by||'').split('@')[0]]);});
+    /* 출고 한 건이 여러 단가에 걸치면(선입선출) 단가별로 줄을 나눠 「수량 × 실제 단가」로 표시 */
+    tx.forEach(t=>{const it=skItemById(t.itemId)||{};
+      skTxParts(t).forEach(pt=>{ const q=pt.qty; if(run[t.itemId]!=null) run[t.itemId]+= t.io==='입고'?q:-q; const p=pt.price;
+        daily.push([t.date,it.name||t.itemName,it.spec||t.spec||'',t.place||'',t.io,it.unit||t.unit||'',q,t.note||'',run[t.itemId]??'',p||'',p?Math.round(p*q):'',String(t.by||'').split('@')[0]]); }); });
     const mst=[['S/K 품목 관리'],['구 분','규 격','단 위','단 가','용  도','비 고(납품업체)']];
     [..._skItems].sort((a,b)=>a.name.localeCompare(b.name,'ko')).forEach(it=>mst.push([it.name,it.spec||'',it.unit||'',skNum(it.price)||'',it.use||'',it.vendor||'']));
     const wb=XLSX.utils.book_new();
