@@ -4891,6 +4891,8 @@ async function fetchWeather(){
   const _wxBtns=[...document.querySelectorAll('button[onclick="fetchWeather()"]')];
   _wxBtns.forEach(b=>{ b.dataset.label=b.innerHTML; b.innerHTML='⏳ 불러오는 중…'; b.disabled=true; b.style.opacity='.7'; });
   showToast(`⏳ ${loc.name} ${tmo}월 ${tdd}일 날씨 불러오는 중… (완료되면 알려드립니다)`,120000);
+  const _wxSnap=()=>{ const o={}; document.querySelectorAll('#panel-write [id^="w-"], #inp-rain, #inp-snow, #inp-wdir').forEach(e=>{ o[e.id]=(e.tagName==='INPUT'||e.tagName==='TEXTAREA')?e.value:e.textContent.trim(); }); return o; };
+  const _wxBefore=_wxSnap();
 
   /* 날씨 라벨 업데이트 */
   const lastFetchEl=document.getElementById('weather-last-fetch');
@@ -5341,7 +5343,9 @@ async function fetchWeather(){
     lastTimeEl.textContent=timeStr;
     lastFetchEl.style.display='block';
 
-    showToast(`✅ ${tmo}월 ${tdd}일 날씨를 불러왔습니다${isPast?' (과거 기상 데이터)':''}`,3500);
+    const _wxAfter=_wxSnap(), _wxCh=Object.keys(_wxAfter).filter(k=>_wxAfter[k]!==_wxBefore[k]).length;
+    if(_wxCh) _formDirty=true;
+    showToast(`✅ ${tmo}월 ${tdd}일 날씨를 불러왔습니다${isPast?' (과거 기상 데이터)':''} · ${_wxCh?`변경 ${_wxCh}개 — 저장 필요`:'변경 없음'}`,_wxCh?4500:3500);
     /* ── 강우현황 날짜 라벨 갱신 ── */
     const rainCacheDateEl2=document.getElementById('rain-cache-date');
     if(rainCacheDateEl2){
@@ -5749,10 +5753,10 @@ function saveRainCalDayEdit(iso,rainStr,snowStr){
   }
   /* 작성 탭에 열려 있는 날짜면 입력칸도 맞춤 (일보에 이미 반영했으면 '변경 있음'으로 치지 않음) */
   if((document.getElementById('inp-date-picker')?.value||'')===iso){
-    const keep=_formDirty;
+    const wasDirty=_isFormDirty();
     const ir=document.getElementById('inp-rain'), is=document.getElementById('inp-snow');
     if(ir) ir.value=rain; if(is) is.value=snow?snow:'';
-    if(idx>=0) _formDirty=keep; else markDirty();
+    if(idx>=0){ if(!wasDirty) _formMarkClean(); } else markDirty();   /* 일보에 이미 반영했으면 변경으로 치지 않음 */
   }
   /* 화면 갱신 (달력 스크롤 위치 유지) */
   const scs=[...document.querySelectorAll('#rain-year-day-modal, #rain-year-day-modal *')].filter(e=>e.scrollTop>0);
@@ -6222,7 +6226,7 @@ function saveReport(opts){
   });
   if(presetChanged){sp(presets);renderPresets();if(typeof fbSaveSharedSettings==='function') setTimeout(fbSaveSharedSettings,500);}
   sd(all);
-  _formDirty=false;   /* 저장 완료 → 변경 없음 */
+  _formMarkClean();   /* 저장 완료 → 변경 없음 (지금 화면을 기준으로) */
   /* 저장 후 새로고침 시 방금 저장한 기록을 자동으로 찾아 보여주기 위한 표시 */
   sessionStorage.setItem('golf_after_save_date_label', r.date);
   /* ☁️ Firebase 동기화 (로그인 & 쓰기 권한 있을 때) */
@@ -6277,7 +6281,7 @@ function clearForm(silent){
   clearTdrVals();;
   ['w-temp','w-feel','w-humid','w-wind','w-sky','w-avg','w-avgh','w-minmaxh','w-month-rain','w-year-rain','w-minmax'].forEach(id=>{const _el=document.getElementById(id); if(_el)_el.textContent='--';});
   {const _rgEl=document.getElementById('rain-chart-container');if(_rgEl)_rgEl.innerHTML='<div style="font-size:11px;color:#aaa;padding:10px;">자동 불러오기 후 표시됩니다</div>';}
-  _formDirty=false;
+  _formMarkClean();
 }
 
 /* ── 검색 ── */
@@ -6818,6 +6822,27 @@ function copyToNextDay(){
    · 기록이 없는 날짜: 「복사해서 작성 / 빈 양식으로 시작 / 취소」 (+ 현재 날짜 먼저 저장)
    · 취소하면 날짜·내용 모두 그대로 (예전엔 취소해도 날짜만 바뀌어, 저장 시 다른 날짜 기록을 덮어쓸 수 있었음) */
 var _formDirty=false;
+/* ── 저장 안 한 변경 판단: 「마지막으로 불러오거나 저장한 상태」와 지금 화면을 직접 비교 ──
+   손 입력뿐 아니라 날씨 자동 불러오기, 버튼으로 추가/삭제(처리지역·작업·예초 항목), 통계에서 고친 휴무 반영,
+   관수 팝업 등 코드로 바뀐 값도 모두 잡음. 값을 바꿨다가 원래대로 되돌리면 「변경 없음」 */
+var _formBase=null;
+function _formSnap(){
+  try{
+    const pw=document.getElementById('panel-write'); if(!pw) return '';
+    /* 이름(id) 있는 입력칸만 비교 — 작업·근무자·자재 행의 칸은 아래 데이터(curTasks 등)로 비교.
+       화면 보기용 칸(GP 기준 선택·목표값, 검색어, 근무자 추가 입력칸 등)은 제외 */
+    const NOSNAP=new Set(['inp-date-picker','mat-search-modal-kw','gp-area-sel','gp-target-input','reg-name','reg-task','daily-subgroup-sel','daily-row1','daily-row2','daily-name']);
+    const v=[...pw.querySelectorAll('input[id],textarea[id],select[id]')].filter(e=>!NOSNAP.has(e.id)&&e.type!=='file'&&e.type!=='button'&&!e.closest('[data-nosnap]'))
+      .map(e=>(e.id||e.name||'')+'='+((e.type==='checkbox'||e.type==='radio')?(e.checked?1:0):e.value));
+    const wx=[...pw.querySelectorAll('[id^="w-"]')].map(e=>e.id+'='+(e.tagName==='INPUT'||e.tagName==='TEXTAREA'?e.value:e.textContent.trim()));
+    /* false·빈값·없음은 같은 것으로 취급 (휴무 체크했다 풀면 off:false가 생겨도 「변경 없음」) */
+    const data=JSON.stringify([curWorkers,curTasks,(typeof matAreaBlocks!=='undefined'?matAreaBlocks:null),(typeof yegoData!=='undefined'?yegoData:null),(typeof getTdrVals==='function'?getTdrVals():null)],(k,v)=>(v===false||v===''||v==null)?undefined:v);
+    return v.join('\u0001')+'\u0002'+wx.join('\u0001')+'\u0002'+data;
+  }catch(e){ return ''; }
+}
+window.addEventListener('load',()=>setTimeout(()=>{ if(_formBase==null) _formMarkClean(); },900));   /* 앱 시작 직후 화면을 기준으로 */
+function _formMarkClean(){ _formDirty=false; _formBase=_formSnap(); }
+function _isFormDirty(){ if(_formBase==null) return _formDirty; const n=_formSnap(); return n!==''&&n!==_formBase; }
 /* 날짜 이동 후 작성 탭 차트(기온·볼스피드·강우·GP·관수)를 새 날짜 기준으로 다시 그림
    (기록을 불러온 뒤 그려야 이전 날짜의 날씨칸 값이 새 날짜에 찍히지 않음) */
 function _refreshWriteCharts(){
@@ -6940,7 +6965,7 @@ async function onDatePick(val){
   const [y,m,d]=val.split('-').map(Number), label=formatDateStr(y,m,d);
   const all=gd(), idx=all.findIndex(r=>r.date===label);
   const curSaved=all.some(r=>r.date===curLabel);
-  const dirty=_formDirty;
+  const dirty=_isFormDirty();
   const doSave=()=>{ if(!curLabel) return; _saveReportBusy=false; saveReport({noConfirm:true}); };
   if(idx>=0){
     let k='go';
@@ -6970,7 +6995,7 @@ async function onDatePick(val){
   pk.value=val; pk.dataset.prev=val;
   applyDatePicker(val,true);
   _refreshWriteCharts();
-  _formDirty=false;
+  _formMarkClean();
   window.scrollTo(0,0);
   showToast(`📄 ${label} 빈 양식으로 시작합니다`);
 }
@@ -7167,7 +7192,7 @@ function loadForEdit(idx,silent){
   updateStatManualBadges();
   applyWeatherMetaToUI(_curWeatherMeta);
   if(!silent) showToast(`"${r.date}" 기록을 불러왔습니다. 수정 후 저장하세요.`);
-  _formDirty=false;
+  _formMarkClean();
   {const pk=document.getElementById('inp-date-picker'); if(pk) pk.dataset.prev=pk.value;}
 }
 
@@ -10905,6 +10930,7 @@ function checkBackupReminder(){
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
   {date:'2026-11-14',items:[
+    '💾 날짜 이동 시 「저장 안 한 변경」 판단을 마지막 불러오기·저장 상태와 화면 전체 비교로 변경 — 날씨 자동 불러오기, 처리지역·작업 항목 추가/삭제, 관수 팝업, 통계에서 고친 휴무 반영 등 버튼·자동으로 바뀐 값도 감지, 바꿨다 되돌리면 변경 없음 · 날씨 불러오기 완료 문구에 「변경 n개 — 저장 필요 / 변경 없음」 표시',
     '⏳ 운영/날씨 「자동 불러오기」: 불러오는 동안 안내 문구를 완료(✅)·실패(⚠️) 문구가 뜰 때까지 계속 표시, 버튼도 「⏳ 불러오는 중…」으로 바뀌고 중복 클릭 방지',
     '📌 작성 탭 상단 고정 바: 「되돌리기」 제거 · 「< 이전기록 | 11/13(금) | 다음기록 >」 + 「오늘」 배치(날짜를 누르면 날짜 선택) · 「초기화」는 섹션 바로가기 맨 오른쪽으로 이동 · 기본정보의 이전/미리보기/다음 버튼 줄 정리',
     '🗓 작성 탭 기본정보: 「◀ 이전 기록 / 다음 기록 ▶」(기록 있는 날로 바로 이동, 날짜 이동 안전장치 적용) · 「👁 기록 미리보기」(작성 중 화면은 그대로, 다른 날짜 기록을 읽기 전용 창으로 ◀▶ 넘겨보기, 「이 날짜로 이동」)',
@@ -11641,7 +11667,7 @@ function applyDatePicker(val,silentLoad){
   const idx=gd().findIndex(r=>r.date===dateLabel);
   if(idx>=0){
     loadForEdit(idx,!!silentLoad);
-    if(silentLoad) _formDirty=false;
+    if(silentLoad) _formMarkClean();
   } else {
     /* 기록이 없는 새 날짜로 이동 — 이전 날짜의 "마지막 불러온 시각"/실측 배지가
        그대로 남아있으면 혼동을 주므로 비워준다 */
