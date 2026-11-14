@@ -249,6 +249,7 @@ async function fbFullSyncFromCloud(){
       if(sh.regNameOrder) localStorage.setItem('reg_name_order_v1', JSON.stringify(sh.regNameOrder));
       if(sh.regLeavePlan) localStorage.setItem('golf_reg_leave_plan_v1', JSON.stringify(sh.regLeavePlan));
       if(sh.weatherManual) localStorage.setItem('golf_weather_stat_manual_v1', JSON.stringify(sh.weatherManual));
+      if(sh.matuRef) localStorage.setItem('golf_matu_ref_v1', JSON.stringify(sh.matuRef));
       console.log('[FB] 공유 설정 동기화 완료');
     }
 
@@ -307,6 +308,7 @@ async function fbSaveSharedSettings(){
     const rno=localStorage.getItem('reg_name_order_v1'); if(rno) settings.regNameOrder=JSON.parse(rno);
     const rlp=localStorage.getItem('golf_reg_leave_plan_v1'); if(rlp) settings.regLeavePlan=JSON.parse(rlp);
     const wm=localStorage.getItem('golf_weather_stat_manual_v1'); if(wm) settings.weatherManual=JSON.parse(wm);
+    const mrf=localStorage.getItem('golf_matu_ref_v1'); if(mrf) settings.matuRef=JSON.parse(mrf);
     settings._updatedAt = firebase.firestore.FieldValue.serverTimestamp();
     await _fbDb.collection(FB_COL_SHARED).doc('settings').set(settings, {merge:true});
     console.log('[FB] 공유 설정 저장 완료');
@@ -2296,6 +2298,7 @@ const MAT_SAND_KEY = 'custom_sand_data';
    자재사용량 분석의 NPK 요약카드와 GP(생육잠재력) 기능이 함께 사용하므로,
    초기 로딩(init) 중에도 안전하게 참조되도록 스크립트 최상단에 선언해둔다. */
 const NPK_CARDS_KEY='golf_matu_npk_cards_v1';
+const MATU_REF_KEY='golf_matu_ref_v1';   /* 과거 연도 비료 순성분 자료(엑셀에서 가져온 단일 자료) — 자재사용량 연도 비교용 */
 const NPK_LEFT_NAMES  = ['그린전면','좌그린'];
 const NPK_RIGHT_NAMES = ['그린전면','우그린'];
 const MAT_USE_KEY  = 'material_use_rows';
@@ -9546,7 +9549,7 @@ function executeResetAll(){
   const keys=[SK,PK,RK,CNK,RATE_KEY,TPRESET_KEY,YEGO_KEY,DSK,WCK,LOC_KEY,
     STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_PEST_KEY,MAT_FERT_KEY,MAT_USE_KEY,
     MAT_AREA_PRESET_KEY,TREATAREA_PRESET_KEY,TANKVOL_PRESET_KEY,MAT_COL_ORDER_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,'golf_irr_v7','golf_tdr_v1',
-    MAT_SAND_KEY,IRR_ZONES_KEY,NPK_CARDS_KEY,TDR_ZONE_LABEL_KEY,GP_TARGET_KEY,REG_NAME_ORDER_KEY,WSK,
+    MAT_SAND_KEY,IRR_ZONES_KEY,NPK_CARDS_KEY,MATU_REF_KEY,TDR_ZONE_LABEL_KEY,GP_TARGET_KEY,REG_NAME_ORDER_KEY,WSK,
     'golf_notices_cache_v1','golf_reg_leave_plan_v1','golf_sk_cache_v1','hist_rain_year_cache_v1','hist_rain_year_meta_v1','hist_temp_cache_v1','golf_last_sync_ts_v1'];
   keys.forEach(k=>{try{localStorage.removeItem(k);}catch(e){}});
   /* 화면 갱신 */
@@ -10941,6 +10944,7 @@ function checkBackupReminder(){
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
   {date:'2026-11-14',items:[
+    '📂 자재사용량 「과거 자료 비교」: 예전 엑셀의 비료 순성분량 시트(일자·사용처·g/㎡·N P K…)를 가져와 단일 자료로 보관 → 성분별 월순성분량 추이에 전년도를 점선으로 겹쳐 비교 + 연간/같은 기간 합계 비교표, N·P·K 카드에도 전년도 값 표시 · 사용처 → 처리지역 이름 맞추기 · 팀 공유·백업 포함',
     '🧮 자재사용량 분석 N·P·K 카드: 「카드 추가」에 「🌐 전체 지역」 추가 · 카드를 누르면 팝업 대신 아래 자재사용 분석(차트·표)을 그 카드 처리지역 기준으로 바꿔 보여주고 그 위치로 이동(선택한 카드는 진하게 표시)',
     '🔤 상단 고정 바 「< 이전기록 | 날짜 | 다음기록 >」·「오늘」 글씨체·크기·굵기를 다른 버튼과 통일 · 🐞 월/연 누적강우(자동 계산 표시) 때문에 변경이 없는데도 날짜 이동 시 저장 여부를 묻던 문제 수정',
     '🏷 팀 관리: 계정마다 「누구 계정인지」 메모 입력칸(관리자만 보임) — 입력 후 Enter/칸 밖을 누르면 저장, 이메일 앞에 이름이 굵게 표시',
@@ -11211,7 +11215,7 @@ function exportDataFile(){
   /* 모든 localStorage 키 수집 */
   const allKeys=[SK,PK,RK,CNK,RATE_KEY,DSK,WCK,LOC_KEY,IRR_ZONES_KEY,MAT_PEST_KEY,MAT_FERT_KEY,MAT_SAND_KEY,MAT_AREA_PRESET_KEY,
     TREATAREA_PRESET_KEY,TANKVOL_PRESET_KEY,MAT_COL_ORDER_KEY,
-    TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY,TDR_ZONE_LABEL_KEY,GP_TARGET_KEY,REG_NAME_ORDER_KEY,WSK,NOTICE_CACHE_KEY,REG_PLAN_KEY];
+    TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY,MATU_REF_KEY,TDR_ZONE_LABEL_KEY,GP_TARGET_KEY,REG_NAME_ORDER_KEY,WSK,NOTICE_CACHE_KEY,REG_PLAN_KEY];
   const exportObj={};
   allKeys.forEach(k=>{
     const v=localStorage.getItem(k);
@@ -11367,7 +11371,7 @@ function importDataFile(event){
       /* 기존 관련 키 지우기 */
       [SK,PK,RK,CNK,RATE_KEY,DSK,WCK,LOC_KEY,IRR_ZONES_KEY,MAT_PEST_KEY,MAT_FERT_KEY,MAT_SAND_KEY,MAT_AREA_PRESET_KEY,
         TREATAREA_PRESET_KEY,TANKVOL_PRESET_KEY,MAT_COL_ORDER_KEY,
-        TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY,TDR_ZONE_LABEL_KEY,GP_TARGET_KEY,REG_NAME_ORDER_KEY,WSK,NOTICE_CACHE_KEY,REG_PLAN_KEY].forEach(k=>localStorage.removeItem(k));
+        TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY,MATU_REF_KEY,TDR_ZONE_LABEL_KEY,GP_TARGET_KEY,REG_NAME_ORDER_KEY,WSK,NOTICE_CACHE_KEY,REG_PLAN_KEY].forEach(k=>localStorage.removeItem(k));
 
       /* 새 데이터 적재 */
       importedKeys.forEach(k=>{
@@ -13494,6 +13498,8 @@ function renderNpkSummaryCards(selYear, allRecs, fertList){
             <span style="color:#c0392b;">P ${t.P.toFixed(1)}g</span>
             <span style="color:#7B4F00;">K ${t.K.toFixed(1)}g</span>
           </div>
+          ${(()=>{ const yy=String((parseInt(selYear,10)||0)-1).padStart(2,'0'); const md=getMatuRefMonthly(yy,t.id); if(!md) return ''; const s={N:0,P:0,K:0}; for(let m=1;m<=12;m++) ['N','P','K'].forEach(k=>s[k]+=md[m][k]||0);
+            return `<div style="display:flex;gap:9px;font-size:9.5px;font-weight:600;color:#a08a3c;margin-top:2px;"><span>${yy}년</span><span>N ${s.N.toFixed(1)}</span><span>P ${s.P.toFixed(1)}</span><span>K ${s.K.toFixed(1)}</span></div>`; })()}
         </div>`).join('')}
       <div onclick="openAddNpkCardModal()"
         style="border:2px dashed #ccc;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;cursor:pointer;min-height:45px;background:#fafafa;transition:background .15s;"
@@ -14033,15 +14039,143 @@ function renderMatUsePanel(page){
 /* 체크 상태 전역 저장 (연도/지역 변경해도 사용자 선택 유지) */
 window._matuLineChecked = window._matuLineChecked || {};
 
+/* ══════════════════════════════════════════════════════
+   과거 연도 비교 자료 (예: 25년 비료 순성분량 엑셀)
+   · 엑셀의 「일자 · 사용처 · 입출고 · g/㎡ · N P K Ca Mg Mn Fe Si S」 표에서 출고 줄만 읽어 단일 자료로 보관
+   · 사용처 이름은 앱의 처리지역 이름으로 맞춰 저장(예: 좌그린시비 → 좌그린, 티시비 → 티전면) — 가져올 때 확인·수정
+   · 자재사용량 「성분별 월순성분량 추이」에 점선으로 겹쳐 그리고, N·P·K 카드에도 전년도 값을 함께 표시
+   · 팀 공유 설정으로 동기화 + 백업(내보내기)에 포함
+   ══════════════════════════════════════════════════════ */
+const MATU_NUTRS=['N','P','K','Ca','Mg','Mn','Fe','Si','S'];
+function getMatuRef(){ try{ return JSON.parse(localStorage.getItem(MATU_REF_KEY)||'{}')||{}; }catch(e){ return {}; } }
+function setMatuRef(o){ try{ localStorage.setItem(MATU_REF_KEY,JSON.stringify(o)); if(typeof fbSaveSharedSettings==='function') setTimeout(fbSaveSharedSettings,500); }catch(e){ showToast('저장 공간이 부족합니다'); } }
+function _matuRefDefaultArea(name){ let a=String(name||'').trim().replace(/\s*시비$/,'').trim(); if(a==='티') a='티전면'; return a||String(name||'').trim(); }
+/* 지역 선택값(''·__left_green__·__right_green__·지역명)에 맞는지 */
+function _matuAreaSelMatch(sel,area){
+  const a=String(area||'').trim();
+  if(!sel) return true;
+  if(sel==='__all__') return true;
+  if(sel==='__left_green__') return NPK_LEFT_NAMES.includes(a);
+  if(sel==='__right_green__') return NPK_RIGHT_NAMES.includes(a);
+  return a===sel || (typeof _searchNorm==='function' && _searchNorm(a)===_searchNorm(sel));
+}
+/* 과거 자료의 월별 성분 합계 — yy: '25' */
+function getMatuRefMonthly(yy,sel){
+  const ds=getMatuRef()[yy]; if(!ds||!ds.rows) return null;
+  const md={}; for(let m=1;m<=12;m++) md[m]={};
+  ds.rows.forEach(r=>{ const area=(ds.map&&ds.map[r.a]!=null)?ds.map[r.a]:_matuRefDefaultArea(r.a); if(!_matuAreaSelMatch(sel,area)) return;
+    const m=+String(r.d).slice(5,7); if(!(m>=1&&m<=12)) return;
+    Object.entries(r.v||{}).forEach(([k,v])=>{ if(v>0) md[m][k]=(md[m][k]||0)+v; }); });
+  return md;
+}
+async function openMatuRefModal(){
+  const ref=getMatuRef(), yrs=Object.keys(ref).sort().reverse();
+  const canEdit=!(_fbUser&&_fbRole==='viewer');
+  let m=document.getElementById('matu-ref-modal');
+  if(!m){ m=document.createElement('div'); m.id='matu-ref-modal'; m.className='modal-wrap'; m.onclick=e=>{ if(e.target===m) m.style.display='none'; }; document.body.appendChild(m); }
+  m.innerHTML=`<div class="modal" style="max-width:560px;">
+    <div class="modal-hdr"><div class="modal-ttl">📂 과거 연도 비료 순성분 자료</div><button class="btn btn-sm" onclick="document.getElementById('matu-ref-modal').style.display='none'">닫기</button></div>
+    <div style="font-size:12px;color:#555;line-height:1.6;margin-bottom:10px;">예전 엑셀의 <b>비료 순성분량</b> 시트(일자·사용처·입출고·g/㎡·N P K…)를 가져오면, 자재사용량 <b>성분별 월순성분량 추이</b>에 <span style="color:#7B5B00;font-weight:700;">점선</span>으로 겹쳐 올해와 비교합니다. 출고 줄만 사용합니다.</div>
+    ${yrs.length?yrs.map(y=>{ const d=ref[y]; const tot={}; d.rows.forEach(r=>Object.entries(r.v||{}).forEach(([k,v])=>tot[k]=(tot[k]||0)+v));
+      return `<div style="border:1.5px solid #e8d48a;background:#fffdf3;border-radius:9px;padding:9px 11px;margin-bottom:8px;">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><b style="font-size:14px;color:#7B5B00;">20${y}년 자료</b><span style="font-size:11px;color:#888;">${d.rows.length}건 · ${matEscHtml(d.src||'')} · ${d.at?new Date(d.at).toLocaleDateString('ko-KR'):''}</span>
+          ${canEdit?`<span style="margin-left:auto;display:flex;gap:5px;"><button class="btn btn-sm" onclick="openMatuRefMap('${y}')">지역 이름 맞추기</button><button class="btn btn-sm" style="color:#c0392b;border-color:#e6b0aa;" onclick="deleteMatuRef('${y}')">삭제</button></span>`:''}</div>
+        <div style="font-size:11.5px;margin-top:4px;color:#555;">전체 합계(g/㎡): ${['N','P','K'].map(k=>`<b>${k}</b> ${(tot[k]||0).toFixed(1)}`).join(' · ')}</div></div>`; }).join(''):'<div style="font-size:12px;color:#aaa;padding:8px 0;">아직 가져온 자료가 없습니다.</div>'}
+    ${canEdit?`<label class="btn" style="display:block;text-align:center;margin-top:6px;border-color:#c9a227;color:#7B5B00;background:#fffbea;font-weight:800;cursor:pointer;">📥 엑셀에서 가져오기 (.xlsx)<input type="file" accept=".xlsx,.xls" style="display:none;" onchange="importMatuRefFile(this)"></label>`:''}
+  </div>`;
+  m.style.display='flex';
+}
+async function importMatuRefFile(inp){
+  const f=inp.files&&inp.files[0]; inp.value=''; if(!f) return;
+  try{
+    await skLoadXlsx();
+    const wb=XLSX.read(await f.arrayBuffer(),{type:'array',cellDates:true});
+    let found=null;
+    for(const sn of wb.SheetNames){
+      const rows=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,raw:true,defval:null});
+      for(let i=0;i<Math.min(rows.length,40);i++){
+        const h=(rows[i]||[]).map(x=>String(x==null?'':x).replace(/\s/g,''));
+        const iD=h.indexOf('일자'), iA=h.indexOf('사용처'), iIO=h.indexOf('입출고'), iG=h.findIndex(x=>x==='g/㎡'||x==='g/m2'||x==='g/m²');
+        if(iD<0||iA<0||iIO<0||iG<0) continue;
+        const cols={}; for(let c=iG+1;c<h.length;c++){ const k=h[c].replace(/\d+$/,''); if(MATU_NUTRS.includes(k)&&cols[k]==null) cols[k]=c; }
+        if(cols.N==null) continue;
+        found={sn,rows,i,iD,iA,iIO,cols}; break;
+      }
+      if(found) break;
+    }
+    if(!found){ alert('「일자 · 사용처 · 입출고 · g/㎡ · N P K…」 머리줄이 있는 시트를 찾지 못했습니다.\n(비료 순성분량 시트인지 확인해 주세요)'); return; }
+    const byYear={};
+    for(let r=found.i+1;r<found.rows.length;r++){
+      const row=found.rows[r]; if(!row) continue;
+      if(String(row[found.iIO]||'').trim()!=='출고') continue;
+      let d=row[found.iD]; if(d==null||d==='') continue;
+      if(typeof d==='number'){ const o=XLSX.SSF.parse_date_code(d); d=o?new Date(o.y,o.m-1,o.d):null; } else if(!(d instanceof Date)) d=new Date(String(d).replace(/\./g,'-'));
+      if(!d||isNaN(d)) continue;
+      const iso=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      const v={}; Object.entries(found.cols).forEach(([k,c])=>{ const x=parseFloat(row[c]); if(x>0) v[k]=Math.round(x*100000)/100000; });
+      const a=String(row[found.iA]==null?'':row[found.iA]).trim(); if(!a||a==='0') continue;
+      const yy=String(d.getFullYear()).slice(2); (byYear[yy]=byYear[yy]||[]).push({d:iso,a,v});
+    }
+    const ys=Object.keys(byYear); if(!ys.length){ alert('출고 줄을 찾지 못했습니다.'); return; }
+    const ref=getMatuRef(); const now=getMatuRef();
+    for(const y of ys){
+      if(ref[y] && !confirm(`20${y}년 자료가 이미 있습니다. 새로 가져온 자료(${byYear[y].length}건)로 바꿀까요?`)) continue;
+      const map={}; [...new Set(byYear[y].map(r=>r.a))].forEach(a=>map[a]=(ref[y]&&ref[y].map&&ref[y].map[a]!=null)?ref[y].map[a]:_matuRefDefaultArea(a));
+      ref[y]={rows:byYear[y],map,src:f.name+' · '+found.sn,at:Date.now()};
+    }
+    setMatuRef(ref);
+    showToast(`✅ ${ys.map(y=>`20${y}년 ${byYear[y].length}건`).join(', ')} 가져왔습니다 — 지역 이름을 확인해 주세요`,4500);
+    openMatuRefMap(ys.sort().reverse()[0]);
+  }catch(e){ console.error(e); alert('엑셀을 읽지 못했습니다: '+e.message); }
+}
+/* 사용처(엑셀) → 처리지역(앱) 이름 맞추기 */
+function openMatuRefMap(y){
+  const ref=getMatuRef(), d=ref[y]; if(!d) return;
+  const cnt={}; d.rows.forEach(r=>cnt[r.a]=(cnt[r.a]||0)+1);
+  const appAreas=new Set(); gd().forEach(r=>(r.matUseRows||[]).forEach(b=>{ if(b.areaName) appAreas.add(String(b.areaName).trim()); }));
+  const names=Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a]);
+  let m=document.getElementById('matu-ref-modal');
+  m.innerHTML=`<div class="modal" style="max-width:560px;">
+    <div class="modal-hdr"><div class="modal-ttl">🔗 20${y}년 자료 · 지역 이름 맞추기</div><button class="btn btn-sm" onclick="openMatuRefModal()">← 뒤로</button></div>
+    <div style="font-size:12px;color:#555;line-height:1.6;margin-bottom:8px;">엑셀의 사용처를 앱의 처리지역 이름으로 맞춰야 지역별 비교가 됩니다. (좌그린 기준 = <b>그린전면 + 좌그린</b>, 우그린 기준 = <b>그린전면 + 우그린</b>)</div>
+    <datalist id="matu-ref-areas">${[...appAreas].map(a=>`<option value="${matEscHtml(a)}">`).join('')}</datalist>
+    <div style="max-height:52vh;overflow:auto;border:1px solid #eee;border-radius:8px;">
+      <table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr style="background:#f6f6f6;position:sticky;top:0;"><th style="padding:6px;text-align:left;">엑셀 사용처</th><th style="padding:6px;">건수</th><th style="padding:6px;text-align:left;">앱 처리지역</th></tr></thead>
+      <tbody>${names.map((a,i)=>{ const v=d.map&&d.map[a]!=null?d.map[a]:_matuRefDefaultArea(a); const known=appAreas.has(v);
+        return `<tr style="border-top:1px solid #f0f0f0;"><td style="padding:5px 6px;">${matEscHtml(a)}</td><td style="padding:5px 6px;text-align:center;color:#888;">${cnt[a]}</td>
+        <td style="padding:5px 6px;"><input list="matu-ref-areas" data-a="${i}" value="${matEscHtml(v)}" style="width:100%;box-sizing:border-box;padding:5px 7px;border:1.5px solid ${known?'#97C459':'#e8d48a'};border-radius:6px;font-size:12px;font-weight:700;"><div style="font-size:9.5px;color:${known?'#3B6D11':'#B8690A'};">${known?'✓ 앱에 있는 지역':'앱 기록에 없는 이름'}</div></td></tr>`; }).join('')}</tbody></table></div>
+    <button class="btn btn-primary" style="width:100%;margin-top:10px;font-weight:800;" onclick="saveMatuRefMap('${y}')">저장</button>
+  </div>`;
+  window._matuRefMapNames=names;
+  m.style.display='flex';
+}
+function saveMatuRefMap(y){
+  const ref=getMatuRef(), d=ref[y]; if(!d) return;
+  const names=window._matuRefMapNames||[]; d.map=d.map||{};
+  document.querySelectorAll('#matu-ref-modal input[data-a]').forEach(inp=>{ const a=names[+inp.dataset.a]; if(a!=null) d.map[a]=inp.value.trim()||a; });
+  setMatuRef(ref); document.getElementById('matu-ref-modal').style.display='none';
+  if(typeof renderMatUsePanel==='function') renderMatUsePanel();
+  showToast(`✅ 20${y}년 자료 지역 이름을 저장했습니다`);
+}
+function deleteMatuRef(y){
+  if(!confirm(`20${y}년 비교 자료를 삭제할까요?`)) return;
+  const ref=getMatuRef(); delete ref[y]; setMatuRef(ref); openMatuRefModal(); if(typeof renderMatUsePanel==='function') renderMatUsePanel();
+}
 function renderMatUseLineChart(selType, selYear, areaLabel, monthData, keys, colorMap, NUTRIENTS){
   const wrap = document.getElementById('matu-line-chart-wrap');
   if(!wrap) return;
 
+  /* 전년도 비교 자료(엑셀에서 가져온 단일 자료) */
+  const _refYY=String((parseInt(selYear,10)||0)-1).padStart(2,'0');
+  const _refMD=(selType==='fert')?getMatuRefMonthly(_refYY,document.getElementById('matu-area')?.value||''):null;
+  if(_refMD){ const ks=new Set(keys||[]); for(let m=1;m<=12;m++) Object.keys(_refMD[m]).forEach(k=>ks.add(k)); keys=MATU_NUTRS.filter(k=>ks.has(k)); colorMap=colorMap||{}; const NC={N:'#1a5fa8',P:'#c0392b',K:'#7B4F00',Ca:'#6c3483',Mg:'#1a7a6a',Fe:'#d4572a',Mn:'#b8860b',Si:'#607d8b',S:'#8B6914'}; keys.forEach(k=>{ if(!colorMap[k]) colorMap[k]=NC[k]||'#888'; }); }
+  if(window._matuLineCmp===undefined) window._matuLineCmp=true;
   if(selType !== 'fert' || !keys || !keys.length){
     wrap.style.display = 'none';
     return;
   }
   wrap.style.display = 'block';
+  const refSeries={}; if(_refMD) keys.forEach(k=>{ refSeries[k]=[]; for(let m=1;m<=12;m++) refSeries[k].push(_refMD[m][k]||0); });
 
   const MONTHS_KO  = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
   const NUTR_LABELS = {N:'질소(N)',P:'인산(P)',K:'칼리(K)',Ca:'칼슘(Ca)',Mg:'마그네슘(Mg)',Fe:'철(Fe)',Mn:'망간(Mn)',Si:'규산(Si)',S:'황(S)'};
@@ -14099,7 +14233,8 @@ function renderMatUseLineChart(selType, selYear, areaLabel, monthData, keys, col
     const CHART_W = SVG_W - PAD_L - PAD_R;
     const CHART_H = SVG_H - PAD_T - PAD_B;
 
-    const activeVals = activeKeys.flatMap(k => seriesData[k]);
+    const showRef = !!(window._matuLineRef && window._matuLineCmp);
+    const activeVals = activeKeys.flatMap(k => seriesData[k].concat(showRef?(window._matuLineRef[k]||[]):[]));
     const maxVal     = Math.max(...activeVals, 0.001);
 
     function xPos(i){ return PAD_L + i * (CHART_W / 11); }
@@ -14155,6 +14290,14 @@ function renderMatUseLineChart(selType, selYear, areaLabel, monthData, keys, col
       });
     });
 
+    /* 전년도 자료: 같은 색 점선 + 속이 빈 점 */
+    if(showRef) activeKeys.forEach(k=>{
+      const color=colorMap[k]||'#888', vals=window._matuLineRef[k]||[]; let path='', inSeg=false;
+      for(let i=0;i<12;i++){ const x=xPos(i), y=yPos(vals[i]||0); if(vals[i]>0){ path+=(inSeg?'L ':'M ')+x+' '+y+' '; inSeg=true; } else inSeg=false; }
+      if(!path) return;
+      paths+=`<path d="${path}" fill="none" stroke="${color}" stroke-width="1.5" stroke-dasharray="5,4" opacity="0.6"/>`;
+      vals.forEach((v,i)=>{ if(v>0){ const x=xPos(i), y=yPos(v); dots+=`<circle cx="${x}" cy="${y}" r="3.5" fill="#fff" stroke="${color}" stroke-width="1.5" opacity="0.8"><title>20${window._matuLineRefYY}년 ${i+1}월 ${k} ${v.toFixed(2)}g</title></circle>`; } });
+    });
     if(!paths){
       return `<svg viewBox="0 0 ${SVG_W} ${SVG_H}" style="width:100%;display:block;">
         <text x="${SVG_W/2}" y="${SVG_H/2}" text-anchor="middle" font-size="13" fill="#bbb"
@@ -14186,9 +14329,11 @@ function renderMatUseLineChart(selType, selYear, areaLabel, monthData, keys, col
         </span>
       </div>
       ${chkBarHtml}
+      ${_refMD?`<label style="display:inline-flex;align-items:center;gap:6px;margin:0 0 8px 2px;font-size:11.5px;font-weight:700;color:#7B5B00;cursor:pointer;"><input type="checkbox" ${window._matuLineCmp?'checked':''} onchange="window._matuLineCmp=this.checked;matuLineRedraw();" style="width:14px;height:14px;accent-color:#c9a227;"> 20${_refYY}년 자료와 비교 <span style="font-weight:500;color:#999;">(실선 20${selYear}년 · 점선 20${_refYY}년)</span></label>`:''}
       <div id="matu-line-svg-wrap" style="overflow-x:auto;">
         <div class="matu-line-inner" style="min-width:520px;">${buildSvg(initActiveKeys)}</div>
       </div>
+      <div id="matu-line-cmp-sum"></div>
     </div>`;
 
   /* 전역 콜백 — 체크 변경 시 SVG만 재생성 */
@@ -14197,6 +14342,9 @@ function renderMatUseLineChart(selType, selYear, areaLabel, monthData, keys, col
   window._matuLineColorMap  = colorMap;
   window._matuLineSeriesData = seriesData;
   window._matuLineYear      = selYear;
+  window._matuLineRef       = _refMD?refSeries:null;
+  window._matuLineRefYY     = _refYY;
+  matuLineCmpSummary();
   window._matuLineArea      = areaLabel;
 }
 
@@ -14208,6 +14356,27 @@ function matuLineShowPopup(mo, clickedKey, evt){
 }
 
 /* 체크박스 onChange 핸들러 */
+/* 비교 켜기/끄기·성분 선택 변경 시 다시 그리기 + 연간 합계 비교표 */
+function matuLineRedraw(){
+  const activeKeys=(window._matuLineKeys||[]).filter(k=>window._matuLineChecked[k]);
+  const w=document.getElementById('matu-line-svg-wrap');
+  if(w&&window._matuLineBuildSvg) w.innerHTML=`<div class="matu-line-inner" style="min-width:520px;">${window._matuLineBuildSvg(activeKeys)}</div>`;
+  matuLineCmpSummary();
+}
+function matuLineCmpSummary(){
+  const el=document.getElementById('matu-line-cmp-sum'); if(!el) return;
+  const R=window._matuLineRef, S=window._matuLineSeriesData||{};
+  if(!R||!window._matuLineCmp){ el.innerHTML=''; return; }
+  const ks=(window._matuLineKeys||[]).filter(k=>window._matuLineChecked[k]); if(!ks.length){ el.innerHTML=''; return; }
+  const sum=a=>(a||[]).reduce((x,y)=>x+y,0), now=new Date(), cy=String(now.getFullYear()).slice(2), cm=now.getMonth()+1;
+  const ytd=(window._matuLineYear===cy);   /* 올해는 이번 달까지 같은 기간으로도 비교 */
+  const cell=(a,b)=>{ const d=b?((a-b)/b*100):null; return `${a.toFixed(1)} <span style="color:#aaa;">/ ${b.toFixed(1)}</span>${d!=null&&isFinite(d)?` <b style="color:${d>=0?'#c0392b':'#185FA5'};">${d>=0?'▲':'▼'}${Math.abs(d).toFixed(0)}%</b>`:''}`; };
+  el.innerHTML=`<div style="margin-top:8px;overflow-x:auto;"><table style="border-collapse:collapse;font-size:11.5px;min-width:100%;">
+    <tr style="background:#fffbea;"><th style="padding:5px 8px;text-align:left;color:#7B5B00;">성분 (g/㎡)</th>${ks.map(k=>`<th style="padding:5px 8px;color:${(window._matuLineColorMap||{})[k]||'#444'};">${k}</th>`).join('')}</tr>
+    <tr><td style="padding:5px 8px;font-weight:700;white-space:nowrap;">연간 20${window._matuLineYear} / 20${window._matuLineRefYY}</td>${ks.map(k=>`<td style="padding:5px 8px;text-align:center;white-space:nowrap;">${cell(sum(S[k]),sum(R[k]))}</td>`).join('')}</tr>
+    ${ytd?`<tr style="border-top:1px dashed #eee;"><td style="padding:5px 8px;font-weight:700;white-space:nowrap;">1~${cm}월 같은 기간</td>${ks.map(k=>`<td style="padding:5px 8px;text-align:center;white-space:nowrap;">${cell(sum((S[k]||[]).slice(0,cm)),sum((R[k]||[]).slice(0,cm)))}</td>`).join('')}</tr>`:''}
+  </table></div>`;
+}
 function matuLineChkChange(chk){
   const k = chk.dataset.nutr;
   window._matuLineChecked[k] = chk.checked;
@@ -14225,6 +14394,7 @@ function matuLineChkChange(chk){
   if(svgWrap && window._matuLineBuildSvg){
     svgWrap.innerHTML = `<div class="matu-line-inner" style="min-width:520px;">${window._matuLineBuildSvg(activeKeys)}</div>`;
   }
+  matuLineCmpSummary();
 }
 
 /* 전체 선택 / 전체 해제 */
@@ -14245,6 +14415,7 @@ function matuLineChkAll(state){
   if(svgWrap && window._matuLineBuildSvg){
     svgWrap.innerHTML = `<div class="matu-line-inner" style="min-width:520px;">${window._matuLineBuildSvg(activeKeys)}</div>`;
   }
+  matuLineCmpSummary();
 }
 
 
@@ -16370,6 +16541,8 @@ function showPdfGuide(ri){
         <option value="fert">비료 순성분량</option>
         <option value="pest">농약 사용량</option>
       </select>
+      <button onclick="openMatuRefModal()" title="과거 연도 비료 순성분 자료(엑셀)를 가져와 올해와 비교"
+        style="padding:5px 9px;border:1.5px solid #c9a227;border-radius:7px;font-size:12px;font-weight:700;color:#7B5B00;background:#fffbea;cursor:pointer;">📂 과거 자료 비교</button>
     </div>
   </div>
 
