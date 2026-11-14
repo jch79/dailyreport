@@ -10944,6 +10944,7 @@ function checkBackupReminder(){
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
   {date:'2026-11-14',items:[
+    '🐞 과거 자료 비교: 지역을 바꾸면 점선(전년도)이 직전 화면(전체 지역 등) 값으로 그려져 엉뚱하게 높게 나오던 문제 수정 · 성분 범례를 「26년 / 25년(자료)」 두 줄로 표시',
     '📂 자재사용량 「과거 자료 비교」: 예전 엑셀의 비료 순성분량 시트(일자·사용처·g/㎡·N P K…)를 가져와 단일 자료로 보관 → 성분별 월순성분량 추이에 전년도를 점선으로 겹쳐 비교 + 연간/같은 기간 합계 비교표, N·P·K 카드에도 전년도 값 표시 · 사용처 → 처리지역 이름 맞추기 · 팀 공유·백업 포함',
     '🧮 자재사용량 분석 N·P·K 카드: 「카드 추가」에 「🌐 전체 지역」 추가 · 카드를 누르면 팝업 대신 아래 자재사용 분석(차트·표)을 그 카드 처리지역 기준으로 바꿔 보여주고 그 위치로 이동(선택한 카드는 진하게 표시)',
     '🔤 상단 고정 바 「< 이전기록 | 날짜 | 다음기록 >」·「오늘」 글씨체·크기·굵기를 다른 버튼과 통일 · 🐞 월/연 누적강우(자동 계산 표시) 때문에 변경이 없는데도 날짜 이동 시 저장 여부를 묻던 문제 수정',
@@ -13997,15 +13998,27 @@ function renderMatUsePanel(page){
     });
   });
   /* ── 범례 ── */
+  /* 전년도 비교 자료가 있으면 범례를 「26년 / 25년」 두 줄로 */
+  const _lgRefYY=String((parseInt(selYear,10)||0)-1).padStart(2,'0');
+  const _lgRef=(selType==='fert')?getMatuRefMonthly(_lgRefYY,selArea):null;
+  const _lgRefTot={}; if(_lgRef) for(let m=1;m<=12;m++) Object.entries(_lgRef[m]).forEach(([k,v])=>_lgRefTot[k]=(_lgRefTot[k]||0)+v);
   legendWrap.innerHTML = `
     <div style="display:flex;flex-wrap:wrap;gap:8px;padding:10px 14px;background:#f8fff4;border:1px solid #d8edba;border-radius:9px;margin-top:8px;">
-      <span style="font-size:11px;font-weight:700;color:#555;margin-right:4px;">성분 범례</span>
+      <span style="font-size:11px;font-weight:700;color:#555;margin-right:4px;">성분 범례${_lgRef?` <span style="color:#2d6a1e;">· ${selYear}년</span>`:''}</span>
       ${keys.map(k=>`
         <div style="display:flex;align-items:center;gap:4px;">
           <span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${colorMap[k]};flex-shrink:0;"></span>
           <span style="font-size:11px;font-weight:700;color:#444;">${k}</span>
           <span style="font-size:10px;color:#888;">${Object.values(monthData).reduce((s,d)=>s+(d[k]||0),0).toFixed(1)}${unit}</span>
         </div>`).join('')}
+      ${_lgRef?`<div style="flex-basis:100%;height:0;"></div>
+      <span style="font-size:11px;font-weight:700;color:#7B5B00;margin-right:4px;">성분 범례 · ${_lgRefYY}년 <span style="font-weight:500;color:#a08a3c;">(자료)</span></span>
+      ${MATU_NUTRS.filter(k=>keys.includes(k)||_lgRefTot[k]).map(k=>`
+        <div style="display:flex;align-items:center;gap:4px;">
+          <span style="display:inline-block;width:12px;height:12px;border-radius:3px;border:2px dashed ${colorMap[k]||'#888'};box-sizing:border-box;flex-shrink:0;"></span>
+          <span style="font-size:11px;font-weight:700;color:#444;">${k}</span>
+          <span style="font-size:10px;color:#a08a3c;">${(_lgRefTot[k]||0).toFixed(1)}${unit}</span>
+        </div>`).join('')}`:''}
     </div>`;
 
   /* ── 연간 클릭 바 부제목·요약 업데이트 ── */
@@ -14176,6 +14189,8 @@ function renderMatUseLineChart(selType, selYear, areaLabel, monthData, keys, col
   }
   wrap.style.display = 'block';
   const refSeries={}; if(_refMD) keys.forEach(k=>{ refSeries[k]=[]; for(let m=1;m<=12;m++) refSeries[k].push(_refMD[m][k]||0); });
+  /* 차트를 그리기 전에 이번 지역의 전년도 값으로 먼저 바꿔 둠 (예전엔 직전 화면의 값으로 그려져 점선이 엉뚱하게 높게 나왔음) */
+  window._matuLineRef = _refMD?refSeries:null; window._matuLineRefYY = _refYY;
 
   const MONTHS_KO  = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
   const NUTR_LABELS = {N:'질소(N)',P:'인산(P)',K:'칼리(K)',Ca:'칼슘(Ca)',Mg:'마그네슘(Mg)',Fe:'철(Fe)',Mn:'망간(Mn)',Si:'규산(Si)',S:'황(S)'};
