@@ -4885,7 +4885,12 @@ async function fetchWeather(){
   /* isToday일 때 기상청 실측 조회 자체가 성공했는지(현재 날씨 카드 출처 표시용) */
   let kmaTodaySuccess=false;
 
-  showToast(`${loc.name} ${tmo}월 ${tdd}일 날씨 불러오는 중...`);
+  /* 불러오는 동안 계속 표시 — 안내문은 완료/실패 문구가 뜰 때까지 유지(최대 2분), 버튼도 「⏳ 불러오는 중…」으로 잠금 */
+  if(window._wxLoading){ showToast('⏳ 이미 날씨를 불러오는 중입니다. 잠시만 기다려 주세요',120000); return; }
+  window._wxLoading=true;
+  const _wxBtns=[...document.querySelectorAll('button[onclick="fetchWeather()"]')];
+  _wxBtns.forEach(b=>{ b.dataset.label=b.innerHTML; b.innerHTML='⏳ 불러오는 중…'; b.disabled=true; b.style.opacity='.7'; });
+  showToast(`⏳ ${loc.name} ${tmo}월 ${tdd}일 날씨 불러오는 중… (완료되면 알려드립니다)`,120000);
 
   /* 날씨 라벨 업데이트 */
   const lastFetchEl=document.getElementById('weather-last-fetch');
@@ -5336,14 +5341,18 @@ async function fetchWeather(){
     lastTimeEl.textContent=timeStr;
     lastFetchEl.style.display='block';
 
-    showToast(`${tmo}월 ${tdd}일 날씨를 불러왔습니다${isPast?' (과거 기상 데이터)':''}`);
+    showToast(`✅ ${tmo}월 ${tdd}일 날씨를 불러왔습니다${isPast?' (과거 기상 데이터)':''}`,3500);
     /* ── 강우현황 날짜 라벨 갱신 ── */
     const rainCacheDateEl2=document.getElementById('rain-cache-date');
     if(rainCacheDateEl2){
       rainCacheDateEl2.textContent=`✓ ${targetDate} 기준`;
       rainCacheDateEl2.style.color='#3B6D11';
     }
-  }catch(e){console.error(e);showToast('날씨 불러오기 실패');}
+  }catch(e){console.error(e);showToast('⚠️ 날씨 불러오기 실패 — 잠시 후 다시 눌러 주세요',4000);}
+  finally{
+    window._wxLoading=false;
+    _wxBtns.forEach(b=>{ b.innerHTML=b.dataset.label||'&#8635; 자동 불러오기'; b.disabled=false; b.style.opacity=''; });
+  }
 }
 
 /* ── 연도별 누적강우량 비교 (24년/25년/26년) ──
@@ -10896,6 +10905,7 @@ function checkBackupReminder(){
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
   {date:'2026-11-14',items:[
+    '⏳ 운영/날씨 「자동 불러오기」: 불러오는 동안 안내 문구를 완료(✅)·실패(⚠️) 문구가 뜰 때까지 계속 표시, 버튼도 「⏳ 불러오는 중…」으로 바뀌고 중복 클릭 방지',
     '📌 작성 탭 상단 고정 바: 「되돌리기」 제거 · 「< 이전기록 | 11/13(금) | 다음기록 >」 + 「오늘」 배치(날짜를 누르면 날짜 선택) · 「초기화」는 섹션 바로가기 맨 오른쪽으로 이동 · 기본정보의 이전/미리보기/다음 버튼 줄 정리',
     '🗓 작성 탭 기본정보: 「◀ 이전 기록 / 다음 기록 ▶」(기록 있는 날로 바로 이동, 날짜 이동 안전장치 적용) · 「👁 기록 미리보기」(작성 중 화면은 그대로, 다른 날짜 기록을 읽기 전용 창으로 ◀▶ 넘겨보기, 「이 날짜로 이동」)',
     '🟠 작업내용 출근자 칩: 어느 작업에도 배정되지 않은 출근자는 주황 점선 + ● 표시, 끝에 「작업 미배정 n명」(모두 배정되면 「✔ 전원 배정」) — 작업자 입력 즉시 반영',
