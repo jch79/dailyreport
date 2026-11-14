@@ -10944,6 +10944,7 @@ function checkBackupReminder(){
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
   {date:'2026-11-14',items:[
+    '📂 과거 자료 비교: 차트의 25년 점선 꼭지점마다 수치 표시(점 아래) · 점을 누르면 25년 그 달 「자재사용량 상세」 팝업(날짜·지역·제품명·㎡당 사용량·성분, 성분 필터) — 제품명은 엑셀을 한 번 더 가져오면 채워짐',
     '🐞 과거 자료 비교: 지역을 바꾸면 점선(전년도)이 직전 화면(전체 지역 등) 값으로 그려져 엉뚱하게 높게 나오던 문제 수정 · 성분 범례를 「26년 / 25년(자료)」 두 줄로 표시',
     '📂 자재사용량 「과거 자료 비교」: 예전 엑셀의 비료 순성분량 시트(일자·사용처·g/㎡·N P K…)를 가져와 단일 자료로 보관 → 성분별 월순성분량 추이에 전년도를 점선으로 겹쳐 비교 + 연간/같은 기간 합계 비교표, N·P·K 카드에도 전년도 값 표시 · 사용처 → 처리지역 이름 맞추기 · 팀 공유·백업 포함',
     '🧮 자재사용량 분석 N·P·K 카드: 「카드 추가」에 「🌐 전체 지역」 추가 · 카드를 누르면 팝업 대신 아래 자재사용 분석(차트·표)을 그 카드 처리지역 기준으로 바꿔 보여주고 그 위치로 이동(선택한 카드는 진하게 표시)',
@@ -14108,11 +14109,11 @@ async function importMatuRefFile(inp){
       const rows=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,raw:true,defval:null});
       for(let i=0;i<Math.min(rows.length,40);i++){
         const h=(rows[i]||[]).map(x=>String(x==null?'':x).replace(/\s/g,''));
-        const iD=h.indexOf('일자'), iA=h.indexOf('사용처'), iIO=h.indexOf('입출고'), iG=h.findIndex(x=>x==='g/㎡'||x==='g/m2'||x==='g/m²');
+        const iD=h.indexOf('일자'), iA=h.indexOf('사용처'), iIO=h.indexOf('입출고'), iG=h.findIndex(x=>x==='g/㎡'||x==='g/m2'||x==='g/m²'), iP=h.indexOf('상표명'), iM=h.indexOf('작업방법');
         if(iD<0||iA<0||iIO<0||iG<0) continue;
         const cols={}; for(let c=iG+1;c<h.length;c++){ const k=h[c].replace(/\d+$/,''); if(MATU_NUTRS.includes(k)&&cols[k]==null) cols[k]=c; }
         if(cols.N==null) continue;
-        found={sn,rows,i,iD,iA,iIO,cols}; break;
+        found={sn,rows,i,iD,iA,iIO,iG,iP,iM,cols}; break;
       }
       if(found) break;
     }
@@ -14127,7 +14128,9 @@ async function importMatuRefFile(inp){
       const iso=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
       const v={}; Object.entries(found.cols).forEach(([k,c])=>{ const x=parseFloat(row[c]); if(x>0) v[k]=Math.round(x*100000)/100000; });
       const a=String(row[found.iA]==null?'':row[found.iA]).trim(); if(!a||a==='0') continue;
-      const yy=String(d.getFullYear()).slice(2); (byYear[yy]=byYear[yy]||[]).push({d:iso,a,v});
+      const yy=String(d.getFullYear()).slice(2);
+      const pn=found.iP>=0?String(row[found.iP]==null?'':row[found.iP]).trim():'', rt=String(row[found.iG]==null?'':row[found.iG]).trim(), mt=found.iM>=0?String(row[found.iM]==null?'':row[found.iM]).trim():'';
+      (byYear[yy]=byYear[yy]||[]).push({d:iso,a,v,p:pn,r:(rt&&rt!=='0')?rt:'',w:(mt&&mt!=='0')?mt:''});
     }
     const ys=Object.keys(byYear); if(!ys.length){ alert('출고 줄을 찾지 못했습니다.'); return; }
     const ref=getMatuRef(); const now=getMatuRef();
@@ -14140,6 +14143,52 @@ async function importMatuRefFile(inp){
     showToast(`✅ ${ys.map(y=>`20${y}년 ${byYear[y].length}건`).join(', ')} 가져왔습니다 — 지역 이름을 확인해 주세요`,4500);
     openMatuRefMap(ys.sort().reverse()[0]);
   }catch(e){ console.error(e); alert('엑셀을 읽지 못했습니다: '+e.message); }
+}
+/* 과거 자료(엑셀) 월별 상세 — 26년 「자재사용량 상세」와 같은 모양, 금색 머리 */
+function showMatuRefMonthDetail(mo,yy,filterNutr){
+  const ds=getMatuRef()[yy]; if(!ds) return;
+  const NC={N:'#1a5fa8',P:'#c0392b',K:'#7B4F00',Ca:'#6c3483',Mg:'#1a7a6a',Fe:'#d4572a',Mn:'#b8860b',Si:'#607d8b',S:'#8B6914'};
+  const sel=document.getElementById('matu-area')?.value||'';
+  const areaLabel=sel===''?'전체 지역':sel==='__left_green__'?'좌그린 기준 (그린전면+좌그린)':sel==='__right_green__'?'우그린 기준 (그린전면+우그린)':sel;
+  const all=ds.rows.map(r=>({...r,area:(ds.map&&ds.map[r.a]!=null)?ds.map[r.a]:_matuRefDefaultArea(r.a)}))
+    .filter(r=>+String(r.d).slice(5,7)===mo && _matuAreaSelMatch(sel,r.area)).sort((a,b)=>a.d.localeCompare(b.d));
+  const allTot={}; all.forEach(r=>Object.entries(r.v||{}).forEach(([k,v])=>allTot[k]=(allTot[k]||0)+v));
+  const rows=filterNutr?all.filter(r=>(r.v||{})[filterNutr]>0):all;
+  const tot={}; rows.forEach(r=>Object.entries(r.v||{}).forEach(([k,v])=>tot[k]=(tot[k]||0)+v));
+  const used=MATU_NUTRS.filter(k=>tot[k]>0), allUsed=MATU_NUTRS.filter(k=>allTot[k]>0);
+  const E=matEscHtml, wd=d=>'일월화수목금토'[new Date(d+'T00:00:00').getDay()];
+  const noP=!ds.rows.some(r=>r.p);
+  document.getElementById('madu-modal-wrap')?.remove();
+  const w=document.createElement('div'); w.id='madu-modal-wrap';
+  w.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:12px;';
+  w.onclick=e=>{ if(e.target===w) w.remove(); };
+  const chip=(k,on,label,c)=>`<span onclick="showMatuRefMonthDetail(${mo},'${yy}',${k?`'${k}'`:'null'})" style="display:inline-flex;align-items:center;gap:3px;padding:3px 10px;border-radius:100px;font-size:11px;font-weight:700;cursor:pointer;background:${on?c:'#f5f5f5'};color:${on?'#fff':c};border:1.5px solid ${c};">${label}</span>`;
+  w.innerHTML=`<div style="background:#fff;border-radius:14px;max-width:900px;width:100%;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,.3);">
+    <div style="background:linear-gradient(135deg,#8a6d0b,#c9a227);color:#fff;padding:12px 16px;display:flex;align-items:center;gap:10px;">
+      <span style="font-size:20px;">📂</span><div style="flex:1;"><div style="font-size:15px;font-weight:800;">${yy}년 ${mo}월 자재사용량 상세 <span style="font-size:11px;font-weight:600;opacity:.85;">(가져온 자료)</span></div>
+      <div style="font-size:11px;opacity:.9;">${filterNutr?`— <b>${filterNutr} 성분</b> 포함 제품만 표시`:`— ${E(areaLabel)}`}</div></div>
+      <button onclick="document.getElementById('madu-modal-wrap').remove()" style="background:rgba(255,255,255,.2);border:none;color:#fff;font-size:18px;width:34px;height:34px;border-radius:8px;cursor:pointer;">✕</button></div>
+    <div style="padding:12px 14px;overflow:auto;">
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">
+        <div style="border:1.5px solid #e8d48a;background:#fffbea;border-radius:8px;padding:6px 14px;text-align:center;"><div style="font-size:17px;font-weight:800;color:#7B5B00;">${rows.length}</div><div style="font-size:10px;color:#a08a3c;">사용 건수</div></div>
+        ${allUsed.slice(0,7).map(k=>`<div style="border:1.5px solid ${NC[k]};border-radius:8px;padding:6px 12px;text-align:center;"><div style="font-size:15px;font-weight:800;color:${NC[k]};">${(allTot[k]||0).toFixed(1)}</div><div style="font-size:10px;color:${NC[k]};">${k}(g)</div></div>`).join('')}
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px;align-items:center;"><span style="font-size:11px;color:#888;font-weight:600;">성분 필터:</span>${chip(null,!filterNutr,'전체','#7B5B00')}${allUsed.map(k=>chip(k,filterNutr===k,`${k} <span style="font-size:10px;opacity:.8;">${allTot[k].toFixed(1)}g</span>`,NC[k])).join('')}</div>
+      <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <thead><tr style="background:#faf6e6;"><th style="padding:6px 8px;border:1px solid #eee;white-space:nowrap;">날짜</th><th style="padding:6px 8px;border:1px solid #eee;">지역</th><th style="padding:6px 8px;border:1px solid #eee;">제품명</th><th style="padding:6px 8px;border:1px solid #eee;white-space:nowrap;">사용량(㎡당)</th>
+          ${used.map(k=>`<th style="padding:6px 8px;border:1px solid #eee;color:${NC[k]};min-width:48px;">${k}<br><span style="font-size:9px;font-weight:500;">(g)</span></th>`).join('')}</tr></thead>
+        <tbody>${rows.length?rows.map((r,i)=>`<tr style="background:${i%2?'#fdfbf3':'#fff'};">
+          <td style="padding:5px 8px;border:1px solid #eee;color:#888;white-space:nowrap;">${yy}년 ${r.d.slice(5,7)}월 ${r.d.slice(8,10)}일 (${wd(r.d)})</td>
+          <td style="padding:5px 8px;border:1px solid #eee;white-space:nowrap;"><span style="display:inline-block;padding:1px 7px;border-radius:100px;font-size:10px;font-weight:700;background:${matuAreaColor(r.area).bg};color:${matuAreaColor(r.area).c};">${E(r.area)}</span>${r.a!==r.area?`<div style="font-size:9.5px;color:#aaa;">${E(r.a)}</div>`:''}</td>
+          <td style="padding:5px 8px;border:1px solid #eee;font-weight:700;">${r.p?E(r.p):'<span style="color:#ccc;">—</span>'}${r.w?`<div style="font-size:10px;font-weight:500;color:#999;">${E(r.w)}</div>`:''}</td>
+          <td style="padding:5px 8px;border:1px solid #eee;text-align:right;font-weight:700;color:#7B5B00;white-space:nowrap;">${r.r?E(r.r):'—'}</td>
+          ${used.map(k=>{ const v=(r.v||{})[k]||0; return `<td style="padding:5px 8px;border:1px solid #eee;text-align:right;color:${v>0?NC[k]:'#ddd'};font-weight:${v>0?700:400};background:${filterNutr===k&&v>0?'#fffbe6':'transparent'};">${v>0?v.toFixed(2):'—'}</td>`; }).join('')}</tr>`).join('')
+          :`<tr><td colspan="${4+used.length}" style="text-align:center;padding:26px;color:#bbb;">해당 조건의 데이터가 없습니다</td></tr>`}</tbody>
+        ${rows.length?`<tfoot><tr style="background:#f6efcf;"><td colspan="4" style="padding:6px 10px;font-weight:800;color:#7B5B00;border:1px solid #eee;">합계 (${rows.length}건)</td>${used.map(k=>`<td style="padding:6px 8px;border:1px solid #eee;text-align:right;font-weight:800;color:${NC[k]};">${tot[k].toFixed(2)}</td>`).join('')}</tr></tfoot>`:''}
+      </table></div>
+      ${noP?`<div style="font-size:11px;color:#B8690A;margin-top:8px;">※ 제품명·사용량이 비어 있으면 「📂 과거 자료 비교」에서 같은 엑셀을 한 번 더 가져오면 채워집니다 (지역 이름 설정은 유지).</div>`:''}
+    </div></div>`;
+  document.body.appendChild(w);
 }
 /* 사용처(엑셀) → 처리지역(앱) 이름 맞추기 */
 function openMatuRefMap(y){
@@ -14261,7 +14310,7 @@ function renderMatUseLineChart(selType, selYear, areaLabel, monthData, keys, col
     for(let i = 0; i <= yTicks; i++){
       const v = maxVal * (i / yTicks);
       const y = yPos(v);
-      const lbl = v >= 1000 ? (v/1000).toFixed(1)+'k' : v.toFixed(0);
+      const lbl = v >= 1000 ? (v/1000).toFixed(1)+'k' : (maxVal<10?v.toFixed(1):v.toFixed(0));
       gridLines += `<line x1="${PAD_L}" y1="${y}" x2="${SVG_W-PAD_R}" y2="${y}"
         stroke="${i===0?'#c8c8c8':'#ebebeb'}" stroke-width="${i===0?1.5:1}" stroke-dasharray="${i===0?'':'4,3'}"/>`;
       yLabels   += `<text x="${PAD_L-5}" y="${y+4}" text-anchor="end"
@@ -14311,7 +14360,10 @@ function renderMatUseLineChart(selType, selYear, areaLabel, monthData, keys, col
       for(let i=0;i<12;i++){ const x=xPos(i), y=yPos(vals[i]||0); if(vals[i]>0){ path+=(inSeg?'L ':'M ')+x+' '+y+' '; inSeg=true; } else inSeg=false; }
       if(!path) return;
       paths+=`<path d="${path}" fill="none" stroke="${color}" stroke-width="1.5" stroke-dasharray="5,4" opacity="0.6"/>`;
-      vals.forEach((v,i)=>{ if(v>0){ const x=xPos(i), y=yPos(v); dots+=`<circle cx="${x}" cy="${y}" r="3.5" fill="#fff" stroke="${color}" stroke-width="1.5" opacity="0.8"><title>20${window._matuLineRefYY}년 ${i+1}월 ${k} ${v.toFixed(2)}g</title></circle>`; } });
+      vals.forEach((v,i)=>{ if(v>0){ const x=xPos(i), y=yPos(v); const lbl=v>=1000?(v/1000).toFixed(1)+'k':v.toFixed(1);
+        /* 26년 값 라벨(점 위)과 겹치지 않게 25년 라벨은 점 아래쪽에 */
+        dots+=`<text x="${x}" y="${y+15}" text-anchor="middle" font-size="8" font-weight="700" fill="${color}" opacity="0.75" font-family="맑은 고딕,sans-serif" style="pointer-events:none;">${lbl}</text>`;
+        dots+=`<circle cx="${x}" cy="${y}" r="5" fill="#fff" stroke="${color}" stroke-width="1.8" style="cursor:pointer;" onclick="showMatuRefMonthDetail(${i+1},'${window._matuLineRefYY}','${k}')"><title>20${window._matuLineRefYY}년 ${i+1}월 ${k} ${v.toFixed(2)}g · 눌러서 상세</title></circle>`; } });
     });
     if(!paths){
       return `<svg viewBox="0 0 ${SVG_W} ${SVG_H}" style="width:100%;display:block;">
