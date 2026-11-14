@@ -269,6 +269,7 @@ async function fbFullSyncFromCloud(){
 
     setLastSyncTs(Date.now()); /* 전체동기화도 증분동기화의 기준점을 함께 갱신 */
     showToast('☁️ 클라우드 동기화 완료');
+    setTimeout(_recAfterSyncCheck,1200);   /* 작성 탭에 열린 날짜가 다른 기기에서 바뀌었으면 갱신/안내 */
   }catch(e){ console.warn('[FB] 완전 동기화 실패:', e); }
 }
 
@@ -6148,6 +6149,97 @@ let _saveReportBusy = false;
    다시 받아올 필요가 없었음. loadForEdit(idx, true)로 방금 저장한 기록을
    그대로 다시 채우고(확인창·탭전환·토스트 없이), 날짜에 의존하는 각종
    차트/기록·통계 화면만 다시 그려서 체감 속도를 크게 개선함. */
+/* ══════════════════════════════════════════════════════
+   여러 기기 동시 작성 — 섹션 단위 합치기
+   · _recBase : 이 화면에 기록을 불러오거나 저장한 시점의 내용(비교 기준)
+   · 저장할 때 클라우드 최신본(theirs)·기준(base)·내 화면(mine)을 섹션마다 비교
+       나만 고침 → 내 것 / 다른 기기만 고침 → 그쪽 것 / 둘 다 고침 → 물어봄
+   · 동기화(앱 시작·🔄)로 작성 중인 날짜가 다른 기기에서 바뀌었으면: 내가 안 고쳤으면 자동 갱신, 고치던 중이면 물어봄
+   ══════════════════════════════════════════════════════ */
+var _recBase=null;
+const REC_SECS=[
+  {k:'basic',l:'기본정보',f:['course','teeoff','teams','early','normal','late','remark']},
+  {k:'weather',l:'운영/날씨',f:['weather']},
+  {k:'ball',l:'볼스피드',f:['ballSpeed']},
+  {k:'irr',l:'관수 기록',f:['irrigation']},
+  {k:'workers',l:'작업자 (출근·휴무)',f:['workers']},
+  {k:'tasks',l:'작업 내용 (출근시간 포함)',f:['tasks','workTimes']},
+  {k:'yego',l:'예초',f:['yego','yegoItems','yegoNote']},
+  {k:'notes',l:'비고',f:['notes']},
+  {k:'mat',l:'비료·농약·모래 자재 사용',f:['matUseRows']},
+  {k:'tdr',l:'TDR350',f:['tdr']},
+];
+/* 키 순서·빈값(false·''·null) 차이는 무시하고 비교 */
+function _recStable(v){
+  if(v==null||v===false||v==='') return '';
+  if(Array.isArray(v)) return '['+v.map(_recStable).join(',')+']';
+  if(typeof v==='object'){ if(typeof v.toDate==='function') return ''; return '{'+Object.keys(v).sort().map(k=>{ const x=_recStable(v[k]); return x===''?'':JSON.stringify(k)+':'+x; }).filter(Boolean).join(',')+'}'; }
+  return JSON.stringify(typeof v==='number'?String(v):v);
+}
+function _recSecStr(rec,sec){ return sec.f.map(f=>_recStable(rec?rec[f]:null)).join('|'); }
+function _recDocId(date){ return String(date).replace(/[^0-9가-힣]/g,'-').replace(/-+/g,'-'); }
+async function _recCloudMerge(mine){
+  let snap; try{ snap=await _fbDb.collection(FB_COL_REPORTS).doc(_recDocId(mine.date)).get(); }catch(e){ return {rec:mine,from:[]}; }   /* 클라우드 확인 실패 → 평소처럼 저장 */
+  if(!snap||!snap.exists) return {rec:mine,from:[]};
+  const cd=snap.data()||{}, who=String(cd._savedBy||'다른 기기').split('@')[0];
+  const when=(cd._updatedAt&&typeof cd._updatedAt.toDate==='function')?cd._updatedAt.toDate():null;
+  const whenTxt=when?`${when.getMonth()+1}/${when.getDate()} ${String(when.getHours()).padStart(2,'0')}:${String(when.getMinutes()).padStart(2,'0')}`:'';
+  const base=(_recBase&&_recBase.date===mine.date)?_recBase:null;
+  const out=JSON.parse(JSON.stringify(mine)), from=[], conflicts=[];
+  REC_SECS.forEach(sec=>{
+    const m=_recSecStr(mine,sec), t=_recSecStr(cd,sec), b=base?_recSecStr(base,sec):null;
+    if(m===t) return;                                  /* 같음 */
+    if(b!==null && t===b) return;                      /* 다른 기기는 안 고침 → 내 것 */
+    if(b!==null && m===b){ sec.f.forEach(f=>{ out[f]=cd[f]!==undefined?JSON.parse(JSON.stringify(cd[f])):out[f]; }); from.push(sec.l); return; }   /* 나는 안 고침 → 그쪽 것 */
+    if(b===null && m.replace(/\|/g,'')===''){ sec.f.forEach(f=>{ if(cd[f]!==undefined) out[f]=JSON.parse(JSON.stringify(cd[f])); }); from.push(sec.l); return; }   /* 새로 쓰는 중인데 내 칸이 비었음 → 그쪽 것 */
+    conflicts.push(sec);
+  });
+  if(conflicts.length){
+    const pick=await _recConflictAsk(mine.date,conflicts,who,whenTxt);
+    if(!pick) return null;
+    conflicts.forEach(sec=>{ if(pick[sec.k]==='theirs'){ sec.f.forEach(f=>{ out[f]=cd[f]!==undefined?JSON.parse(JSON.stringify(cd[f])):out[f]; }); from.push(sec.l); } });
+  }
+  const msg=from.length?`☁️ ${who}${whenTxt?` (${whenTxt})`:''}님이 먼저 저장한 내용을 합쳐 저장했습니다: ${from.join(', ')}`:'';
+  return {rec:out,from,msg};
+}
+function _recConflictAsk(date,secs,who,whenTxt){
+  return new Promise(res=>{
+    const w=document.createElement('div'); w.id='rec-conflict';
+    w.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10400;display:flex;align-items:center;justify-content:center;padding:14px;';
+    const pick={}; secs.forEach(s=>pick[s.k]='mine');
+    const row=s=>`<div style="border:1.5px solid #eee;border-radius:9px;padding:8px 10px;margin-bottom:7px;"><div style="font-size:13px;font-weight:800;margin-bottom:6px;">${s.l}</div>
+      <div style="display:flex;gap:6px;"><button data-k="${s.k}" data-v="mine" style="flex:1;padding:8px;border-radius:8px;font-weight:800;font-size:12px;cursor:pointer;">✏️ 내 내용</button><button data-k="${s.k}" data-v="theirs" style="flex:1;padding:8px;border-radius:8px;font-weight:800;font-size:12px;cursor:pointer;">☁️ ${matEscHtml(who)} 내용</button></div></div>`;
+    w.innerHTML=`<div style="background:#fff;border-radius:14px;max-width:440px;width:100%;max-height:92vh;overflow:auto;box-shadow:0 10px 40px rgba(0,0,0,.35);">
+      <div style="background:linear-gradient(135deg,#a8261b,#d9534f);color:#fff;padding:12px 16px;font-size:14px;font-weight:800;">⚠️ 같은 섹션을 다른 기기에서도 고쳤습니다</div>
+      <div style="padding:10px 16px 4px;font-size:12px;color:#444;line-height:1.6;"><b>${matEscHtml(date)}</b> 기록을 <b>${matEscHtml(who)}</b>님이${whenTxt?` <b>${whenTxt}</b>에`:''} 먼저 저장했습니다. 아래 섹션은 둘 다 고쳐서, 어느 쪽을 남길지 골라 주세요. <span style="color:#888;">(다른 섹션은 자동으로 합칩니다)</span></div>
+      <div style="padding:6px 16px;">${secs.map(row).join('')}</div>
+      <div style="display:flex;gap:6px;padding:0 16px 6px;"><button data-all="mine" style="flex:1;padding:6px;border-radius:7px;border:1px solid #ccc;background:#fafafa;font-size:11px;cursor:pointer;">모두 내 내용</button><button data-all="theirs" style="flex:1;padding:6px;border-radius:7px;border:1px solid #ccc;background:#fafafa;font-size:11px;cursor:pointer;">모두 ${matEscHtml(who)} 내용</button></div>
+      <div style="display:flex;gap:8px;padding:8px 16px 14px;"><button id="rc-cancel" style="flex:1;padding:10px;border-radius:9px;border:1.5px solid #ccc;background:#fff;color:#555;font-weight:700;font-size:13px;cursor:pointer;">저장 취소</button><button id="rc-ok" style="flex:2;padding:10px;border-radius:9px;border:none;background:#a8261b;color:#fff;font-weight:800;font-size:13px;cursor:pointer;">선택한 대로 합쳐서 저장</button></div></div>`;
+    document.body.appendChild(w);
+    const paint=()=>w.querySelectorAll('button[data-k]').forEach(b=>{ const on=pick[b.dataset.k]===b.dataset.v; b.style.border=on?'2px solid #a8261b':'1.5px solid #ddd'; b.style.background=on?(b.dataset.v==='mine'?'#fdecea':'#eaf3fb'):'#fff'; b.style.color=on?'#1a1a1a':'#888'; });
+    w.querySelectorAll('button[data-k]').forEach(b=>b.onclick=()=>{ pick[b.dataset.k]=b.dataset.v; paint(); });
+    w.querySelectorAll('button[data-all]').forEach(b=>b.onclick=()=>{ secs.forEach(s=>pick[s.k]=b.dataset.all); paint(); });
+    w.querySelector('#rc-cancel').onclick=()=>{ w.remove(); res(null); };
+    w.querySelector('#rc-ok').onclick=()=>{ w.remove(); res(pick); };
+    paint();
+  });
+}
+/* 동기화 뒤: 작성 탭에 열린 날짜가 다른 기기에서 바뀌었는지 확인 */
+function _recAfterSyncCheck(){
+  try{
+    const lbl=document.getElementById('inp-date')?.value||''; if(!lbl) return;
+    const idx=gd().findIndex(x=>x.date===lbl); if(idx<0) return;
+    const L=gd()[idx];
+    if(_recBase && _recBase.date===lbl && REC_SECS.every(sec=>_recSecStr(L,sec)===_recSecStr(_recBase,sec))) return;   /* 바뀐 것 없음 */
+    if(!_isFormDirty()){
+      loadForEdit(idx,true);
+      showToast('☁️ 작성 중인 날짜가 다른 기기에서 수정되어 최신 내용으로 갱신했습니다',4500);
+    } else {
+      const ch=_recBase?REC_SECS.filter(sec=>_recSecStr(L,sec)!==_recSecStr(_recBase,sec)).map(s=>s.l):[];
+      showToast(`☁️ 다른 기기에서 이 날짜가 수정됐습니다${ch.length?` (${ch.join(', ')})`:''} — 저장할 때 섹션별로 합쳐집니다`,6000);
+    }
+  }catch(e){ console.warn(e); }
+}
 function refreshAfterSaveNoReload(dateLabel){
   const all = gd();
   const idx = all.findIndex(x=>x.date===dateLabel);
@@ -6179,7 +6271,7 @@ function saveReport(opts){
   const _wxMeta=(_curWeatherMeta&&_curWeatherMeta.date===_saveDateISO)
     ?{fetchedAt:_curWeatherMeta.fetchedAt,badges:_curWeatherMeta.badges}
     :{fetchedAt:_existingWr.fetchedAt||null,badges:_existingWr.badges||{}};
-  const r={
+  let r={
     id: existingId || ('rec_'+Date.now()+'_'+Math.random().toString(36).slice(2,10)),
     date,course:document.getElementById('inp-course').value||gcn(),
     teeoff:document.getElementById('inp-teeoff').value,teams:document.getElementById('inp-teams').value,
@@ -6213,6 +6305,17 @@ function saveReport(opts){
     })(),
     notes:document.getElementById('inp-notes').value,savedAt:new Date().toISOString()
   };
+  /* ☁️ 다른 기기와 섹션 단위로 합치기 — 저장 직전에 클라우드 최신본을 받아, 내가 불러온 뒤 다른 기기에서
+     바뀐 섹션은 그쪽 내용을 살리고, 같은 섹션을 둘 다 고쳤을 때만 어느 쪽을 남길지 물음 */
+  if(opts._rec) r=opts._rec;
+  else if(!opts._merged && _fbUser && _fbRole!=='viewer'){
+    _recCloudMerge(r).then(res=>{
+      _saveReportBusy=false;
+      if(!res){ showToast('저장을 취소했습니다 (작성 중인 내용은 그대로)'); return; }
+      saveReport({...opts,_merged:true,_rec:res.rec,_fromCloud:res.from,_msg:res.msg});
+    });
+    return;
+  }
   const all=gd();const ex=all.findIndex(x=>x.date===date);
   if(ex>=0){
     if(!opts.noConfirm && !confirm('같은 날짜 기록이 있습니다. 덮어쓰겠습니까?')){
@@ -6245,7 +6348,10 @@ function saveReport(opts){
   });
   if(presetChanged){sp(presets);renderPresets();if(typeof fbSaveSharedSettings==='function') setTimeout(fbSaveSharedSettings,500);}
   sd(all);
+  if(opts._fromCloud&&opts._fromCloud.length){ const ii=gd().findIndex(x=>x.date===r.date); if(ii>=0) loadForEdit(ii,true); }   /* 다른 기기 내용을 합쳤으면 화면도 합친 내용으로 */
+  _recBase=JSON.parse(JSON.stringify(r));
   _formMarkClean();   /* 저장 완료 → 변경 없음 (지금 화면을 기준으로) */
+  if(opts._msg) setTimeout(()=>showToast(opts._msg,5000),1800);
   /* 저장 후 새로고침 시 방금 저장한 기록을 자동으로 찾아 보여주기 위한 표시 */
   sessionStorage.setItem('golf_after_save_date_label', r.date);
   /* ☁️ Firebase 동기화 (로그인 & 쓰기 권한 있을 때) */
@@ -7212,6 +7318,7 @@ function loadForEdit(idx,silent){
   updateStatManualBadges();
   applyWeatherMetaToUI(_curWeatherMeta);
   if(!silent) showToast(`"${r.date}" 기록을 불러왔습니다. 수정 후 저장하세요.`);
+  _recBase=JSON.parse(JSON.stringify(r));   /* 섹션 합치기 비교 기준 */
   _formMarkClean();
   {const pk=document.getElementById('inp-date-picker'); if(pk) pk.dataset.prev=pk.value;}
 }
@@ -9847,10 +9954,31 @@ function syncWriteFormWorker(rec, name, type){
   try{
     if(!rec || (document.getElementById('inp-date')?.value||'')!==rec.date) return;
     const src=(rec.workers||[]).find(w=>w.name===name&&w.type===type); if(!src) return;
+    const wasDirty=(typeof _isFormDirty==='function')?_isFormDirty():false;
     const cw=curWorkers.find(w=>w.name===name&&w.type===type);
     if(cw) Object.assign(cw,{off:src.off,leave:src.leave,days:src.days,ot:src.ot}); else curWorkers.push(JSON.parse(JSON.stringify(src)));
     renderWorkers();
+    /* 이미 일보에 저장된 변경이므로 「저장 안 한 변경」으로 치지 않음 + 섹션 합치기 기준도 맞춤 */
+    if(typeof _recBase!=='undefined' && _recBase && _recBase.date===rec.date) _recBase.workers=JSON.parse(JSON.stringify(rec.workers||[]));
+    if(!wasDirty && typeof _formMarkClean==='function') _formMarkClean();
   }catch(e){ console.warn('[작성 탭 반영]',e); }
+}
+/* 통계에서 근무 상태만 고칠 때: 클라우드 최신본을 받아 그 근무자 칸만 바꿔 저장
+   (이 기기의 오래된 사본을 통째로 올려 다른 기기에서 고친 섹션을 덮어쓰지 않도록) */
+async function fbPatchReportWorker(localRec, name, type, patch){
+  try{
+    const snap=await _fbDb.collection(FB_COL_REPORTS).doc(_recDocId(localRec.date)).get();
+    let base=localRec;
+    if(snap&&snap.exists){ const d={...snap.data()}; delete d._savedBy; delete d._savedByUid; delete d._updatedAt; base=d; }
+    const rec=JSON.parse(JSON.stringify(base));
+    rec.workers=rec.workers||[];
+    let w=rec.workers.find(x=>x.name===name&&x.type===type);
+    if(!w){ const lw=(localRec.workers||[]).find(x=>x.name===name&&x.type===type); if(lw){ w=JSON.parse(JSON.stringify(lw)); rec.workers.push(w); } }
+    if(w) Object.assign(w,patch);
+    const ok=await fbSaveReport(rec);
+    if(ok){ const all=gd(); const i=all.findIndex(x=>x.date===rec.date); if(i>=0){ all[i]=rec; sd(all); syncWriteFormWorker(rec,name,type); renderStats(); renderHistory(); setTimeout(_recAfterSyncCheck,0); } }   /* 다른 기기에서 바뀐 섹션이 있었으면 작성 화면도 갱신 */
+    return ok;
+  }catch(e){ console.warn(e); return fbSaveReport(localRec); }
 }
 function saveRegDayEdit(status){
   if(!_regDayEdit)return;
@@ -9868,9 +9996,9 @@ function saveRegDayEdit(status){
   renderStats();
   renderHistory();
   closeRegDayModal(null);
-  /* ☁️ Firebase 동기화 */
+  /* ☁️ Firebase 동기화 — 그 근무자 칸만 클라우드 최신본에 반영 */
   if(_fbUser && _fbRole !== 'viewer'){
-    fbSaveReport(all[idx]).then(ok=>{
+    fbPatchReportWorker(all[idx], name, '정규직', {off:w.off, leave:w.leave}).then(ok=>{
       showToast(ok ? '수정 + 클라우드 업로드 완료!' : '로컬 수정 완료 (클라우드 업로드 실패)');
     });
   } else {
@@ -9966,7 +10094,7 @@ function saveDailyDayEdit(){
   renderHistory();
   closeDailyDayModal(null);
   if(_fbUser && _fbRole !== 'viewer'){
-    fbSaveReport(all[idx]).then(ok=>{
+    fbPatchReportWorker(all[idx], name, '일용', isOff?{off:true,leave:false}:{off:false,days:w.days,ot:w.ot}).then(ok=>{
       showToast(ok ? '수정 + 클라우드 업로드 완료!' : '로컬 수정 완료 (클라우드 업로드 실패)');
     });
   } else {
@@ -10950,6 +11078,8 @@ function checkBackupReminder(){
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
   {date:'2026-11-14',items:[
+    '🔁 통계에서 휴무·연차(일용 근무) 수정: 클라우드 최신본의 그 근무자 칸만 바꿔 저장(다른 기기에서 고친 섹션 보존) · 작성 탭에 같은 날짜가 열려 있으면 바로 반영하되 「저장 안 한 변경」으로 잡지 않음',
+    '🤝 여러 기기 동시 작성: 저장할 때 클라우드 최신본과 섹션 단위로 합침 — 다른 기기에서 고친 섹션은 덮어쓰지 않고 살리고, 같은 섹션을 둘 다 고쳤을 때만 어느 쪽을 남길지 선택 · 앱 시작/동기화 후 작성 중인 날짜가 다른 기기에서 바뀌었으면 자동 갱신(작성 중이면 안내)',
     '👁 열람자: 관수 기록 차트의 이전/이후 30일 이동 사이드바·페이지 점 사용 가능 (볼스피드·강우·TDR350 차트 좌우 이동도) — 기록 수정은 계속 잠금',
     '📂 과거 자료 비교: 차트의 25년 점선 꼭지점마다 수치 표시(점 아래) · 점을 누르면 25년 그 달 「자재사용량 상세」 팝업(날짜·지역·제품명·㎡당 사용량·성분, 성분 필터) — 제품명은 엑셀을 한 번 더 가져오면 채워짐',
     '🐞 과거 자료 비교: 지역을 바꾸면 점선(전년도)이 직전 화면(전체 지역 등) 값으로 그려져 엉뚱하게 높게 나오던 문제 수정 · 성분 범례를 「26년 / 25년(자료)」 두 줄로 표시',
