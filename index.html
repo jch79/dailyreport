@@ -1217,12 +1217,12 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
   <div id="write-sticky-top" style="position:sticky;z-index:590;background:#fff;padding-top:8px;">
     <div id="write-toolbar" style="display:flex;gap:8px;align-items:center;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch;padding:2px 2px 10px;scrollbar-width:none;">
       <!-- 이전 기록 · 보고 있는 날짜 · 다음 기록 (날짜 이동 안전장치 적용) -->
-      <div style="display:flex;align-items:stretch;flex-shrink:0;border:1.5px solid #c8c8c8;border-radius:9px;overflow:hidden;background:#fff;">
-        <button onclick="recNav(-1)" title="이전 기록(기록 있는 날)으로 이동" style="border:none;background:#f6f6f6;padding:0 10px;font-size:13px;font-weight:800;color:#444;cursor:pointer;white-space:nowrap;">&lt; 이전기록</button>
-        <button id="wt-date" onclick="wtDateClick()" title="눌러서 날짜 선택" style="border:none;border-left:1px solid #ddd;border-right:1px solid #ddd;background:#fff;padding:7px 12px;font-size:14px;font-weight:800;color:#1a1a1a;cursor:pointer;white-space:nowrap;min-width:92px;">--</button>
-        <button onclick="recNav(1)" title="다음 기록(기록 있는 날)으로 이동" style="border:none;background:#f6f6f6;padding:0 10px;font-size:13px;font-weight:800;color:#444;cursor:pointer;white-space:nowrap;">다음기록 &gt;</button>
+      <div style="display:flex;align-items:stretch;flex-shrink:0;border:1.5px solid #c0c0c0;border-radius:7px;overflow:hidden;background:#fff;">
+        <button onclick="recNav(-1)" title="이전 기록(기록 있는 날)으로 이동" style="border:none;background:#fff;padding:7px 11px;font-size:12px;font-weight:500;color:#333;cursor:pointer;white-space:nowrap;">&lt; 이전기록</button>
+        <button id="wt-date" onclick="wtDateClick()" title="눌러서 날짜 선택" style="border:none;border-left:1px solid #e0e0e0;border-right:1px solid #e0e0e0;background:#f7f9fb;padding:7px 12px;font-size:12px;font-weight:700;color:#1a1a1a;cursor:pointer;white-space:nowrap;min-width:78px;">--</button>
+        <button onclick="recNav(1)" title="다음 기록(기록 있는 날)으로 이동" style="border:none;background:#fff;padding:7px 11px;font-size:12px;font-weight:500;color:#333;cursor:pointer;white-space:nowrap;">다음기록 &gt;</button>
       </div>
-      <button class="btn" onclick="onTodayBtn()" title="오늘 날짜로 이동" style="flex-shrink:0;border-color:#185FA5;color:#185FA5;font-weight:800;">오늘</button>
+      <button class="btn" onclick="onTodayBtn()" title="오늘 날짜로 이동" style="flex-shrink:0;">오늘</button>
       <button class="btn btn-primary" id="btn-save-top" onclick="saveReport()" style="flex-shrink:0;touch-action:manipulation;">&#10003; 저장하기</button>
       <div style="width:1px;align-self:stretch;background:#e0e0e0;margin:0 2px;flex-shrink:0;"></div>
       <!-- 섹션 바로가기 퀵네비 바 (위 버튼들과 한 줄로 이어져 함께 가로 스크롤됨) -->
@@ -6844,7 +6844,8 @@ function _formSnap(){
     const NOSNAP=new Set(['inp-date-picker','mat-search-modal-kw','gp-area-sel','gp-target-input','reg-name','reg-task','daily-subgroup-sel','daily-row1','daily-row2','daily-name']);
     const v=[...pw.querySelectorAll('input[id],textarea[id],select[id]')].filter(e=>!NOSNAP.has(e.id)&&e.type!=='file'&&e.type!=='button'&&!e.closest('[data-nosnap]'))
       .map(e=>(e.id||e.name||'')+'='+((e.type==='checkbox'||e.type==='radio')?(e.checked?1:0):e.value));
-    const wx=[...pw.querySelectorAll('[id^="w-"]')].map(e=>e.id+'='+(e.tagName==='INPUT'||e.tagName==='TEXTAREA'?e.value:e.textContent.trim()));
+    /* 날씨: 불러온 값만 비교 — 월·연 누적강우, 평년값처럼 기록에서 자동 계산되는 표시는 제외 */
+    const wx=['w-temp','w-feel','w-humid','w-wind','w-sky','w-avg','w-minmax'].map(id=>{ const e=document.getElementById(id); return id+'='+(e?e.textContent.trim():''); });
     /* false·빈값·없음은 같은 것으로 취급 (휴무 체크했다 풀면 off:false가 생겨도 「변경 없음」) */
     const data=JSON.stringify([curWorkers,curTasks,(typeof matAreaBlocks!=='undefined'?matAreaBlocks:null),(typeof yegoData!=='undefined'?yegoData:null),(typeof getTdrVals==='function'?getTdrVals():null)],(k,v)=>(v===false||v===''||v==null)?undefined:v);
     return v.join('\u0001')+'\u0002'+wx.join('\u0001')+'\u0002'+data;
@@ -10940,6 +10941,7 @@ function checkBackupReminder(){
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
   {date:'2026-11-14',items:[
+    '🔤 상단 고정 바 「< 이전기록 | 날짜 | 다음기록 >」·「오늘」 글씨체·크기·굵기를 다른 버튼과 통일 · 🐞 월/연 누적강우(자동 계산 표시) 때문에 변경이 없는데도 날짜 이동 시 저장 여부를 묻던 문제 수정',
     '🏷 팀 관리: 계정마다 「누구 계정인지」 메모 입력칸(관리자만 보임) — 입력 후 Enter/칸 밖을 누르면 저장, 이메일 앞에 이름이 굵게 표시',
     '💾 날짜 이동 시 「저장 안 한 변경」 판단을 마지막 불러오기·저장 상태와 화면 전체 비교로 변경 — 날씨 자동 불러오기, 처리지역·작업 항목 추가/삭제, 관수 팝업, 통계에서 고친 휴무 반영 등 버튼·자동으로 바뀐 값도 감지, 바꿨다 되돌리면 변경 없음 · 날씨 불러오기 완료 문구에 「변경 n개 — 저장 필요 / 변경 없음」 표시',
     '⏳ 운영/날씨 「자동 불러오기」: 불러오는 동안 안내 문구를 완료(✅)·실패(⚠️) 문구가 뜰 때까지 계속 표시, 버튼도 「⏳ 불러오는 중…」으로 바뀌고 중복 클릭 방지',
