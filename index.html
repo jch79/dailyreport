@@ -1115,6 +1115,11 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
 /* 요청: 주간예보 불러오기도 열람자가 사용 가능하게 — fetchWeeklyForecast()는 조회만 하고
    저장 기능이 전혀 없는 읽기 전용 기능이라 통째로 풀어도 안전함 */
 .write-sec-wrap.sec-locked button[onclick="fetchWeeklyForecast()"]{pointer-events:auto!important;opacity:1!important;}
+/* 요청: 관수 기록 차트의 이전/이후 30일 이동(양쪽 사이드바·페이지 점)도 열람자 사용 가능하게 — 보기 범위만 바꾸는 조회 전용.
+   같은 성격인 볼스피드 차트·강우 차트의 좌우 이동도 함께 허용 (막대를 눌러 여는 수정 팝업은 계속 잠금) */
+.write-sec-wrap.sec-locked [onclick^="irrNav("],
+.write-sec-wrap.sec-locked [onclick^="window._bsNav("],
+.write-sec-wrap.sec-locked [onclick^="rainNav("]{pointer-events:auto!important;opacity:1!important;cursor:pointer;}
 .write-sec-wrap.sec-locked #weekly-fcst-container,
 .write-sec-wrap.sec-locked #weekly-fcst-container *{pointer-events:auto!important;opacity:1!important;}
 .sec-lock-badge{position:relative;z-index:5;background:#fff3cd;border:1.5px solid #e8c766;border-radius:8px;padding:7px 11px;margin-bottom:10px;font-size:11.5px;font-weight:700;color:#8a6d1a;display:flex;align-items:center;gap:6px;}
@@ -10944,6 +10949,7 @@ function checkBackupReminder(){
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
   {date:'2026-11-14',items:[
+    '👁 열람자: 관수 기록 차트의 이전/이후 30일 이동 사이드바·페이지 점 사용 가능 (볼스피드·강우 차트 좌우 이동도) — 기록 수정은 계속 잠금',
     '📂 과거 자료 비교: 차트의 25년 점선 꼭지점마다 수치 표시(점 아래) · 점을 누르면 25년 그 달 「자재사용량 상세」 팝업(날짜·지역·제품명·㎡당 사용량·성분, 성분 필터) — 제품명은 엑셀을 한 번 더 가져오면 채워짐',
     '🐞 과거 자료 비교: 지역을 바꾸면 점선(전년도)이 직전 화면(전체 지역 등) 값으로 그려져 엉뚱하게 높게 나오던 문제 수정 · 성분 범례를 「26년 / 25년(자료)」 두 줄로 표시',
     '📂 자재사용량 「과거 자료 비교」: 예전 엑셀의 비료 순성분량 시트(일자·사용처·g/㎡·N P K…)를 가져와 단일 자료로 보관 → 성분별 월순성분량 추이에 전년도를 점선으로 겹쳐 비교 + 연간/같은 기간 합계 비교표, N·P·K 카드에도 전년도 값 표시 · 사용처 → 처리지역 이름 맞추기 · 팀 공유·백업 포함',
