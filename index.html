@@ -10941,6 +10941,7 @@ function checkBackupReminder(){
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
   {date:'2026-11-14',items:[
+    '🧮 자재사용량 분석 N·P·K 카드: 「카드 추가」에 「🌐 전체 지역」 추가 · 카드를 누르면 팝업 대신 아래 자재사용 분석(차트·표)을 그 카드 처리지역 기준으로 바꿔 보여주고 그 위치로 이동(선택한 카드는 진하게 표시)',
     '🔤 상단 고정 바 「< 이전기록 | 날짜 | 다음기록 >」·「오늘」 글씨체·크기·굵기를 다른 버튼과 통일 · 🐞 월/연 누적강우(자동 계산 표시) 때문에 변경이 없는데도 날짜 이동 시 저장 여부를 묻던 문제 수정',
     '🏷 팀 관리: 계정마다 「누구 계정인지」 메모 입력칸(관리자만 보임) — 입력 후 Enter/칸 밖을 누르면 저장, 이메일 앞에 이름이 굵게 표시',
     '💾 날짜 이동 시 「저장 안 한 변경」 판단을 마지막 불러오기·저장 상태와 화면 전체 비교로 변경 — 날씨 자동 불러오기, 처리지역·작업 항목 추가/삭제, 관수 팝업, 통계에서 고친 휴무 반영 등 버튼·자동으로 바뀐 값도 감지, 바꿨다 되돌리면 변경 없음 · 날씨 불러오기 완료 문구에 「변경 n개 — 저장 필요 / 변경 없음」 표시',
@@ -13443,6 +13444,7 @@ function setNpkCards(cards){
   }catch(e){}
 }
 function npkCardMatch(card,blockName){
+  if(card.id==='__all__') return true;   /* 전체 지역 */
   if(card.id==='__left_green__')  return NPK_LEFT_NAMES.some(x=>String(blockName||'').trim()===x);
   if(card.id==='__right_green__') return NPK_RIGHT_NAMES.some(x=>String(blockName||'').trim()===x);
   return _searchNorm(blockName)===_searchNorm(card.id);
@@ -13482,8 +13484,8 @@ function renderNpkSummaryCards(selYear, allRecs, fertList){
   wrap.innerHTML = `
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(152px,1fr));gap:6px;margin-bottom:10px;">
       ${totals.map(t=>`
-        <div onclick="openNpkCardTrendModal('${String(t.id).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;')}')" title="탭하면 이 처리지역의 성분별(N·P·K) 월순성분량 추이를 볼 수 있습니다"
-          style="position:relative;border:1.5px solid #c2dda8;border-radius:8px;padding:7px 10px;background:#f8fff4;cursor:pointer;">
+        <div onclick="selectNpkCardArea('${String(t.id).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;')}')" title="누르면 아래 자재사용 분석(차트·표)을 이 처리지역 기준으로 보여줍니다"
+          style="position:relative;border:${_npkCardIsSel(t.id)?'2.5px solid #2d6a1e':'1.5px solid #c2dda8'};border-radius:8px;padding:7px 10px;background:${_npkCardIsSel(t.id)?'#e8f5dc':'#f8fff4'};cursor:pointer;${_npkCardIsSel(t.id)?'box-shadow:0 0 0 2px #c2dda8;':''}">
           <button onclick="event.stopPropagation();deleteNpkCard('${String(t.id).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;')}')" title="카드 삭제"
             style="position:absolute;top:4px;right:5px;background:none;border:none;color:#b7cfa5;font-size:10px;font-weight:700;cursor:pointer;line-height:1;padding:2px;">✕</button>
           <div style="font-size:9.5px;font-weight:800;color:#2d6a1e;margin-bottom:4px;padding-right:12px;">${matEscHtml(t.label)} <span style="font-weight:600;color:#9ab789;">· ${selYear}년</span></div>
@@ -13633,6 +13635,19 @@ function openNpkCardTrendModal(cardId){
   modal.style.display='flex';
 }
 
+/* ── 카드 클릭 → 아래 「자재사용 분석」 섹션들을 그 카드의 처리지역 기준으로 (지역 선택 변경 + 이동) ── */
+function _npkCardIsSel(id){ const v=document.getElementById('matu-area')?.value||''; return id==='__all__'?v==='':v===id; }
+function selectNpkCardArea(id){
+  const sel=document.getElementById('matu-area'); if(!sel) return;
+  const v=id==='__all__'?'':id;
+  if(v && ![...sel.options].some(o=>o.value===v)){ const o=document.createElement('option'); o.value=v; o.textContent=v; sel.appendChild(o); }
+  sel.value=v;
+  renderMatUsePanel();
+  const card=getNpkCards().find(c=>c.id===id);
+  showToast(`📊 ${card?card.label.replace(/^\S+\s/,''):'전체 지역'} 기준으로 자재사용 분석을 표시합니다`);
+  const tgt=document.getElementById('matu-chart-wrap')||sel;
+  setTimeout(()=>{ const y=tgt.getBoundingClientRect().top+window.scrollY-120; window.scrollTo({top:Math.max(0,y),behavior:'smooth'}); },60);
+}
 /* ── 카드 삭제 ── */
 function deleteNpkCard(id){
   const cards=getNpkCards();
@@ -13650,6 +13665,7 @@ function openAddNpkCardModal(){
   const allAreasSet=new Set();
   gd().forEach(r=>(r.matUseRows||[]).forEach(b=>{ if(b.areaName) allAreasSet.add(String(b.areaName).trim()); }));
   const presetOpts=[
+    {id:'__all__',        label:'🌐 전체 지역'},
     {id:'__left_green__', label:'🟦 좌그린 기준 (그린전면+좌그린)'},
     {id:'__right_green__',label:'🟩 우그린 기준 (그린전면+우그린)'},
   ].filter(p=>!existIds.has(p.id));
