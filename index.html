@@ -606,8 +606,11 @@ async function fbLoadUserList(){
         </label>`).join('');
       return `<div style="display:flex;align-items:center;gap:6px;padding:8px 0;border-bottom:1px solid #f0f0f0;flex-wrap:wrap;">
         <div style="flex:1;min-width:140px;">
-          <div style="font-size:12px;font-weight:600;color:#333;">${u.email||uid}${u.blocked?' <span style="font-size:10px;font-weight:700;color:#fff;background:#c0392b;padding:1px 6px;border-radius:100px;">🚫 차단됨</span>':''}</div>
+          <div style="font-size:12px;font-weight:600;color:#333;">${u.adminMemo?`<span style="font-size:13px;font-weight:800;color:#185FA5;margin-right:4px;">${String(u.adminMemo).replace(/&/g,'&amp;').replace(/</g,'&lt;')}</span>`:''}${u.email||uid}${u.blocked?' <span style="font-size:10px;font-weight:700;color:#fff;background:#c0392b;padding:1px 6px;border-radius:100px;">🚫 차단됨</span>':''}</div>
           <div style="font-size:10px;color:#aaa;">${u.createdAt?'가입: '+new Date(u.createdAt.seconds*1000).toLocaleDateString('ko-KR'):''}</div>
+          <input id="memo-${uid}" type="text" maxlength="40" value="${String(u.adminMemo||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')}" placeholder="✏ 누구 계정인지 (예: 홍길동 대리) — 관리자만 보임"
+            onchange="fbSaveUserMemo('${uid}',this.value)" onkeydown="if(event.key==='Enter'){this.blur();}"
+            style="margin-top:4px;width:100%;max-width:260px;box-sizing:border-box;font-size:11.5px;padding:4px 7px;border:1.5px dashed #b5d4f4;border-radius:6px;background:#f8fbff;color:#185FA5;font-weight:700;">
         </div>
         <select id="role-sel-${uid}" onchange="fbTogglePermRow('${uid}')" style="font-size:12px;padding:4px 6px;border:1.5px solid #c8c8c8;border-radius:6px;">${roleOpts}</select>
         <button onclick="fbUpdateRole('${uid}')" style="font-size:11px;padding:4px 10px;border:1.5px solid #185FA5;border-radius:6px;background:#f0f6ff;color:#185FA5;cursor:pointer;font-weight:600;">변경</button>
@@ -654,6 +657,13 @@ function fbLedgerPermChips(uid,u){
   return Object.keys(FB_LEDGER_LABELS).map(l=>{ const on=fbLedgerPermOf(u,l)||(!u.ledgerPerms&&u.role!=='member'&&u.role!=='partial');
     return `<label style="display:inline-flex;align-items:center;gap:3px;font-size:10.5px;background:${on?'#e8f4ff':'#f5f5f5'};border:1.5px solid ${on?'#185FA5':'#ddd'};color:${on?'#185FA5':'#888'};border-radius:100px;padding:2px 8px;cursor:pointer;">
       <input type="checkbox" id="lperm-${uid}-${l}" ${on?'checked':''} style="width:11px;height:11px;margin:0;"> ${FB_LEDGER_LABELS[l]}</label>`; }).join('');
+}
+/* 팀 관리: 계정마다 「누구 계정인지」 메모 — 관리자 화면(팀 관리)에서만 표시 */
+async function fbSaveUserMemo(uid,v){
+  if(_fbRole!=='admin'){ showToast('관리자만 수정할 수 있습니다'); return; }
+  const memo=String(v||'').trim().slice(0,40);
+  try{ await _fbDb.collection(FB_COL_USERS).doc(uid).set({adminMemo:memo},{merge:true}); showToast(memo?`✅ 계정 메모 저장: ${memo}`:'계정 메모를 지웠습니다'); fbLoadUserList(); }
+  catch(e){ showToast('메모 저장 실패: '+e.message,4000); }
 }
 async function fbUpdateRole(uid){
   const sel = document.getElementById('role-sel-'+uid);
@@ -10930,6 +10940,7 @@ function checkBackupReminder(){
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
   {date:'2026-11-14',items:[
+    '🏷 팀 관리: 계정마다 「누구 계정인지」 메모 입력칸(관리자만 보임) — 입력 후 Enter/칸 밖을 누르면 저장, 이메일 앞에 이름이 굵게 표시',
     '💾 날짜 이동 시 「저장 안 한 변경」 판단을 마지막 불러오기·저장 상태와 화면 전체 비교로 변경 — 날씨 자동 불러오기, 처리지역·작업 항목 추가/삭제, 관수 팝업, 통계에서 고친 휴무 반영 등 버튼·자동으로 바뀐 값도 감지, 바꿨다 되돌리면 변경 없음 · 날씨 불러오기 완료 문구에 「변경 n개 — 저장 필요 / 변경 없음」 표시',
     '⏳ 운영/날씨 「자동 불러오기」: 불러오는 동안 안내 문구를 완료(✅)·실패(⚠️) 문구가 뜰 때까지 계속 표시, 버튼도 「⏳ 불러오는 중…」으로 바뀌고 중복 클릭 방지',
     '📌 작성 탭 상단 고정 바: 「되돌리기」 제거 · 「< 이전기록 | 11/13(금) | 다음기록 >」 + 「오늘」 배치(날짜를 누르면 날짜 선택) · 「초기화」는 섹션 바로가기 맨 오른쪽으로 이동 · 기본정보의 이전/미리보기/다음 버튼 줄 정리',
