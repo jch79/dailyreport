@@ -1231,6 +1231,11 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
           <input type="text" id="inp-date" style="flex:1.4;font-size:12px;background:#f5f5f5;color:#555;border:1.5px solid #ddd;border-radius:7px;padding:7px 8px;" readonly placeholder="날짜 선택 후 자동입력">
           <button class="btn btn-sm" onclick="onTodayBtn()" style="white-space:nowrap;font-size:11px;">오늘</button>
         </div>
+        <div style="display:flex;gap:5px;margin-top:6px;">
+          <button class="btn btn-sm" onclick="recNav(-1)" title="이전 기록(기록 있는 날)으로 이동" style="flex:1;font-size:12px;font-weight:700;white-space:nowrap;">◀ 이전 기록</button>
+          <button class="btn btn-sm" onclick="recPeekOpen(-1)" title="작성 중인 화면은 그대로 두고 다른 날짜 기록을 미리보기" style="flex:1.2;font-size:12px;font-weight:700;white-space:nowrap;color:#185FA5;border-color:#85B7EB;background:#f4f8fc;">👁 기록 미리보기</button>
+          <button class="btn btn-sm" onclick="recNav(1)" title="다음 기록(기록 있는 날)으로 이동" style="flex:1;font-size:12px;font-weight:700;white-space:nowrap;">다음 기록 ▶</button>
+        </div>
         <button class="btn btn-sm" onclick="copyToNextDay()" title="지금 화면의 내용을 날짜만 다음날로 바꿔 이어서 작성 (날씨·휴무 등은 초기화)"
           style="margin-top:6px;width:100%;font-size:12px;font-weight:700;color:#2d6a1e;border:1.5px solid #8bc34a;background:#f4faee;">📋 다음날로 복사</button>
       </div>
@@ -6828,6 +6833,76 @@ function _dateChooser(title,body,buttons,saveOpt){
     w.querySelectorAll('button[data-k]').forEach(bt=>bt.onclick=()=>{ const sv=!!w.querySelector('#dc-save')?.checked; w.remove(); res({k:bt.dataset.k,save:sv}); });
   });
 }
+/* ── 작성 탭에서 바로 다른 날짜 보기 ──
+   A. ◀ 이전 기록 / 다음 기록 ▶ : 기록 있는 날로 건너뛰며 이동 (날짜 이동 안전장치 그대로)
+   B. 👁 기록 미리보기 : 작성 중 화면은 그대로, 다른 날짜 기록을 읽기 전용 창으로 (창 안에서 ◀ ▶) */
+function _recIsoList(){ return [...new Set(gd().map(r=>_isoOfLabel(r.date)).filter(Boolean))].sort(); }
+function _recCurIso(){ return _isoOfLabel(document.getElementById('inp-date')?.value||'')||document.getElementById('inp-date-picker')?.value||''; }
+function _recStep(fromIso,dir){ const l=_recIsoList(); if(!l.length) return ''; if(!fromIso) return dir<0?l[l.length-1]:l[0];
+  return dir<0?([...l].reverse().find(d=>d<fromIso)||''):(l.find(d=>d>fromIso)||''); }
+function recNav(dir){
+  const t=_recStep(_recCurIso(),dir);
+  if(!t){ showToast(dir<0?'이전 기록이 없습니다':'다음 기록이 없습니다'); return; }
+  onDatePick(t);
+}
+let _recPeekIso='';
+function recPeekOpen(dir){
+  const cur=_recCurIso(); let t=_recStep(cur,dir)||_recStep(cur,-dir);
+  if(!t){ showToast('저장된 다른 날짜 기록이 없습니다'); return; }
+  _recPeekIso=t; recPeekRender();
+}
+function recPeekMove(dir){ const t=_recStep(_recPeekIso,dir); if(!t){ showToast(dir<0?'더 이전 기록이 없습니다':'더 다음 기록이 없습니다'); return; } _recPeekIso=t; recPeekRender(); }
+function recPeekGo(){ const t=_recPeekIso; document.getElementById('rec-peek')?.remove(); if(t) onDatePick(t); }
+function recPeekRender(){
+  const iso=_recPeekIso, r=gd().find(x=>_isoOfLabel(x.date)===iso); if(!r) return;
+  const E=v=>String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const ok=v=>v!=null&&String(v).trim()!==''&&String(v).trim()!=='--';
+  const sec=(t,b)=>b?`<div style="margin-top:10px;"><div style="font-size:12px;font-weight:800;color:#2d6a1e;border-bottom:1.5px solid #dfe9d3;padding-bottom:3px;margin-bottom:5px;">${t}</div>${b}</div>`:'';
+  /* 근무자 */
+  const ws=r.workers||[], reg=ws.filter(w=>w.type==='정규직'||!w.type), day=ws.filter(w=>w.type&&w.type!=='정규직');
+  const sh=w=>E(typeof _twShort==='function'?_twShort(w.name):w.name);
+  const att=reg.filter(w=>!w.off), off=reg.filter(w=>w.off&&!w.leave), lv=reg.filter(w=>w.off&&w.leave), dayAtt=day.filter(w=>!w.off);
+  const wHtml=`<div style="font-size:12px;line-height:1.75;">
+    <b>출근 ${att.length}명</b> <span style="color:#555;">${att.map(sh).join(', ')}</span>
+    ${off.length?`<br><b style="color:#c0392b;">휴무 ${off.length}</b> ${off.map(sh).join(', ')}`:''}
+    ${lv.length?`<br><b style="color:#8e44ad;">연차 ${lv.length}</b> ${lv.map(sh).join(', ')}`:''}
+    ${day.length?`<br><b style="color:#B8690A;">일용 ${dayAtt.length}명</b> <span style="color:#777;">${dayAtt.map(sh).join(', ')}</span>`:''}</div>`;
+  /* 작업내용 */
+  const tk=(r.tasks||[]).map(sc=>{ const rows=(sc.tasks||[]).filter(t=>(t.workers||[]).some(ok)||ok(t.detail)||ok(t.equip));
+    if(!rows.length) return '';
+    return `<div style="font-size:11.5px;font-weight:800;color:#666;margin:6px 0 2px;">${E(sc.section||sc.cls||'')}</div>`+rows.map(t=>`<div style="font-size:12px;line-height:1.5;padding:3px 0;border-bottom:1px dashed #eee;">
+      <b>${E(t.name)}</b>${t.early?' <span style="color:#E8890C;font-size:10px;">조출</span>':''}${t.night?' <span style="color:#7a6fd6;font-size:10px;">야간</span>':''}
+      ${(t.workers||[]).filter(ok).length?` — <span style="color:#2d6a1e;">${E((t.workers||[]).filter(ok).join(', '))}</span>`:''}
+      ${ok(t.detail)?`<div style="color:#555;">${E(t.detail)}</div>`:''}${ok(t.equip)?`<div style="color:#888;font-size:11px;">장비/자재: ${E(t.equip)}</div>`:''}</div>`).join(''); }).join('');
+  /* 날씨·관수 */
+  const w=r.weather||{};
+  const wx=[ok(w.sky)&&E(w.sky), ok(w.minmax)&&`최저/최고 ${E(w.minmax)}℃`, ok(w.avg)&&`평균 ${E(w.avg)}℃`, ok(w.rain)&&`강우 ${E(w.rain)}mm`, ok(w.snow)&&+w.snow>0&&`❄️ 적설 ${E(w.snow)}cm`].filter(Boolean).join(' · ');
+  let irr=''; try{ const ir=r.irrigation||{}; irr=getIrrZones().map(z=>{ const a=ir[z.key+'_auto'], m=ir[z.key+'_man']; return (ok(a)||ok(m))?`${E(z.label||z.name||z.key)} ${ok(a)?'자동 '+E(a):''}${ok(m)?' 수동 '+E(m):''}`:''; }).filter(Boolean).join(' · '); if(ok(ir.note)) irr+=(irr?'<br>':'')+E(ir.note); }catch(e){}
+  /* 자재 사용 */
+  const mat=(r.matUseRows||[]).map(b=>{ const its=(b.items||[]).filter(i=>ok(i.brandName)||ok(i.product)); if(!its.length) return '';
+    return `<div style="font-size:12px;line-height:1.5;"><b>${E(b.areaName||'처리지역')}</b> — ${its.map(i=>E(i.brandName||i.product)+(ok(i.amount)?` ${E(i.amount)}`:'')).join(', ')}</div>`; }).join('');
+  const d=new Date(iso+'T00:00:00'), wd='일월화수목금토'[d.getDay()];
+  const hasPrev=!!_recStep(iso,-1), hasNext=!!_recStep(iso,1);
+  let wr=document.getElementById('rec-peek');
+  if(!wr){ wr=document.createElement('div'); wr.id='rec-peek'; wr.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10120;display:flex;align-items:center;justify-content:center;padding:12px;'; wr.onclick=e=>{ if(e.target===wr) wr.remove(); }; document.body.appendChild(wr); }
+  const nb=(dis)=>`padding:7px 12px;border-radius:8px;border:1.5px solid ${dis?'#ddd':'#fff'};background:${dis?'transparent':'rgba(255,255,255,.18)'};color:${dis?'rgba(255,255,255,.4)':'#fff'};font-weight:800;font-size:13px;cursor:${dis?'default':'pointer'};`;
+  wr.innerHTML=`<div style="background:#fff;border-radius:14px;max-width:560px;width:100%;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.3);overflow:hidden;">
+    <div style="background:linear-gradient(135deg,#185FA5,#3b86d1);color:#fff;padding:10px 12px;display:flex;align-items:center;gap:8px;">
+      <button onclick="recPeekMove(-1)" ${hasPrev?'':'disabled'} style="${nb(!hasPrev)}">◀</button>
+      <div style="flex:1;text-align:center;"><div style="font-size:15px;font-weight:800;">👁 ${d.getFullYear()}. ${d.getMonth()+1}. ${d.getDate()}. (${wd})</div><div style="font-size:10.5px;opacity:.85;">읽기 전용 미리보기 · 작성 중인 화면은 그대로</div></div>
+      <button onclick="recPeekMove(1)" ${hasNext?'':'disabled'} style="${nb(!hasNext)}">▶</button>
+    </div>
+    <div style="padding:6px 14px 10px;overflow:auto;flex:1;">
+      <div style="font-size:12px;color:#555;margin-top:6px;">${[ok(r.teams)&&`팀수 <b>${E(r.teams)}</b>`, r.workTimes&&ok(r.workTimes.early)&&`조출 ${E(r.workTimes.early)}`, r.workTimes&&ok(r.workTimes.day)&&`주간 ${E(r.workTimes.day)}`].filter(Boolean).join(' · ')}</div>
+      ${sec('👷 근무자',wHtml)}${sec('🛠 작업내용',tk||'<div style="font-size:12px;color:#aaa;">입력된 작업 없음</div>')}
+      ${sec('🌤 날씨',wx&&`<div style="font-size:12px;">${wx}</div>`)}${sec('💧 관수',irr&&`<div style="font-size:12px;line-height:1.6;">${irr}</div>`)}
+      ${sec('🌿 자재 사용',mat)}${sec('📝 특이사항',ok(r.notes)&&`<div style="font-size:12px;white-space:pre-wrap;line-height:1.6;">${E(r.notes)}</div>`)}
+    </div>
+    <div style="display:flex;gap:8px;padding:10px 14px;border-top:1px solid #eee;">
+      <button onclick="document.getElementById('rec-peek').remove()" style="flex:1;padding:10px;border-radius:9px;border:1.5px solid #ccc;background:#fff;color:#555;font-weight:700;font-size:13px;cursor:pointer;">닫기</button>
+      <button onclick="recPeekGo()" style="flex:1.5;padding:10px;border-radius:9px;border:none;background:#185FA5;color:#fff;font-weight:800;font-size:13px;cursor:pointer;">이 날짜로 이동</button>
+    </div></div>`;
+}
 function onTodayBtn(){
   const t=new Date(); onDatePick(`${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`);
 }
@@ -10805,6 +10880,7 @@ function checkBackupReminder(){
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
   {date:'2026-11-14',items:[
+    '🗓 작성 탭 기본정보: 「◀ 이전 기록 / 다음 기록 ▶」(기록 있는 날로 바로 이동, 날짜 이동 안전장치 적용) · 「👁 기록 미리보기」(작성 중 화면은 그대로, 다른 날짜 기록을 읽기 전용 창으로 ◀▶ 넘겨보기, 「이 날짜로 이동」)',
     '🟠 작업내용 출근자 칩: 어느 작업에도 배정되지 않은 출근자는 주황 점선 + ● 표시, 끝에 「작업 미배정 n명」(모두 배정되면 「✔ 전원 배정」) — 작업자 입력 즉시 반영',
     '🐞 통계 팀수 차트: 데이터가 한 달치뿐일 때 차트 영역 그리기 오류(콘솔 오류) 수정',
     '🛠 자재입출고 선입선출 계산: 같은 순간에 품목·내역이 바뀌어도 이전 계산값을 쓰지 않도록 보강',
