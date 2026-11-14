@@ -1212,6 +1212,7 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
         <button id="wt-date" onclick="wtDateClick()" title="눌러서 날짜 선택" style="border:none;border-left:1px solid #ddd;border-right:1px solid #ddd;background:#fff;padding:7px 12px;font-size:14px;font-weight:800;color:#1a1a1a;cursor:pointer;white-space:nowrap;min-width:92px;">--</button>
         <button onclick="recNav(1)" title="다음 기록(기록 있는 날)으로 이동" style="border:none;background:#f6f6f6;padding:0 10px;font-size:13px;font-weight:800;color:#444;cursor:pointer;white-space:nowrap;">다음기록 &gt;</button>
       </div>
+      <button class="btn" onclick="onTodayBtn()" title="오늘 날짜로 이동" style="flex-shrink:0;border-color:#185FA5;color:#185FA5;font-weight:800;">오늘</button>
       <button class="btn btn-primary" id="btn-save-top" onclick="saveReport()" style="flex-shrink:0;touch-action:manipulation;">&#10003; 저장하기</button>
       <div style="width:1px;align-self:stretch;background:#e0e0e0;margin:0 2px;flex-shrink:0;"></div>
       <!-- 섹션 바로가기 퀵네비 바 (위 버튼들과 한 줄로 이어져 함께 가로 스크롤됨) -->
@@ -1235,11 +1236,6 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
             onfocus="this.dataset.prev=this.value" onchange="onDatePick(this.value)">
           <input type="text" id="inp-date" style="flex:1.4;font-size:12px;background:#f5f5f5;color:#555;border:1.5px solid #ddd;border-radius:7px;padding:7px 8px;" readonly placeholder="날짜 선택 후 자동입력">
           <button class="btn btn-sm" onclick="onTodayBtn()" style="white-space:nowrap;font-size:11px;">오늘</button>
-        </div>
-        <div style="display:flex;gap:5px;margin-top:6px;">
-          <button class="btn btn-sm" onclick="recNav(-1)" title="이전 기록(기록 있는 날)으로 이동" style="flex:1;font-size:12px;font-weight:700;white-space:nowrap;">◀ 이전 기록</button>
-          <button class="btn btn-sm" onclick="recPeekOpen(-1)" title="작성 중인 화면은 그대로 두고 다른 날짜 기록을 미리보기" style="flex:1.2;font-size:12px;font-weight:700;white-space:nowrap;color:#185FA5;border-color:#85B7EB;background:#f4f8fc;">👁 기록 미리보기</button>
-          <button class="btn btn-sm" onclick="recNav(1)" title="다음 기록(기록 있는 날)으로 이동" style="flex:1;font-size:12px;font-weight:700;white-space:nowrap;">다음 기록 ▶</button>
         </div>
         <button class="btn btn-sm" onclick="copyToNextDay()" title="지금 화면의 내용을 날짜만 다음날로 바꿔 이어서 작성 (날씨·휴무 등은 초기화)"
           style="margin-top:6px;width:100%;font-size:12px;font-weight:700;color:#2d6a1e;border:1.5px solid #8bc34a;background:#f4faee;">📋 다음날로 복사</button>
@@ -10900,7 +10896,7 @@ function checkBackupReminder(){
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
   {date:'2026-11-14',items:[
-    '📌 작성 탭 상단 고정 바: 「되돌리기」 제거 · 「< 이전기록 | 11/13(금) | 다음기록 >」 배치(날짜를 누르면 날짜 선택) · 「초기화」는 섹션 바로가기 맨 오른쪽으로 이동',
+    '📌 작성 탭 상단 고정 바: 「되돌리기」 제거 · 「< 이전기록 | 11/13(금) | 다음기록 >」 + 「오늘」 배치(날짜를 누르면 날짜 선택) · 「초기화」는 섹션 바로가기 맨 오른쪽으로 이동 · 기본정보의 이전/미리보기/다음 버튼 줄 정리',
     '🗓 작성 탭 기본정보: 「◀ 이전 기록 / 다음 기록 ▶」(기록 있는 날로 바로 이동, 날짜 이동 안전장치 적용) · 「👁 기록 미리보기」(작성 중 화면은 그대로, 다른 날짜 기록을 읽기 전용 창으로 ◀▶ 넘겨보기, 「이 날짜로 이동」)',
     '🟠 작업내용 출근자 칩: 어느 작업에도 배정되지 않은 출근자는 주황 점선 + ● 표시, 끝에 「작업 미배정 n명」(모두 배정되면 「✔ 전원 배정」) — 작업자 입력 즉시 반영',
     '🐞 통계 팀수 차트: 데이터가 한 달치뿐일 때 차트 영역 그리기 오류(콘솔 오류) 수정',
