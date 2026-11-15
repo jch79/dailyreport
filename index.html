@@ -11078,6 +11078,7 @@ function checkBackupReminder(){
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
   {date:'2026-11-15',items:[
+    '📝 경과일 기록 메모: 긴 내용이 잘리지 않고 자동 줄바꿈(칸 높이 자동) · PC에서 Shift+Enter 줄바꿈, Enter는 입력 끝(저장) · 휴대폰은 Enter 줄바꿈',
     '✏️ 직원 이름 바꾸기(관리자): 통계 「이름순서편집」에서 이름 옆 ✏️ — 모든 일보의 작업자·작업내용(짧은 이름 포함), 휴무·연차 계획, 연차 설정, 이름 순서, 자주 쓰는 직원, 단가 설정까지 한 번에 변경, 클라우드도 최신본에서 이름만 바꿔 저장',
   ]},
   {date:'2026-11-14',items:[
@@ -11542,6 +11543,7 @@ function showPanel(id,tab){
     renderTempChart();
     renderRainChart();
     if(typeof taskTaFitAll==='function') taskTaFitAll(document.getElementById('panel-write'));
+    document.querySelectorAll('#elapsed-items-list textarea').forEach(elapMemoFit);   /* 경과일 메모 높이 */
   },50);}
   document.querySelectorAll('.panel').forEach(p=>{p.style.display='none';p.classList.remove('active');});
   document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
@@ -11768,6 +11770,16 @@ function renderElapsedCalendar(){
     <div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px;overflow-x:hidden;">${cells}</div>
     <div style="margin-top:12px;font-size:11.5px;color:#aaa;">날짜 칸에 표시된 항목은 그 날짜 기준 경과일이며, 해당 날짜의 모든 항목이 전부 표시됩니다. 내용이 길면 달력 전체를 위아래로 스크롤해서 볼 수 있습니다.</div>`;
 }
+/* 경과일 메모: 내용 길이에 맞춰 높이 자동 조절(자동 줄바꿈) · PC는 Enter=저장, Shift+Enter=줄바꿈 (휴대폰은 Enter=줄바꿈) */
+function elapMemoFit(el){ if(!el) return; el.style.height='auto'; if(el.scrollHeight>0) el.style.height=(el.scrollHeight+2)+'px'; }   /* 숨겨진 상태(높이 0)면 건드리지 않음 */
+window.addEventListener('resize',()=>document.querySelectorAll('#elapsed-items-list textarea').forEach(elapMemoFit));
+function elapMemoKey(e,el){
+  if(e.key!=='Enter' || e.isComposing) return;
+  const touch=window.matchMedia&&window.matchMedia('(pointer:coarse)').matches;
+  if(touch) return;                 /* 휴대폰: 기본 줄바꿈 */
+  if(e.shiftKey) return;            /* PC Shift+Enter: 줄바꿈 */
+  e.preventDefault(); el.blur();    /* PC Enter: 입력 끝(저장) */
+}
 function renderElapsedItems(){
   const el=document.getElementById('elapsed-items-list');
   if(!el)return;
@@ -11793,9 +11805,9 @@ function renderElapsedItems(){
     return`<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid ${ended?'#e5d5c0':'#f0dcc0'};background:${ended?'#faf6ef':'#fffaf2'};border-radius:8px;margin-bottom:6px;flex-wrap:wrap;">
       <div style="flex:1;min-width:160px;">
         <div style="font-weight:700;font-size:12.5px;color:#8a4b00;">${matEscHtml(it.name)} <span style="font-weight:500;color:#b08a5a;font-size:10.5px;">· 시작일: ${startLabel}</span>${ended?` <span style="font-weight:500;color:#c0392b;font-size:10px;">(종료일: ${endLabel})</span>`:''}</div>
-        <input type="text" value="${matEscHtml(it.content)}" placeholder="내용 (예: 라지패치 전면처리)" ${ended?'disabled':''}
-          onchange="updateElapsedContent('${it.id}',this.value)"
-          style="width:100%;margin-top:3px;font-size:11px;color:#555;border:1px solid #eadcc4;border-radius:5px;padding:3px 6px;background:${ended?'#f2ede4':'#fff'};box-sizing:border-box;">
+        <textarea rows="1" placeholder="내용 (예: 라지패치 전면처리)" ${ended?'disabled':''}
+          onchange="updateElapsedContent('${it.id}',this.value)" oninput="elapMemoFit(this)" onfocus="elapMemoFit(this)" onkeydown="elapMemoKey(event,this)" title="PC: Shift+Enter 줄바꿈 · Enter 저장"
+          style="width:100%;margin-top:3px;font-size:11px;line-height:1.45;color:#555;border:1px solid #eadcc4;border-radius:5px;padding:3px 6px;background:${ended?'#f2ede4':'#fff'};box-sizing:border-box;resize:none;overflow:hidden;white-space:pre-wrap;word-break:break-word;font-family:inherit;display:block;min-height:22px;">${matEscHtml(it.content||'')}</textarea>
       </div>
       <span style="font-size:11px;font-weight:700;color:#fff;background:#EF9F27;padding:2px 9px;border-radius:100px;white-space:nowrap;">${dLabel}</span>
       ${ended?'':`<button onclick="renewElapsedItem('${it.id}')" title="종료하고 같은 이름으로 오늘부터 경과일을 새로 시작합니다" style="font-size:10.5px;font-weight:700;padding:3px 10px;border-radius:100px;border:1.3px solid #2d6a1e;background:#fff;color:#2d6a1e;cursor:pointer;">갱신</button>`}
@@ -11803,6 +11815,7 @@ function renderElapsedItems(){
       <button onclick="deleteElapsedItem('${it.id}')" title="삭제" style="border:none;background:none;color:#bbb;font-size:14px;cursor:pointer;padding:0 2px;">×</button>
     </div>`;
   }).join('');
+  el.querySelectorAll('textarea').forEach(elapMemoFit); requestAnimationFrame(()=>el.querySelectorAll('textarea').forEach(elapMemoFit)); setTimeout(()=>el.querySelectorAll('textarea').forEach(elapMemoFit),300);   /* 내용 길이에 맞춰 높이 */
 }
 
 function applyDatePicker(val,silentLoad){
