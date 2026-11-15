@@ -10221,8 +10221,10 @@ function saveTempDayEdit(){
     const _todayISO4=`${_now.getFullYear()}-${String(_now.getMonth()+1).padStart(2,'0')}-${String(_now.getDate()).padStart(2,'0')}`;
     const _curDate4=document.getElementById('inp-date-picker')?.value||_todayISO4;
     if(_tempEditDate===_curDate4){
+      const _wasDirty=_isFormDirty();
       const _avgEl=document.getElementById('w-avg'); if(_avgEl)_avgEl.textContent=_newAvg;
       const _mmEl=document.getElementById('w-minmax'); if(_mmEl)_mmEl.textContent=_newMinmax;
+      if(!_wasDirty) _formMarkClean();   /* 일보에 이미 저장했으니 '변경 있음'으로 치지 않음 (강우 수정과 같은 방식) */
     }
   }
   updateStatManualBadges();
@@ -11123,6 +11125,7 @@ function checkBackupReminder(){
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
   {date:'2026-11-15',items:[
+    '🐞 기온 추이 차트에서 기온을 고치면 작성 탭(같은 날짜)이 저장된 값인데도 「변경 있음」으로 잡혀 이동 시 저장 확인이 뜨던 문제 수정',
     '🌧️ 기온 추이 차트에서 날짜를 눌러 여는 기온 수정 창: 그날 강우량(눈 온 날은 적설량)이 있으면 함께 표시 — 「수정」으로 강우·적설 바로 수정',
     '🔍 같은 섹션 충돌 창: 섹션마다 「차이 보기」 — 내 내용과 다른 기기 내용의 다른 곳만 표로(작업자: 사람별 출근/휴무/연차, 작업 내용: 행별 작업자·내용·장비, 출근시간 등)',
     '🐞 작업자 섹션: 정규직 휴무를 체크하면 일용 「일반」 묶음의 휴무 수가 함께 바뀌던 문제 수정',
