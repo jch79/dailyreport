@@ -5782,7 +5782,8 @@ function saveRainCalDayEdit(iso,rainStr,snowStr){
   /* 화면 갱신 (달력 스크롤 위치 유지) */
   const scs=[...document.querySelectorAll('#rain-year-day-modal, #rain-year-day-modal *')].filter(e=>e.scrollTop>0);
   const tops=scs.map(e=>e.scrollTop);
-  const st=_rainYearDayModalState; showRainYearDayDetail(st.mm,st.dd);
+  const _rym=document.getElementById('rain-year-day-modal');
+  if(_rym && getComputedStyle(_rym).display!=='none'){ const st=_rainYearDayModalState; showRainYearDayDetail(st.mm,st.dd); }
   scs.forEach((e,i)=>{ e.scrollTop=tops[i]; });
   try{ renderRainChart(); }catch(e){} try{ renderTempChart(); }catch(e){}
   try{ if(typeof updateRainCumCard==='function') updateRainCumCard(); }catch(e){}
@@ -10181,6 +10182,13 @@ function openTempDayEdit(dateStr){
       <input id="tde-avg" type="number" step="0.1" value="${curAvg}"
         style="width:100%;padding:9px;border:1.5px solid #f3bcae;border-radius:8px;font-size:16px;font-weight:700;text-align:center;box-sizing:border-box;">
     </div>
+    ${(()=>{ const y=parseInt(dateStr.slice(0,4)); let rn=null, sn=null; try{ rn=getRainYearMap(y)[dateStr]; sn=getSnowMapFromRecords(y)[dateStr]; }catch(e){}
+      rn=parseFloat(rn); sn=parseFloat(sn); const hasR=rn>0, hasS=sn>0; if(!hasR&&!hasS) return '';
+      const canEdit=!(_fbUser&&_fbRole==='viewer');
+      return `<div style="display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:9px;background:#eaf3fb;border:1px solid #b5d4f4;">
+        <div style="flex:1;font-size:13px;font-weight:700;color:#185FA5;">${hasR?`🌧️ 강우량 <span style="font-size:16px;">${+rn.toFixed(1)}</span> mm`:''}${hasR&&hasS?' <span style="color:#9cc6ee;">·</span> ':''}${hasS?`<span style="color:#1b6fb5;">❄️ 적설 <span style="font-size:16px;">${+sn.toFixed(1)}</span> cm</span>`:''}</div>
+        ${canEdit?`<button type="button" onclick="closeTempDayModal(null);openRainCalDayEdit('${dateStr}')" style="padding:5px 10px;border-radius:7px;border:1px solid #9cc6ee;background:#fff;color:#185FA5;font-size:11.5px;font-weight:700;cursor:pointer;">수정</button>`:''}
+      </div>`; })()}
     ${idx<0?`<div style="font-size:11px;color:#c0392b;">⚠ 이 날짜에 저장된 작업일보가 없어 수정할 수 없습니다. 먼저 해당 날짜로 일보를 작성해 주세요.</div>`:''}`;
 
   document.getElementById('temp-day-modal').style.display='flex';
@@ -11115,6 +11123,7 @@ function checkBackupReminder(){
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
   {date:'2026-11-15',items:[
+    '🌧️ 기온 추이 차트에서 날짜를 눌러 여는 기온 수정 창: 그날 강우량(눈 온 날은 적설량)이 있으면 함께 표시 — 「수정」으로 강우·적설 바로 수정',
     '🔍 같은 섹션 충돌 창: 섹션마다 「차이 보기」 — 내 내용과 다른 기기 내용의 다른 곳만 표로(작업자: 사람별 출근/휴무/연차, 작업 내용: 행별 작업자·내용·장비, 출근시간 등)',
     '🐞 작업자 섹션: 정규직 휴무를 체크하면 일용 「일반」 묶음의 휴무 수가 함께 바뀌던 문제 수정',
     '🐞 날짜 이동 중 「저장하고 이동」: 클라우드 합치기가 끝난 뒤에 이동하도록 수정(저장 도중 화면이 새 날짜로 바뀌어 엉뚱한 날짜 화면을 건드릴 수 있던 문제)',
