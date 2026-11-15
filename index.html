@@ -11077,6 +11077,9 @@ function checkBackupReminder(){
    · 관리자 공지: Firestore shared/notices 문서의 items 배열(모든 기기 실시간 공유). 관리자만 작성·수정·삭제. 항상 맨 위 고정
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
+  {date:'2026-11-15',items:[
+    '✏️ 직원 이름 바꾸기(관리자): 통계 「이름순서편집」에서 이름 옆 ✏️ — 모든 일보의 작업자·작업내용(짧은 이름 포함), 휴무·연차 계획, 연차 설정, 이름 순서, 자주 쓰는 직원, 단가 설정까지 한 번에 변경, 클라우드도 최신본에서 이름만 바꿔 저장',
+  ]},
   {date:'2026-11-14',items:[
     '🔁 통계에서 휴무·연차(일용 근무) 수정: 클라우드 최신본의 그 근무자 칸만 바꿔 저장(다른 기기에서 고친 섹션 보존) · 작성 탭에 같은 날짜가 열려 있으면 바로 반영하되 「저장 안 한 변경」으로 잡지 않음',
     '🤝 여러 기기 동시 작성: 저장할 때 클라우드 최신본과 섹션 단위로 합침 — 다른 기기에서 고친 섹션은 덮어쓰지 않고 살리고, 같은 섹션을 둘 다 고쳤을 때만 어느 쪽을 남길지 선택 · 앱 시작/동기화 후 작성 중인 날짜가 다른 기기에서 바뀌었으면 자동 갱신(작성 중이면 안내)',
@@ -12899,9 +12902,78 @@ function renderRegNameOrderList(){
   listEl.innerHTML = order.map((name,i)=>`
     <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;margin-bottom:5px;background:#f3f9ff;border:1px solid #cfe4f8;border-radius:8px;">
       <span style="flex:1;font-size:12.5px;font-weight:700;color:#0C447C;">${name}</span>
+      ${_fbRole==='admin'||!_fbUser?`<button onclick="openRenameWorker('${String(name).replace(/'/g,"\\'")}')" title="이름 바꾸기 (모든 기록·계획·설정에 반영)" style="border:1.3px solid #c9a227;background:#fffbea;color:#7B5B00;border-radius:6px;height:26px;padding:0 7px;font-size:11px;font-weight:700;cursor:pointer;">✏️ 이름</button>`:''}
       <button onclick="moveRegNameOrderItem(${i},-1)" ${i===0?'disabled':''} style="border:1.3px solid #85B7EB;background:#fff;color:#185FA5;border-radius:6px;width:26px;height:26px;font-size:12px;cursor:pointer;${i===0?'opacity:.3;cursor:default;':''}">▲</button>
       <button onclick="moveRegNameOrderItem(${i},1)" ${i===order.length-1?'disabled':''} style="border:1.3px solid #85B7EB;background:#fff;color:#185FA5;border-radius:6px;width:26px;height:26px;font-size:12px;cursor:pointer;${i===order.length-1?'opacity:.3;cursor:default;':''}">▼</button>
     </div>`).join('') || `<div style="text-align:center;padding:20px;color:#bbb;font-size:12px;">등록된 정규직 이름이 없습니다</div>`;
+}
+/* ══════════════════════════════════════════════════════
+   직원 이름 바꾸기 (예: 안치환 주임 → 안지환 주임) — 관리자
+   · 모든 일보의 작업자 이름 + 작업내용 작업자 칸(짧은 이름 「안치환」도) 변경
+   · 휴무·연차 계획, 연차 이월/부여 설정, 이름 순서, 자주 쓰는 직원, 단가 설정의 이름도 변경
+   · 클라우드: 최신본을 받아 그 이름만 바꿔 다시 저장(다른 내용은 그대로) + 공유 설정 저장
+   ══════════════════════════════════════════════════════ */
+function _rnTokRe(nm){ return new RegExp('(^|[\\s,，、.·/])'+nm.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'(?=$|[\\s,，、.·/])','g'); }
+function _rnRecord(rec,oF,nF,oS,nS){
+  let n=0; const r=JSON.parse(JSON.stringify(rec));
+  (r.workers||[]).forEach(w=>{ if(w&&w.name===oF){ w.name=nF; n++; } });
+  const reF=_rnTokRe(oF), reS=_rnTokRe(oS);
+  (r.tasks||[]).forEach(sec=>(sec.tasks||[]).forEach(t=>{ if(Array.isArray(t.workers)) t.workers=t.workers.map(x=>{ if(typeof x!=='string') return x; let y=x.replace(reF,(m0,p1)=>p1+nF); if(oS&&oS!==oF) y=y.replace(reS,(m0,p1)=>p1+nS); if(y!==x) n++; return y; }); }));
+  return {rec:r,n};
+}
+function _rnDeep(v,oF,nF){
+  if(typeof v==='string') return v===oF?nF:v;
+  if(Array.isArray(v)) return v.map(x=>_rnDeep(x,oF,nF));
+  if(v&&typeof v==='object'){ const o={}; Object.keys(v).forEach(k=>{ let nk=k; if(k===oF) nk=nF; else if(k.startsWith(oF+'|')) nk=nF+k.slice(oF.length); o[nk]=_rnDeep(v[k],oF,nF); }); return o; }
+  return v;
+}
+const _RN_KEYS=['golf_presets_v7','golf_reg_leave_meta_v1','reg_name_order_v1','golf_reg_leave_plan_v1','golf_worker_rates_v1'];
+function openRenameWorker(oF){
+  if(_fbUser && _fbRole!=='admin'){ showToast('관리자만 이름을 바꿀 수 있습니다'); return; }
+  const nF=(prompt(`「${oF}」의 새 이름을 입력하세요 (직급 포함)\n예: 안지환 주임`, oF)||'').trim();
+  if(!nF||nF===oF) return;
+  if(getRegNameOrder().includes(nF) && !confirm(`「${nF}」은(는) 이미 있는 이름입니다. 그래도 합칠까요?`)) return;
+  const oS=_twShort(oF), nS=_twShort(nF);
+  let recN=0, hit=0; gd().forEach(r=>{ const x=_rnRecord(r,oF,nF,oS,nS); if(x.n){ recN++; hit+=x.n; } });
+  const setN=_RN_KEYS.filter(k=>(localStorage.getItem(k)||'').includes(oF)).length;
+  if(!confirm(`「${oF}」 → 「${nF}」\n\n· 일보 ${recN}건 (작업자·작업내용 ${hit}곳)\n· 휴무/연차 계획·연차 설정·이름 순서 등 설정 ${setN}곳\n${oS!==nS?`· 작업내용의 짧은 이름 「${oS}」 → 「${nS}」 도 함께\n`:''}\n모든 기기에 반영됩니다. 바꿀까요?`)) return;
+  renameWorkerEverywhere(oF,nF);
+}
+async function renameWorkerEverywhere(oF,nF){
+  const oS=_twShort(oF), nS=_twShort(nF);
+  /* 1) 이 기기 */
+  const all=gd(); let recN=0; all.forEach((r,i)=>{ const x=_rnRecord(r,oF,nF,oS,nS); if(x.n){ all[i]=x.rec; recN++; } }); sd(all);
+  _RN_KEYS.forEach(k=>{ const raw=localStorage.getItem(k); if(!raw||!raw.includes(oF)) return; try{ localStorage.setItem(k,JSON.stringify(_rnDeep(JSON.parse(raw),oF,nF))); }catch(e){} });
+  /* 작성 화면 */
+  try{
+    const wasDirty=_isFormDirty();
+    let ch=false; curWorkers.forEach(w=>{ if(w.name===oF){ w.name=nF; ch=true; } });
+    const t=_rnRecord({tasks:curTasks},oF,nF,oS,nS); if(t.n){ curTasks=t.rec.tasks; ch=true; }
+    if(ch){ renderWorkers(); renderTasks(); }
+    if(_recBase){ const b=_rnRecord(_recBase,oF,nF,oS,nS); _recBase=b.rec; }
+    if(!wasDirty) _formMarkClean();
+  }catch(e){}
+  if(typeof renderRegNameOrderList==='function') renderRegNameOrderList();
+  if(typeof renderPresets==='function') renderPresets();
+  if(typeof renderStats==='function') try{ renderStats(); }catch(e){}
+  if(typeof renderHistory==='function') try{ renderHistory(); }catch(e){}
+  /* 2) 클라우드 — 최신본에서 그 이름만 바꿔 저장 */
+  let cloudN=0, cloudMsg='';
+  if(_fbUser && _fbRole!=='viewer'){
+    showToast('⏳ 클라우드 기록의 이름을 바꾸는 중…',60000);
+    try{
+      const snap=await _fbDb.collection(FB_COL_REPORTS).limit(5000).get();
+      const ops=[];
+      snap.docs.forEach(d=>{ const data=d.data(); const x=_rnRecord(data,oF,nF,oS,nS); if(x.n){ const rec=x.rec; delete rec._savedBy; delete rec._savedByUid; delete rec._updatedAt;
+        ops.push([d.ref,{...rec,_savedBy:_fbUser.email,_savedByUid:_fbUser.uid,_updatedAt:firebase.firestore.FieldValue.serverTimestamp()}]); } });
+      for(let i=0;i<ops.length;i+=400){ const bt=_fbDb.batch(); ops.slice(i,i+400).forEach(([ref,v])=>bt.set(ref,v)); await bt.commit(); }
+      cloudN=ops.length;
+      /* 클라우드에서 바꾼 최신본으로 이 기기 일보도 맞춤 */
+      if(ops.length){ const a2=gd(); ops.forEach(([ref,v])=>{ const r={...v}; delete r._savedBy; delete r._savedByUid; delete r._updatedAt; const i=a2.findIndex(x=>x.date===r.date); if(i>=0) a2[i]=r; }); sd(a2); }
+      if(typeof fbSaveSharedSettings==='function') await fbSaveSharedSettings();
+    }catch(e){ console.warn(e); cloudMsg=' · ⚠️ 클라우드 반영 실패: '+e.message; }
+  }
+  showToast(`✅ 「${oF}」 → 「${nF}」 변경 완료 — 일보 ${recN}건${_fbUser?` (클라우드 ${cloudN}건)`:''}${cloudMsg}`,6000);
 }
 function moveRegNameOrderItem(idx, dir){
   if(!guardMemberOrAdmin('정규직 이름순서 변경'))return;
