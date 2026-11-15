@@ -2994,7 +2994,8 @@ function updateWorkerSummary(){
   if(!dailyEl) return;
   dailyEl.querySelectorAll('[data-sub-key]').forEach(hdr=>{
     const sub=hdr.dataset.subKey;
-    const ws=curWorkers.filter(w=>w.sub===sub||(!w.sub&&sub==='일반'));
+    /* 일용(정규직·공사 제외)만 — 예전엔 소분류 없는 정규직이 일용 「일반」 묶음 휴무 수에 섞여 들어갔음 */
+    const ws=curWorkers.filter(w=>w.type!=='정규직'&&w.type!=='공사'&&(w.sub===sub||(!w.sub&&sub==='일반')));
     const activeN=ws.filter(w=>!w.off).length;
     const offN=ws.filter(w=>w.off).length;
     const totalDays=ws.filter(w=>!w.off).reduce((s,w)=>s+parseFloat(w.days||1),0);
@@ -6195,21 +6196,57 @@ async function _recCloudMerge(mine){
     conflicts.push(sec);
   });
   if(conflicts.length){
-    const pick=await _recConflictAsk(mine.date,conflicts,who,whenTxt);
+    const pick=await _recConflictAsk(mine.date,conflicts,who,whenTxt,mine,cd);
     if(!pick) return null;
     conflicts.forEach(sec=>{ if(pick[sec.k]==='theirs'){ sec.f.forEach(f=>{ out[f]=cd[f]!==undefined?JSON.parse(JSON.stringify(cd[f])):out[f]; }); from.push(sec.l); } });
   }
   const msg=from.length?`☁️ ${who}${whenTxt?` (${whenTxt})`:''}님이 먼저 저장한 내용을 합쳐 저장했습니다: ${from.join(', ')}`:'';
   return {rec:out,from,msg};
 }
-function _recConflictAsk(date,secs,who,whenTxt){
+/* 충돌 섹션의 「차이 보기」 — 내 내용 vs 다른 기기 내용 요약 */
+function _recSecDiff(sec,mine,theirs){
+  const E=v=>matEscHtml(String(v==null?'':v)), out=[];
+  const pair=(label,a,b)=>out.push(`<tr><td style="padding:3px 6px;color:#555;white-space:nowrap;vertical-align:top;">${label}</td><td style="padding:3px 6px;background:#fdecea;vertical-align:top;">${a===''||a==null?'<span style="color:#bbb;">(없음)</span>':E(a)}</td><td style="padding:3px 6px;background:#eaf3fb;vertical-align:top;">${b===''||b==null?'<span style="color:#bbb;">(없음)</span>':E(b)}</td></tr>`);
+  const st=x=>_recStable(x);
+  try{
+    if(sec.k==='workers'){
+      const stat=w=>!w?'(명단에 없음)':w.type==='정규직'?(w.off?(w.leave?'연차':'휴무'):'출근'):(w.off?'휴무':`출근 ${w.days||1}일${+w.ot?` · OT ${w.ot}h`:''}`);
+      const key=w=>w.type+'|'+w.name, M={}, T={};
+      (mine.workers||[]).forEach(w=>M[key(w)]=w); (theirs.workers||[]).forEach(w=>T[key(w)]=w);
+      [...new Set([...Object.keys(M),...Object.keys(T)])].forEach(k=>{ const a=stat(M[k]), b=stat(T[k]); if(a!==b||st(M[k])!==st(T[k])) pair(k.split('|')[1]+(k.startsWith('정규직')?'':' (일용)'),a===b?a+' (세부 다름)':a,b); });
+    } else if(sec.k==='tasks'){
+      const rows=r=>{ const o={}; (r.tasks||[]).forEach(sc=>(sc.tasks||[]).forEach((t,i)=>{ const k=(sc.section||sc.cls||'')+' · '+(t.name||('행'+(i+1))); o[k]=[(t.workers||[]).filter(Boolean).join(', '),t.detail||'',t.equip||'',(t.early?'조출 ':'')+(t.day?'주간 ':'')+(t.night?'야간':'')].map(x=>String(x).trim()); })); return o; };
+      const M=rows(mine), T=rows(theirs);
+      [...new Set([...Object.keys(M),...Object.keys(T)])].forEach(k=>{ const a=M[k], b=T[k]; if(JSON.stringify(a)===JSON.stringify(b)) return;
+        const fmt=x=>!x?'(행 없음)':[x[0]&&('👷 '+x[0]),x[1]&&('📝 '+x[1]),x[2]&&('🛠 '+x[2])].filter(Boolean).join(' / ')||'(빈 행)';
+        pair(k,fmt(a),fmt(b)); });
+      const wt=r=>Object.entries(r.workTimes||{}).filter(([,v])=>v).map(([k,v])=>({early:'조출',day:'주간',night:'야간'}[k]||k)+' '+v).join(' · ');
+      if(wt(mine)!==wt(theirs)) pair('출근 시간',wt(mine),wt(theirs));
+    } else if(sec.k==='notes'){ pair('비고',mine.notes||'',theirs.notes||''); }
+    else {
+      /* 그 밖의 섹션: 바뀐 칸만 */
+      const flat=(v,pre,o)=>{ if(v&&typeof v==='object'&&!Array.isArray(v)){ Object.keys(v).forEach(k=>flat(v[k],pre?pre+'.'+k:k,o)); } else o[pre]=Array.isArray(v)?JSON.stringify(v):v; return o; };
+      const M={}, T={}; sec.f.forEach(f=>{ flat(mine[f],f,M); flat(theirs[f],f,T); });
+      [...new Set([...Object.keys(M),...Object.keys(T)])].forEach(k=>{ const nv=x=>{ const v=x==null?'':String(x).trim(); return /^(--?|false|0|0\.0|null|\[\]|\{\})$/.test(v)?'':v; }; const a=nv(M[k]), b=nv(T[k]); if(a===b) return;
+        const LB={course:'코스',teeoff:'티오프',teams:'팀수',early:'조출',normal:'정상',late:'잔업',remark:'특이사항',temp:'기온',feel:'체감',humid:'습도',wind:'바람',sky:'하늘',avg:'평균기온',minmax:'최저/최고',avgh:'평균습도',minmaxh:'습도 최저/최고',monthRain:'월 강우',yearRain:'연 강우',rain:'강우',snow:'적설',note:'메모',zone_auto:'자동관수',zone_man:'수동관수'};
+        const kk=k.replace(/^(weather|irrigation|ballSpeed|tdr|matUseRows)\.?/,''); pair(LB[kk]||LB[kk.split('.').pop()]||kk||k,a.length>80?a.slice(0,80)+'…':a,b.length>80?b.slice(0,80)+'…':b); });
+    }
+  }catch(e){ console.warn(e); }
+  if(!out.length) return '<div style="font-size:11px;color:#999;padding:4px 2px;">세부 차이를 요약하지 못했습니다 (형식만 다를 수 있음)</div>';
+  const more=out.length>15?`<div style="font-size:10.5px;color:#999;padding:3px 2px;">… 외 ${out.length-15}곳 더 다름</div>`:'';
+  return `<div style="max-height:220px;overflow:auto;border:1px solid #eee;border-radius:7px;margin-top:6px;"><table style="width:100%;border-collapse:collapse;font-size:11px;">
+    <thead><tr style="background:#f6f6f6;position:sticky;top:0;"><th style="padding:4px 6px;text-align:left;">항목</th><th style="padding:4px 6px;text-align:left;color:#a8261b;">✏️ 내 내용</th><th style="padding:4px 6px;text-align:left;color:#185FA5;">☁️ 다른 기기</th></tr></thead>
+    <tbody>${out.slice(0,15).join('')}</tbody></table></div>${more}`;
+}
+function _recConflictAsk(date,secs,who,whenTxt,mine,theirs){
   return new Promise(res=>{
     const w=document.createElement('div'); w.id='rec-conflict';
     w.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10400;display:flex;align-items:center;justify-content:center;padding:14px;';
     const pick={}; secs.forEach(s=>pick[s.k]='mine');
     const row=s=>`<div style="border:1.5px solid #eee;border-radius:9px;padding:8px 10px;margin-bottom:7px;"><div style="font-size:13px;font-weight:800;margin-bottom:6px;">${s.l}</div>
+      <details style="margin:-2px 0 6px;"><summary style="font-size:11px;color:#185FA5;cursor:pointer;font-weight:700;">🔍 차이 보기</summary>${(mine&&theirs)?_recSecDiff(s,mine,theirs):''}</details>
       <div style="display:flex;gap:6px;"><button data-k="${s.k}" data-v="mine" style="flex:1;padding:8px;border-radius:8px;font-weight:800;font-size:12px;cursor:pointer;">✏️ 내 내용</button><button data-k="${s.k}" data-v="theirs" style="flex:1;padding:8px;border-radius:8px;font-weight:800;font-size:12px;cursor:pointer;">☁️ ${matEscHtml(who)} 내용</button></div></div>`;
-    w.innerHTML=`<div style="background:#fff;border-radius:14px;max-width:440px;width:100%;max-height:92vh;overflow:auto;box-shadow:0 10px 40px rgba(0,0,0,.35);">
+    w.innerHTML=`<div style="background:#fff;border-radius:14px;max-width:620px;width:100%;max-height:92vh;overflow:auto;box-shadow:0 10px 40px rgba(0,0,0,.35);">
       <div style="background:linear-gradient(135deg,#a8261b,#d9534f);color:#fff;padding:12px 16px;font-size:14px;font-weight:800;">⚠️ 같은 섹션을 다른 기기에서도 고쳤습니다</div>
       <div style="padding:10px 16px 4px;font-size:12px;color:#444;line-height:1.6;"><b>${matEscHtml(date)}</b> 기록을 <b>${matEscHtml(who)}</b>님이${whenTxt?` <b>${whenTxt}</b>에`:''} 먼저 저장했습니다. 아래 섹션은 둘 다 고쳐서, 어느 쪽을 남길지 골라 주세요. <span style="color:#888;">(다른 섹션은 자동으로 합칩니다)</span></div>
       <div style="padding:6px 16px;">${secs.map(row).join('')}</div>
@@ -6309,19 +6346,18 @@ function saveReport(opts){
      바뀐 섹션은 그쪽 내용을 살리고, 같은 섹션을 둘 다 고쳤을 때만 어느 쪽을 남길지 물음 */
   if(opts._rec) r=opts._rec;
   else if(!opts._merged && _fbUser && _fbRole!=='viewer'){
-    _recCloudMerge(r).then(res=>{
+    return _recCloudMerge(r).then(res=>{
       _saveReportBusy=false;
-      if(!res){ showToast('저장을 취소했습니다 (작성 중인 내용은 그대로)'); return; }
-      saveReport({...opts,_merged:true,_rec:res.rec,_fromCloud:res.from,_msg:res.msg});
+      if(!res){ showToast('저장을 취소했습니다 (작성 중인 내용은 그대로)'); return false; }
+      return saveReport({...opts,_merged:true,_rec:res.rec,_fromCloud:res.from,_msg:res.msg});
     });
-    return;
   }
   const all=gd();const ex=all.findIndex(x=>x.date===date);
   if(ex>=0){
     if(!opts.noConfirm && !confirm('같은 날짜 기록이 있습니다. 덮어쓰겠습니까?')){
       _saveReportBusy = false; /* 취소 시 즉시 해제 */
       requestAnimationFrame(()=>{ window.scrollTo({top: _scrollYBeforeSave}); });
-      return;
+      return false;
     }
     /* confirm 후 스크롤 복원 */
     requestAnimationFrame(()=>{ window.scrollTo({top: _scrollYBeforeSave}); });
@@ -6348,9 +6384,9 @@ function saveReport(opts){
   });
   if(presetChanged){sp(presets);renderPresets();if(typeof fbSaveSharedSettings==='function') setTimeout(fbSaveSharedSettings,500);}
   sd(all);
-  if(opts._fromCloud&&opts._fromCloud.length){ const ii=gd().findIndex(x=>x.date===r.date); if(ii>=0) loadForEdit(ii,true); }   /* 다른 기기 내용을 합쳤으면 화면도 합친 내용으로 */
-  _recBase=JSON.parse(JSON.stringify(r));
-  _formMarkClean();   /* 저장 완료 → 변경 없음 (지금 화면을 기준으로) */
+  const _onForm=(document.getElementById('inp-date')?.value||'')===r.date;   /* 저장하는 동안 화면이 다른 날짜로 바뀌었으면 화면은 건드리지 않음 */
+  if(_onForm && opts._fromCloud&&opts._fromCloud.length){ const ii=gd().findIndex(x=>x.date===r.date); if(ii>=0) loadForEdit(ii,true); }   /* 다른 기기 내용을 합쳤으면 화면도 합친 내용으로 */
+  if(_onForm){ _recBase=JSON.parse(JSON.stringify(r)); _formMarkClean(); }   /* 저장 완료 → 변경 없음 (지금 화면을 기준으로) */
   if(opts._msg) setTimeout(()=>showToast(opts._msg,5000),1800);
   /* 저장 후 새로고침 시 방금 저장한 기록을 자동으로 찾아 보여주기 위한 표시 */
   sessionStorage.setItem('golf_after_save_date_label', r.date);
@@ -6956,7 +6992,7 @@ function _formSnap(){
     const pw=document.getElementById('panel-write'); if(!pw) return '';
     /* 이름(id) 있는 입력칸만 비교 — 작업·근무자·자재 행의 칸은 아래 데이터(curTasks 등)로 비교.
        화면 보기용 칸(GP 기준 선택·목표값, 검색어, 근무자 추가 입력칸 등)은 제외 */
-    const NOSNAP=new Set(['inp-date-picker','mat-search-modal-kw','gp-area-sel','gp-target-input','reg-name','reg-task','daily-subgroup-sel','daily-row1','daily-row2','daily-name']);
+    const NOSNAP=new Set(['inp-course','inp-date-picker','mat-search-modal-kw','gp-area-sel','gp-target-input','reg-name','reg-task','daily-subgroup-sel','daily-row1','daily-row2','daily-name']);
     const v=[...pw.querySelectorAll('input[id],textarea[id],select[id]')].filter(e=>!NOSNAP.has(e.id)&&e.type!=='file'&&e.type!=='button'&&!e.closest('[data-nosnap]'))
       .map(e=>(e.id||e.name||'')+'='+((e.type==='checkbox'||e.type==='radio')?(e.checked?1:0):e.value));
     /* 날씨: 불러온 값만 비교 — 월·연 누적강우, 평년값처럼 기록에서 자동 계산되는 표시는 제외 */
@@ -7092,7 +7128,8 @@ async function onDatePick(val){
   const all=gd(), idx=all.findIndex(r=>r.date===label);
   const curSaved=all.some(r=>r.date===curLabel);
   const dirty=_isFormDirty();
-  const doSave=()=>{ if(!curLabel) return; _saveReportBusy=false; saveReport({noConfirm:true}); };
+  /* 저장이 클라우드 합치기(비동기)까지 끝난 뒤에 날짜를 옮김 — 저장 도중 화면이 바뀌어 엉뚱한 날짜를 건드리지 않도록 */
+  const doSave=async()=>{ if(!curLabel) return true; _saveReportBusy=false; const ok=await saveReport({noConfirm:true}); return ok!==false; };
   if(idx>=0){
     let k='go';
     if(dirty){
@@ -7102,7 +7139,7 @@ async function onDatePick(val){
         {k:'cancel',t:'취소',sub:'날짜와 작성 내용 그대로',bg:'#fff',c:'#555',bd:'#ccc'}])).k;
     }
     if(k==='cancel') return;
-    if(k==='save') doSave();
+    if(k==='save'){ if(!(await doSave())){ showToast('저장하지 않아 이동을 멈췄습니다'); return; } }
     pk.value=val; pk.dataset.prev=val;
     applyDatePicker(val,true);
     _refreshWriteCharts();
@@ -7115,7 +7152,7 @@ async function onDatePick(val){
     {k:'cancel',t:'취소',sub:'날짜와 작성 내용 그대로',bg:'#fff',c:'#555',bd:'#ccc'}],
     (dirty&&curLabel)?`먼저 지금 날짜(${curLabel})를 저장${curSaved?' (변경 반영)':''}`:'');
   if(r.k==='cancel') return;
-  if(r.save && dirty && curLabel) doSave();
+  if(r.save && dirty && curLabel){ if(!(await doSave())){ showToast('저장하지 않아 이동을 멈췄습니다'); return; } }
   if(r.k==='copy'){ copyFormToDate(val); _refreshWriteCharts(); window.scrollTo(0,0); showToast(`✅ ${label}로 복사했습니다. 날씨 「자동 불러오기」 후 작성·저장하세요.`,4000); return; }
   clearForm(true);
   pk.value=val; pk.dataset.prev=val;
@@ -11078,6 +11115,9 @@ function checkBackupReminder(){
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
   {date:'2026-11-15',items:[
+    '🔍 같은 섹션 충돌 창: 섹션마다 「차이 보기」 — 내 내용과 다른 기기 내용의 다른 곳만 표로(작업자: 사람별 출근/휴무/연차, 작업 내용: 행별 작업자·내용·장비, 출근시간 등)',
+    '🐞 작업자 섹션: 정규직 휴무를 체크하면 일용 「일반」 묶음의 휴무 수가 함께 바뀌던 문제 수정',
+    '🐞 날짜 이동 중 「저장하고 이동」: 클라우드 합치기가 끝난 뒤에 이동하도록 수정(저장 도중 화면이 새 날짜로 바뀌어 엉뚱한 날짜 화면을 건드릴 수 있던 문제)',
     '📝 경과일 기록 메모: 긴 내용이 잘리지 않고 자동 줄바꿈(칸 높이 자동) · PC에서 Shift+Enter 줄바꿈, Enter는 입력 끝(저장) · 휴대폰은 Enter 줄바꿈',
     '✏️ 직원 이름 바꾸기(관리자): 통계 「이름순서편집」에서 이름 옆 ✏️ — 모든 일보의 작업자·작업내용(짧은 이름 포함), 휴무·연차 계획, 연차 설정, 이름 순서, 자주 쓰는 직원, 단가 설정까지 한 번에 변경, 클라우드도 최신본에서 이름만 바꿔 저장',
   ]},
