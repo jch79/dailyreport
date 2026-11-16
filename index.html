@@ -184,7 +184,8 @@ async function fbIncrementalSyncReports(){
       const all = gd();
       changed.forEach(r=>{
         const i = all.findIndex(x=>x.date===r.date);
-        if(i>=0) all[i]=r; else all.unshift(r);
+        if(i>=0){ if(!all[i]._cloudBase) all[i]=r; }   /* 이 기기에만 저장한(아직 안 올린) 기록은 유지 → 다음 저장 때 섹션별로 합침 */
+        else all.unshift(r);
       });
       sd(all);
       console.log('[FB] 증분 동기화: '+changed.length+'건 반영');
@@ -212,6 +213,8 @@ async function fbFullSyncFromCloud(){
         delete r._savedBy; delete r._savedByUid; delete r._updatedAt;
         return r;
       });
+      /* 이 기기에만 저장한(아직 안 올린) 기록은 유지 → 다음 저장 때 섹션별로 합침 */
+      try{ gd().filter(x=>x&&x._cloudBase).forEach(lp=>{ const i=reports.findIndex(x=>x.date===lp.date); if(i>=0) reports[i]=lp; else reports.unshift(lp); }); }catch(e){}
       localStorage.setItem('golf_v7', JSON.stringify(reports));
       console.log('[FB] 일보 ' + reports.length + '건 동기화');
     }
@@ -326,12 +329,14 @@ async function fbSaveReport(report){
   if(!_fbUser || _fbRole==='viewer') return false;
   try{
     const docId = report.date.replace(/[^0-9가-힣]/g,'-').replace(/-+/g,'-');
+    const _rp={...report}; delete _rp._cloudBase;
     await _fbDb.collection(FB_COL_REPORTS).doc(docId).set({
-      ...report,
+      ..._rp,
       _savedBy: _fbUser.email,
       _savedByUid: _fbUser.uid,
       _updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     });
+    if(report._cloudBase){ delete report._cloudBase; try{ const a=gd(); const i=a.findIndex(x=>x.date===report.date); if(i>=0&&a[i]._cloudBase){ delete a[i]._cloudBase; sd(a); } }catch(e){} }
     return true;
   }catch(e){ console.warn('[FB] 일보 저장 실패:',e); return false; }
 }
@@ -564,15 +569,33 @@ async function fbSyncToCloud(){
   const all = gd();
   if(!all.length){ showToast('업로드할 데이터가 없습니다.'); return; }
   const el = document.getElementById('fb-sync-status');
-  if(el) el.textContent = '⬆️ ' + all.length + '건 업로드 중...';
+  /* 클라우드와 먼저 비교 — 같은 날짜가 클라우드에 다른 내용으로 있으면 통째로 덮어쓰지 않도록 */
+  if(el) el.textContent = '☁️ 클라우드와 비교 중...';
+  let snap; try{ snap=await _fbDb.collection(FB_COL_REPORTS).limit(5000).get(); }catch(e){ if(el) el.textContent='⚠️ 클라우드 조회 실패 — 업로드하지 않았습니다'; showToast('클라우드 조회 실패 — 업로드하지 않았습니다'); return; }
+  const cmap=new Map(); snap.docs.forEach(d=>{ const x=d.data(); if(x&&x.date&&!cmap.has(x.date)) cmap.set(x.date,x); });
+  const newOnes=[], diff=[]; let same=0;
+  all.forEach(r=>{ if(!r||!r.date) return; const c=cmap.get(r.date); if(!c){ newOnes.push(r); return; }
+    if(REC_SECS.every(sec=>_recSecStr(r,sec)===_recSecStr(c,sec))) same++; else diff.push(r); });
+  let list=newOnes;
+  if(diff.length){
+    const sorted=diff.map(r=>r.date).sort((a,b)=>(recIsoDate(b)||'').localeCompare(recIsoDate(a)||''));
+    const c=await _askChoice('☁️ 클라우드와 내용이 다른 날짜가 있습니다',
+      `이 기기와 클라우드의 내용이 다른 날짜 <b>${diff.length}건</b> (최근 순):<div style="margin:6px 0;padding:6px 8px;background:#f6f6f6;border-radius:7px;font-size:11.5px;max-height:120px;overflow:auto;">${sorted.slice(0,40).map(matEscHtml).join('<br>')}${sorted.length>40?`<br>… 외 ${sorted.length-40}건`:''}</div>
+       보통은 <b>다른 사람이 더 최근에 고친 것</b>이고, 오프라인에서 「이 기기에만 저장」한 날짜일 수도 있습니다. 덮어쓰면 클라우드 쪽 수정은 사라집니다.<br>이 기기에만 저장한 날짜는 작성 탭에서 그 날짜를 열어 「저장하기」를 누르면 섹션별로 합쳐 올라갑니다.<br>
+       <span style="color:#666;">클라우드에 없는 날짜 ${newOnes.length}건 · 같은 날짜 ${same}건</span>`,
+      [{v:'new',label:`⬆️ 클라우드에 없는 ${newOnes.length}건만 올리기 (권장)`,color:'#185FA5'},{v:'all',label:`⚠️ 다른 ${diff.length}건도 이 기기 내용으로 덮어쓰기`,color:'#c0392b'},{v:'cancel',label:'취소'}]);
+    if(!c||c==='cancel'){ if(el) el.textContent='업로드 취소'; return; }
+    if(c==='all'){ if(!confirm(`${diff.length}건을 이 기기 내용으로 덮어씁니다. 다른 사람이 고친 내용은 사라집니다.\n계속할까요?`)){ if(el) el.textContent='업로드 취소'; return; } list=newOnes.concat(diff); }
+  }
+  if(el) el.textContent = '⬆️ ' + list.length + '건 업로드 중...';
   let ok=0, fail=0;
-  for(const r of all){
+  for(const r of list){
     const res = await fbSaveReport(r);
     res ? ok++ : fail++;
   }
   /* 설정도 함께 업로드 */
   await fbSaveSharedSettings();
-  const msg = fail > 0 ? '✅ ' + ok + '건 성공, ❌ ' + fail + '건 실패 + 설정 업로드 완료' : '✅ 일보 ' + ok + '건 + 자재정보 + 설정 업로드 완료';
+  const msg = (fail > 0 ? '✅ ' + ok + '건 성공, ❌ ' + fail + '건 실패 + 설정 업로드 완료' : '✅ 일보 ' + ok + '건 + 자재정보 + 설정 업로드 완료') + (same?` · 같은 ${same}건은 건너뜀`:'') + (list.length<newOnes.length+diff.length?` · 다른 ${diff.length}건은 클라우드 유지`:'');
   if(el) el.textContent = msg;
   showToast('클라우드 업로드 완료!');
 }
@@ -5788,7 +5811,7 @@ function saveRainCalDayEdit(iso,rainStr,snowStr){
   try{ renderRainChart(); }catch(e){} try{ renderTempChart(); }catch(e){}
   try{ if(typeof updateRainCumCard==='function') updateRainCumCard(); }catch(e){}
   if(idx>=0 && _fbUser && _fbRole!=='viewer'){
-    fbSaveReport(all[idx]).then(ok=>showToast(ok?'수정 + 클라우드 업로드 완료!':'로컬 수정 완료 (클라우드 업로드 실패)'));
+    fbPatchReport(all[idx],x=>{ x.weather=x.weather||{}; x.weather.rain=String(rain); x.weather.snow=snow?String(snow):''; },['weather']).then(_patchToast);
   } else showToast(idx>=0?'일보에 반영했습니다':'수정했습니다 (팀 공유 수동값)');
 }
 function buildRainMonthCalendar(year,mm,highlightDd,color){
@@ -6180,19 +6203,38 @@ function _recStable(v){
 }
 function _recSecStr(rec,sec){ return sec.f.map(f=>_recStable(rec?rec[f]:null)).join('|'); }
 function _recDocId(date){ return String(date).replace(/[^0-9가-힣]/g,'-').replace(/-+/g,'-'); }
+/* 작업자 3방향 합치기: 사람(구분|이름)마다 — 둘 다 고친 사람이 있으면 null(충돌) */
+function _recMergeWorkers(M,T,B){
+  const key=w=>(w.type||'')+'|'+(w.name||''), mp=a=>{ const o=new Map(); a.forEach(w=>{ if(w&&w.name) o.set(key(w),w); }); return o; };
+  const m=mp(M), t=mp(T), b=mp(B), res=new Map();
+  for(const k of new Set([...m.keys(),...t.keys(),...b.keys()])){
+    const mv=_recStable(m.get(k)), tv=_recStable(t.get(k)), bv=_recStable(b.get(k));
+    let pick;
+    if(mv===tv||tv===bv) pick=m.get(k);       /* 같거나 그쪽은 안 고침 → 내 것 */
+    else if(mv===bv) pick=t.get(k);           /* 나는 안 고침 → 그쪽 것 */
+    else return null;                         /* 둘 다 같은 사람을 고침 */
+    if(pick) res.set(k,pick);
+  }
+  const out=[]; M.forEach(w=>{ const k=w&&key(w); if(k&&res.has(k)){ out.push(JSON.parse(JSON.stringify(res.get(k)))); res.delete(k); } });
+  T.forEach(w=>{ const k=w&&key(w); if(k&&res.has(k)){ out.push(JSON.parse(JSON.stringify(res.get(k)))); res.delete(k); } });
+  return out;
+}
 async function _recCloudMerge(mine){
-  let snap; try{ snap=await _fbDb.collection(FB_COL_REPORTS).doc(_recDocId(mine.date)).get(); }catch(e){ return {rec:mine,from:[]}; }   /* 클라우드 확인 실패 → 평소처럼 저장 */
+  let snap; try{ snap=await _fbDb.collection(FB_COL_REPORTS).doc(_recDocId(mine.date)).get(); }
+  catch(e){ const c=await _askBlindSave(mine.date); if(c==='push') return {rec:mine,from:[]}; if(c==='local') return {rec:mine,from:[],localOnly:true}; return null; }   /* 클라우드 확인 실패 → 물어봄 */
   if(!snap||!snap.exists) return {rec:mine,from:[]};
   const cd=snap.data()||{}, who=String(cd._savedBy||'다른 기기').split('@')[0];
   const when=(cd._updatedAt&&typeof cd._updatedAt.toDate==='function')?cd._updatedAt.toDate():null;
   const whenTxt=when?`${when.getMonth()+1}/${when.getDate()} ${String(when.getHours()).padStart(2,'0')}:${String(when.getMinutes()).padStart(2,'0')}`:'';
-  const base=(_recBase&&_recBase.date===mine.date)?_recBase:null;
+  const _lr=gd().find(x=>x.date===mine.date);
+  const base=(_lr&&_lr._cloudBase)?_lr._cloudBase:(_recBase&&_recBase.date===mine.date)?_recBase:null;   /* 이 기기에만 저장했던 기록이면 그때의 클라우드 기준으로 비교 */
   const out=JSON.parse(JSON.stringify(mine)), from=[], conflicts=[];
   REC_SECS.forEach(sec=>{
     const m=_recSecStr(mine,sec), t=_recSecStr(cd,sec), b=base?_recSecStr(base,sec):null;
     if(m===t) return;                                  /* 같음 */
     if(b!==null && t===b) return;                      /* 다른 기기는 안 고침 → 내 것 */
     if(b!==null && m===b){ sec.f.forEach(f=>{ out[f]=cd[f]!==undefined?JSON.parse(JSON.stringify(cd[f])):out[f]; }); from.push(sec.l); return; }   /* 나는 안 고침 → 그쪽 것 */
+    if(sec.k==='workers' && base){ const mw=_recMergeWorkers(mine.workers||[],cd.workers||[],base.workers||[]); if(mw){ out.workers=mw; if(_recStable(mw)!==_recStable(mine.workers||[])) from.push('작업자(사람별 합침)'); return; } }   /* 서로 다른 사람을 고쳤으면 자동 합침 */
     if(b===null && m.replace(/\|/g,'')===''){ sec.f.forEach(f=>{ if(cd[f]!==undefined) out[f]=JSON.parse(JSON.stringify(cd[f])); }); from.push(sec.l); return; }   /* 새로 쓰는 중인데 내 칸이 비었음 → 그쪽 것 */
     conflicts.push(sec);
   });
@@ -6350,7 +6392,7 @@ function saveReport(opts){
     return _recCloudMerge(r).then(res=>{
       _saveReportBusy=false;
       if(!res){ showToast('저장을 취소했습니다 (작성 중인 내용은 그대로)'); return false; }
-      return saveReport({...opts,_merged:true,_rec:res.rec,_fromCloud:res.from,_msg:res.msg});
+      return saveReport({...opts,_merged:true,_rec:res.rec,_fromCloud:res.from,_msg:res.msg,_localOnly:!!res.localOnly});
     });
   }
   const all=gd();const ex=all.findIndex(x=>x.date===date);
@@ -6384,6 +6426,10 @@ function saveReport(opts){
     }
   });
   if(presetChanged){sp(presets);renderPresets();if(typeof fbSaveSharedSettings==='function') setTimeout(fbSaveSharedSettings,500);}
+  /* 이 기기에만 저장: 마지막으로 클라우드와 맞았던 상태(_cloudBase)를 기억 → 나중에 저장할 때 내 수정으로 인식해 합침 */
+  if(opts._localOnly){ const old=gd().find(x=>x.date===r.date);
+    r._cloudBase=(old&&old._cloudBase)||((_recBase&&_recBase.date===r.date)?JSON.parse(JSON.stringify(_recBase)):(old?JSON.parse(JSON.stringify(old)):null));
+    if(r._cloudBase) delete r._cloudBase._cloudBase; } else delete r._cloudBase;
   sd(all);
   const _onForm=(document.getElementById('inp-date')?.value||'')===r.date;   /* 저장하는 동안 화면이 다른 날짜로 바뀌었으면 화면은 건드리지 않음 */
   if(_onForm && opts._fromCloud&&opts._fromCloud.length){ const ii=gd().findIndex(x=>x.date===r.date); if(ii>=0) loadForEdit(ii,true); }   /* 다른 기기 내용을 합쳤으면 화면도 합친 내용으로 */
@@ -6392,7 +6438,8 @@ function saveReport(opts){
   /* 저장 후 새로고침 시 방금 저장한 기록을 자동으로 찾아 보여주기 위한 표시 */
   sessionStorage.setItem('golf_after_save_date_label', r.date);
   /* ☁️ Firebase 동기화 (로그인 & 쓰기 권한 있을 때) */
-  if(_fbUser && _fbRole !== 'viewer'){
+  if(opts._localOnly){ showToast('📱 이 기기에만 저장했습니다 — 연결된 뒤 다시 저장해 주세요',4500); }
+  else if(_fbUser && _fbRole !== 'viewer'){
     fbSaveReport(r).then(ok=>{
       if(ok){
         showToast('저장 + 클라우드 업로드 완료!');
@@ -9843,9 +9890,7 @@ function saveRainDayEdit(){
   closeRainDayModal(null);
   /* ☁️ Firebase 동기화 */
   if(ri2>=0 && _fbUser && _fbRole !== 'viewer'){
-    fbSaveReport(all[ri2]).then(ok=>{
-      showToast(ok ? '수정 + 클라우드 업로드 완료!' : '로컬 수정 완료 (클라우드 업로드 실패)');
-    });
+    fbPatchReport(all[ri2],x=>{ x.weather=x.weather||{}; x.weather.rain=rain; },['weather']).then(_patchToast);
   } else {
     showToast('수정됐습니다');
   }
@@ -10003,6 +10048,53 @@ function syncWriteFormWorker(rec, name, type){
 }
 /* 통계에서 근무 상태만 고칠 때: 클라우드 최신본을 받아 그 근무자 칸만 바꿔 저장
    (이 기기의 오래된 사본을 통째로 올려 다른 기기에서 고친 섹션을 덮어쓰지 않도록) */
+/* 간단한 선택 창 — btns:[{v,label,color}] → 고른 v (바깥 클릭=null) */
+function _askChoice(title,html,btns){
+  return new Promise(res=>{
+    const w=document.createElement('div'); w.id='ask-choice';
+    w.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10500;display:flex;align-items:center;justify-content:center;padding:14px;';
+    w.innerHTML=`<div style="background:#fff;border-radius:14px;max-width:460px;width:100%;max-height:90vh;overflow:auto;box-shadow:0 10px 40px rgba(0,0,0,.35);">
+      <div style="background:linear-gradient(135deg,#B8690A,#e0962f);color:#fff;padding:12px 16px;font-size:14px;font-weight:800;">${title}</div>
+      <div style="padding:12px 16px;font-size:12.5px;color:#333;line-height:1.65;">${html}</div>
+      <div style="display:flex;flex-direction:column;gap:7px;padding:4px 16px 16px;">${btns.map(b=>`<button data-v="${b.v}" style="padding:10px;border-radius:9px;font-weight:800;font-size:13px;cursor:pointer;${b.color?`border:none;background:${b.color};color:#fff;`:'border:1.5px solid #ccc;background:#fff;color:#555;'}">${b.label}</button>`).join('')}</div></div>`;
+    document.body.appendChild(w);
+    const done=v=>{ w.remove(); res(v); };
+    w.onclick=e=>{ if(e.target===w) done(null); };
+    w.querySelectorAll('button[data-v]').forEach(b=>b.onclick=()=>done(b.dataset.v));
+  });
+}
+/* 클라우드 최신본을 못 읽었을 때: 그냥 올릴지 / 이 기기에만 둘지 */
+function _askBlindSave(date){
+  return _askChoice('☁️ 클라우드 최신본을 확인하지 못했습니다',
+    `<b>${matEscHtml(date)}</b> 기록의 클라우드 최신본을 읽지 못했습니다 (인터넷 연결 확인).<br>그대로 올리면 그 사이 <b>다른 사람이 고친 내용을 덮어쓸 수 있습니다.</b>`,
+    [{v:'local',label:'📱 이 기기에만 저장 (연결되면 다시 저장)',color:'#185FA5'},{v:'push',label:'⬆️ 그래도 클라우드에 올리기'},{v:'cancel',label:'취소'}]);
+}
+/* 차트 팝업 등에서 일부 칸만 고칠 때: 클라우드 최신본을 받아 고친 칸만 바꿔 저장
+   (이 기기의 오래된 사본을 통째로 올려 다른 사람이 고친 섹션을 덮어쓰지 않도록)
+   apply(rec): 받은 사본에 고칠 내용을 적용 · fields: 고치는 필드(작성 탭 합치기 기준 맞춤용)
+   반환: true(업로드) / false(실패) / 'local'(이 기기에만) */
+async function fbPatchReport(localRec, apply, fields){
+  if(!_fbUser || _fbRole==='viewer') return false;
+  let snap;
+  try{ snap=await _fbDb.collection(FB_COL_REPORTS).doc(_recDocId(localRec.date)).get(); }
+  catch(e){ const c=await _askBlindSave(localRec.date); if(c==='push') return fbSaveReport(localRec); showToast('📱 이 기기에만 저장했습니다 — 연결된 뒤 다시 저장해 주세요',4500); return 'local'; }
+  let base=localRec, fromCloud=false;
+  if(snap&&snap.exists){ const d={...snap.data()}; delete d._savedBy; delete d._savedByUid; delete d._updatedAt; base=d; fromCloud=true; }
+  /* 다른 사람이 이 필드를 안 건드렸으면, 저장 뒤 작성 탭의 합치기 기준도 새 값으로 */
+  const rb=(typeof _recBase!=='undefined'&&_recBase&&_recBase.date===localRec.date)?_recBase:null;
+  const untouched=rb&&fields?fields.filter(f=>_recStable(base[f])===_recStable(rb[f])):[];
+  const rec=JSON.parse(JSON.stringify(base));
+  apply(rec);
+  const ok=await fbSaveReport(rec);
+  if(ok){
+    const all=gd(); const i=all.findIndex(x=>x.date===rec.date);
+    if(i>=0 && !all[i]._cloudBase){ all[i]=rec; sd(all); }   /* 이 기기에만 저장한 기록이면 로컬은 그대로(다음 저장 때 합침) */
+    if(rb) untouched.forEach(f=>{ rb[f]=JSON.parse(JSON.stringify(rec[f])); });
+    if(fromCloud) setTimeout(()=>{ try{ _recAfterSyncCheck(); renderHistory(); }catch(e){} },0);   /* 다른 기기에서 바뀐 섹션이 있었으면 작성 화면도 갱신 */
+  }
+  return ok;
+}
+function _patchToast(ok){ if(ok==='local') return; showToast(ok?'수정 + 클라우드 업로드 완료!':'로컬 수정 완료 (클라우드 업로드 실패)'); }
 async function fbPatchReportWorker(localRec, name, type, patch){
   try{
     const snap=await _fbDb.collection(FB_COL_REPORTS).doc(_recDocId(localRec.date)).get();
@@ -10014,9 +10106,9 @@ async function fbPatchReportWorker(localRec, name, type, patch){
     if(!w){ const lw=(localRec.workers||[]).find(x=>x.name===name&&x.type===type); if(lw){ w=JSON.parse(JSON.stringify(lw)); rec.workers.push(w); } }
     if(w) Object.assign(w,patch);
     const ok=await fbSaveReport(rec);
-    if(ok){ const all=gd(); const i=all.findIndex(x=>x.date===rec.date); if(i>=0){ all[i]=rec; sd(all); syncWriteFormWorker(rec,name,type); renderStats(); renderHistory(); setTimeout(_recAfterSyncCheck,0); } }   /* 다른 기기에서 바뀐 섹션이 있었으면 작성 화면도 갱신 */
+    if(ok){ const all=gd(); const i=all.findIndex(x=>x.date===rec.date); if(i>=0){ if(!all[i]._cloudBase){ all[i]=rec; sd(all); } syncWriteFormWorker(rec,name,type); renderStats(); renderHistory(); setTimeout(_recAfterSyncCheck,0); } }   /* 다른 기기에서 바뀐 섹션이 있었으면 작성 화면도 갱신 */
     return ok;
-  }catch(e){ console.warn(e); return fbSaveReport(localRec); }
+  }catch(e){ console.warn(e); const c=await _askBlindSave(localRec.date); if(c==='push') return fbSaveReport(localRec); showToast('📱 이 기기에만 저장했습니다 — 연결된 뒤 다시 저장해 주세요',4500); return 'local'; }
 }
 function saveRegDayEdit(status){
   if(!_regDayEdit)return;
@@ -10232,9 +10324,7 @@ function saveTempDayEdit(){
   closeTempDayModal(null);
   /* ☁️ Firebase 동기화 (로그인 & 쓰기 권한 있을 때) — 이게 빠져 있어서 재접속 시 클라우드 구데이터에 덮어써지던 버그 수정 */
   if(_fbUser && _fbRole !== 'viewer'){
-    fbSaveReport(all[idx]).then(ok=>{
-      showToast(ok ? '수정 + 클라우드 업로드 완료!' : '로컬 수정 완료 (클라우드 업로드 실패)');
-    });
+    fbPatchReport(all[idx],x=>{ x.weather=x.weather||{}; x.weather.minmax=_newMinmax; x.weather.avg=_newAvg; },['weather']).then(_patchToast);
   } else {
     showToast('수정됐습니다');
   }
@@ -10311,11 +10401,9 @@ function saveBsDayEdit(){
     if(noteEl)noteEl.value=note;
   }
   closeBsDayModal(null);
-  /* ☁️ Firebase 동기화 */
+  /* ☁️ Firebase 동기화 — 클라우드 최신본에 볼스피드만 바꿔 넣음 */
   if(_fbUser && _fbRole !== 'viewer'){
-    fbSaveReport(all[idx]).then(ok=>{
-      showToast(ok ? '수정 + 클라우드 업로드 완료!' : '로컬 수정 완료 (클라우드 업로드 실패)');
-    });
+    fbPatchReport(all[idx],x=>{ x.ballSpeed=x.ballSpeed||{}; x.ballSpeed.am=am; x.ballSpeed.pm=pm; x.ballSpeed.note=note; },['ballSpeed']).then(_patchToast);
   } else {
     showToast('수정됐습니다');
   }
@@ -11073,9 +11161,10 @@ function saveIrrModal(){
 
   /* ── Firebase 저장 ── */
   if(typeof fbSaveReport==='function' && _fbUser && (_fbRole==='admin'||_fbRole==='member'||(_fbRole==='partial'&&canEditSection('irr')))){
-    fbSaveReport(r).then(ok=>{
-      if(ok) console.log('[FB] 관수/TDR 수정 저장 완료:',r.date);
-      else showToast('로컬 저장 완료 (클라우드 업로드 실패)');
+    const _irrV=JSON.parse(JSON.stringify(r.irrigation||{})), _tdrV=JSON.parse(JSON.stringify(r.tdr||{}));
+    fbPatchReport(r,x=>{ x.irrigation=_irrV; x.tdr=_tdrV; },['irrigation','tdr']).then(ok=>{
+      if(ok===true) console.log('[FB] 관수/TDR 수정 저장 완료:',r.date);
+      else if(ok!=='local') showToast('로컬 저장 완료 (클라우드 업로드 실패)');
     }).catch(e=>{ console.warn('[FB] 관수/TDR 저장 오류',e); showToast('로컬 저장 완료 (클라우드 업로드 실패)'); });
   }
 
@@ -11124,6 +11213,12 @@ function checkBackupReminder(){
    · 관리자 공지: Firestore shared/notices 문서의 items 배열(모든 기기 실시간 공유). 관리자만 작성·수정·삭제. 항상 맨 위 고정
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
+  {date:'2026-11-17',items:[
+    '🛡️ 차트 팝업(기온·강우/적설·볼스피드·관수/TDR 이력) 수정: 내 기기 사본을 통째로 올리지 않고, 클라우드 최신본을 받아 고친 칸만 바꿔 저장 — 다른 사람이 고친 작업자·비고 등을 덮어쓰지 않음',
+    '🛡️ 동기화 업로드: 먼저 클라우드와 비교 — 클라우드에 없는 날짜만 올리고(권장), 내용이 다른 날짜는 목록을 보여주고 덮어쓸지 확인',
+    '🤝 작성 저장 합치기: 「작업자」 섹션은 사람 단위로 비교 — 서로 다른 사람을 고쳤으면 충돌 창 없이 자동 합침 (같은 사람을 둘 다 고쳤을 때만 선택)',
+    '☁️ 저장할 때 클라우드 최신본을 못 읽으면(연결 끊김 등) 그냥 덮어쓰지 않고 「이 기기에만 저장 / 그래도 올리기 / 취소」를 물어봄 — 이 기기에만 저장한 기록은 클라우드 동기화로 지워지지 않고, 연결된 뒤 그 날짜를 다시 저장하면 섹션별로 합쳐 올라감',
+  ]},
   {date:'2026-11-15',items:[
     '🐞 기온 추이 차트에서 기온을 고치면 작성 탭(같은 날짜)이 저장된 값인데도 「변경 있음」으로 잡혀 이동 시 저장 확인이 뜨던 문제 수정',
     '🌧️ 기온 추이 차트에서 날짜를 눌러 여는 기온 수정 창: 그날 강우량(눈 온 날은 적설량)이 있으면 함께 표시 — 「수정」으로 강우·적설 바로 수정',
