@@ -1089,6 +1089,8 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
 /* ── 작성 섹션 이동 버튼 ── */
 .write-sec-wrap{position:relative;}
 .write-sec-wrap.sec-locked > *:not(.sec-lock-badge){opacity:.82;filter:none;pointer-events:none;user-select:none;}
+/* 희석 계산기는 저장 안 하는 계산용이라 잠긴 섹션(열람자 등)에서도 사용 가능 */
+.write-sec-wrap.sec-locked .mix-calc, .write-sec-wrap.sec-locked .mix-calc *{pointer-events:auto !important;}
 /* 잠긴(읽기 전용) 섹션이라도 좌우 스크롤 영역만큼은 계속 스크롤해서 볼 수 있어야 함 —
    위 규칙이 자식 전체에 pointer-events:none을 걸어버려서 스크롤 제스처 자체가 안 먹히던 문제.
    스크롤 컨테이너 자신은 다시 활성화하고, 그 안의 입력/버튼 등은 계속 막아 열람만 가능하게 유지.
@@ -11213,6 +11215,9 @@ function checkBackupReminder(){
    · 관리자 공지: Firestore shared/notices 문서의 items 배열(모든 기기 실시간 공유). 관리자만 작성·수정·삭제. 항상 맨 위 고정
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
+  {date:'2026-11-18',items:[
+    '💧 비료·농약·모래 자재 사용: 처리지역마다 「희석 계산」 줄 — 필요 희석액(L)을 넣으면 처리 가능 면적과 자재별 희석할 제품량, 반대로 처리면적(㎡)을 넣으면 필요 희석액과 제품량 (탱크 몇 회분·살포량도 표시, 기록에는 저장 안 함)',
+  ]},
   {date:'2026-11-17',items:[
     '🛡️ 차트 팝업(기온·강우/적설·볼스피드·관수/TDR 이력) 수정: 내 기기 사본을 통째로 올리지 않고, 클라우드 최신본을 받아 고친 칸만 바꿔 저장 — 다른 사람이 고친 작업자·비고 등을 덮어쓰지 않음',
     '🛡️ 동기화 업로드: 먼저 클라우드와 비교 — 클라우드에 없는 날짜만 올리고(권장), 내용이 다른 날짜는 목록을 보여주고 덮어쓸지 확인',
@@ -13446,6 +13451,7 @@ function updateItemField(blockId, itemId, field, val){
     const dilCell = document.getElementById('dilution-cell-'+itemId);
     if(dilCell) dilCell.innerHTML = renderDilutionCell(it, block);
   }
+  setTimeout(()=>refreshMixCalc(blockId),0);
 }
 
 /* ── 전체 블록 렌더 ── */
@@ -13701,6 +13707,78 @@ function renderDilutionCell(item, block){
   if(d===null) return '<span style="color:#ccc;font-size:11px;padding:2px 4px;display:block;text-align:center;">—</span>';
   return `<span style="font-size:12px;font-weight:700;color:#7B4F00;padding:2px 4px;display:block;text-align:center;">${fmtMatNum(d)}배</span>`;
 }
+/* ══ 💧 희석액 ⇄ 처리면적 계산기 ══
+   지금 계산(제품량=㎡당×면적, 희석배수=탱크×1000÷제품량)은 「탱크용량으로 면적 전체를 처리」 기준 → 살포량 = 탱크÷면적(L/㎡)
+   · 희석액 V(L) 입력 → 처리 가능 면적 = V × 면적 ÷ 탱크
+   · 처리면적 A(㎡) 입력 → 필요 희석액 = A × 탱크 ÷ 면적
+   · 자재별 제품량 = ㎡당 사용량 × 그 면적 (= V×1000÷희석배수, 처리지역의 모든 자재에 같은 기준)
+   기록에는 저장하지 않음(입력값은 이 화면에서만 기억) */
+window._mixCalc=window._mixCalc||{};
+function _mixFmtAmt(n,unit){
+  const big=unit==='ml'?'L':'kg';
+  return n>=1000?`${fmtMatNum(n/1000)}${big}`:`${fmtMatNum(n)}${unit}`;
+}
+function mixCalcHtml(block){
+  const st=window._mixCalc[block.id]||{};
+  const area=parseFloat(block.treatArea), tank=parseFloat(block.tankVol), ready=area>0&&tank>0;
+  const inp=(k,v,ph,unit)=>`<input type="number" inputmode="decimal" min="0" step="any" data-mix="${k}" value="${v==null?'':v}" placeholder="${ph}" ${ready?'':'disabled'}
+      oninput="onMixCalcInput(${block.id},'${k}',this.value)" style="width:78px;padding:3px 6px;font-size:12px;font-weight:700;text-align:right;border:1.5px solid #9cc6ee;border-radius:6px;background:${ready?'#fff':'#f3f3f3'};"><span style="font-size:11px;color:#185FA5;margin-left:2px;">${unit}</span>`;
+  let vol=null, ar=null;
+  if(ready){
+    if(st.last==='a' && parseFloat(st.a)>0){ ar=parseFloat(st.a); vol=ar*tank/area; }
+    else if(parseFloat(st.v)>0){ vol=parseFloat(st.v); ar=vol*area/tank; }
+  }
+  const rn=x=>String(Math.round(x*100)/100);   /* number 칸에는 쉼표 없이 */
+  const vShow=st.last==='a'?(vol!=null?rn(vol):''):(st.v||''), aShow=st.last==='a'?(st.a||''):(ar!=null?rn(ar):'');
+  let res='';
+  if(!ready) res=`<span style="font-size:11px;color:#999;">처리지역의 면적·탱크를 먼저 선택하면 계산됩니다</span>`;
+  else if(vol==null) res=`<span style="font-size:11px;color:#7a9cc0;">희석액(L) 또는 처리면적(㎡) 중 하나를 넣으세요 · 살포량 ${fmtMatNum(tank/area)}L/㎡ 기준</span>`;
+  else{
+    const chips=block.items.filter(it=>it.type!=='sand'&&String(it.brandName||'').trim()).map(it=>{
+      const per=parseGram(it.amount), unit=parseSizeUnitLabel(resolveItemSize(it))||'g';
+      if(!per) return `<span style="display:inline-block;margin:2px 4px 0 0;padding:2px 7px;border-radius:10px;background:#f6f6f6;color:#999;font-size:11px;">${matEscHtml(it.brandName)} — ㎡당 사용량 없음</span>`;
+      return `<span style="display:inline-block;margin:2px 4px 0 0;padding:2px 8px;border-radius:10px;background:#fff;border:1px solid #b5d4f4;font-size:11.5px;"><b>${matEscHtml(it.brandName)}</b> <b style="color:#1a5fa8;">${_mixFmtAmt(per*ar,unit)}</b></span>`;
+    }).join('');
+    res=`<div style="font-size:12px;color:#185FA5;font-weight:700;">→ 희석액 <span style="font-size:13.5px;">${fmtMatNum(vol)}L</span> · 처리 가능 <span style="font-size:13.5px;">${fmtMatNum(ar)}㎡</span> <span style="font-weight:500;color:#5b86b5;">(${fmtMatNum(vol/tank)}탱크 · 살포 ${fmtMatNum(tank/area)}L/㎡)</span></div>
+      <div style="margin-top:2px;">${chips||'<span style="font-size:11px;color:#999;">계산할 자재(비료·농약)가 없습니다</span>'}</div>`;
+  }
+  return `<div style="padding:6px 10px;background:#eef6fd;border-bottom:1px solid #cfe3f6;">
+    <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;">
+      <span style="font-size:11.5px;font-weight:800;color:#185FA5;white-space:nowrap;">💧 희석 계산</span>
+      <span style="white-space:nowrap;"><span style="font-size:11px;color:#555;margin-right:3px;">희석액</span>${inp('v',vShow,'L',"L")}</span>
+      <span style="color:#9cc6ee;font-weight:800;">⇄</span>
+      <span style="white-space:nowrap;"><span style="font-size:11px;color:#555;margin-right:3px;">처리면적</span>${inp('a',aShow,'㎡','㎡')}</span>
+      ${ready?`<button type="button" onclick="clearMixCalc(${block.id})" style="padding:2px 8px;border-radius:6px;border:1px solid #b5d4f4;background:#fff;color:#5b86b5;font-size:11px;cursor:pointer;">지우기</button>`:''}
+      <span style="font-size:10px;color:#9ab;margin-left:auto;">저장 안 됨 · 계산용</span>
+    </div>
+    <div class="mix-res" style="margin-top:4px;">${res}</div>
+  </div>`;
+}
+function onMixCalcInput(blockId,k,val){
+  const st=window._mixCalc[blockId]=window._mixCalc[blockId]||{};
+  st[k]=val; st.last=k;
+  if(k==='v') st.a=''; else st.v='';
+  refreshMixCalc(blockId,k);
+}
+function clearMixCalc(blockId){ delete window._mixCalc[blockId]; refreshMixCalc(blockId); }
+/* 다시 그리되, 지금 입력 중인 칸의 포커스·커서는 유지 */
+function refreshMixCalc(blockId,keepKey){
+  const box=document.querySelector(`.mix-calc[data-block="${blockId}"]`); const block=matAreaBlocks.find(b=>b.id===blockId);
+  if(!box||!block) return;
+  const act=document.activeElement, k=keepKey||(act&&box.contains(act)?act.dataset.mix:null);
+  const cur=k&&box.querySelector(`[data-mix="${k}"]`);
+  if(cur && !cur.disabled){
+    /* 입력 중인 칸은 그대로 두고(커서 유지) 반대쪽 칸과 결과만 바꿈 */
+    const tmp=document.createElement('div'); tmp.innerHTML=mixCalcHtml(block);
+    const o=k==='v'?'a':'v', oe=box.querySelector(`[data-mix="${o}"]`), te=tmp.querySelector(`[data-mix="${o}"]`);
+    if(oe&&te) oe.value=te.value;
+    box.querySelector('.mix-res').innerHTML=tmp.querySelector('.mix-res').innerHTML;
+  } else box.innerHTML=mixCalcHtml(block);
+}
+function refreshAllMixCalc(){ document.querySelectorAll('.mix-calc[data-block]').forEach(b=>{ if(!b.contains(document.activeElement)) refreshMixCalc(+b.dataset.block); }); }
+/* 자재·사용량·면적·탱크가 바뀌면 계산 결과도 갱신 */
+document.addEventListener('input',e=>{ if(e.target.closest&&e.target.closest('#mat-area-blocks')&&!e.target.closest('.mix-calc')) setTimeout(refreshAllMixCalc,0); },true);
+document.addEventListener('change',e=>{ if(e.target.closest&&e.target.closest('#mat-area-blocks')&&!e.target.closest('.mix-calc')) setTimeout(refreshAllMixCalc,0); },true);
 /* ── 처리지역 헤더의 처리면적/탱크용량 일괄 변경: 블록 안 모든(모래 제외) 항목의
    수량·희석배수 셀을 한 번에 재계산 ── */
 function updateBlockAreaTank(blockId, field, val){
@@ -13715,6 +13793,7 @@ function updateBlockAreaTank(blockId, field, val){
     const dilCell = document.getElementById('dilution-cell-'+it.id);
     if(dilCell) dilCell.innerHTML = renderDilutionCell(it, block);
   });
+  refreshMixCalc(blockId);
 }
 
 /* ── 비료 순성분량 계산 (행 내 표시용) ── */
@@ -16516,6 +16595,8 @@ function buildAreaBlock(block){
       <!-- 삭제 버튼 오른쪽 끝 -->
       <button onclick="removeAreaBlock(${block.id})" style="padding:4px 9px;border-radius:6px;border:none;background:rgba(220,50,50,.65);color:#fff;font-size:11px;font-weight:700;cursor:pointer;">✕</button>
     </div>
+    <!-- 💧 희석액 ⇄ 처리면적 계산기 (그 자리에서만 쓰고 저장 안 함) -->
+    <div class="mix-calc" data-block="${block.id}">${mixCalcHtml(block)}</div>
     <!-- 컬럼 헤더 + 데이터 행: 가로 스크롤 -->
     <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
       <div style="min-width:680px;">
