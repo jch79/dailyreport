@@ -11222,6 +11222,7 @@ function checkBackupReminder(){
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
   {date:'2026-11-19',items:[
+    '✏️ 자재 사용 표: 등록 자재를 추가(또는 행의 🔍로 선택)하면 ㎡당 사용량에 실사용량(없으면 권장사용량)을 미리 채움 — 고쳐 쓸 수 있음, 이미 입력한 값은 그대로',
     '🔍 작성 탭 비료·농약·모래 자재 사용: 처리지역마다 「자재 검색」 — 자재입출고 입출고 등록처럼 여러 검색어로 찾아 체크해서 한 번에 추가 (농약/비료/모래 자동 구분, 목록에 없는 이름은 직접 입력 항목으로) · 표 구성은 그대로',
     '🧮 희석계산 탭 새로 구성: 기준은 처리면적·탱크용량만 입력 · 자재는 자재입출고처럼 여러 검색어로 찾아 체크해서 한 번에 추가(농약/비료는 표시만, 목록에 없으면 임의 자재) · 자재마다 ㎡당 사용량(또는 희석배수) 입력 → 제품량·희석배수·20L당·통수 (PC는 표, 모바일은 카드)',
     '🧮 새 탭 「희석계산」(자재입출고 다음) 추가 — 농약·비료 희석배수 계산 (입력값은 이 기기에만 기억)',
@@ -13905,11 +13906,22 @@ function musSugg(blockId){
 function musClose(blockId){ const b=document.getElementById('mus-sg-'+blockId); if(b) b.style.display='none'; }
 document.addEventListener('click',e=>{ document.querySelectorAll('.mus-sg').forEach(b=>{ if(b.style.display==='none') return; const id=b.id.replace('mus-sg-',''); if(!e.target.closest(`.mus-q[data-block="${id}"]`)&&!e.target.closest('#'+b.id)) b.style.display='none'; }); });
 function musToggle(blockId,k){ const s=_musSel[blockId]=_musSel[blockId]||new Set(); if(s.has(k)) s.delete(k); else s.add(k); musSugg(blockId); }
+/* ㎡당 사용량 기본값: 실사용량 › 권장사용량 — 범위(0.5~0.75g)는 앞 값, 단위가 없으면 규격 단위를 붙임 */
+function _matDefAmount(type,p){
+  let v=String((p&&(String(p.realUsage||'').trim()&&p.realUsage!=='0'?p.realUsage:p.usage))||'').trim();
+  if(!v||v==='0') return '';
+  if(type==='sand') return v;
+  v=v.replace(/,/g,'').replace(/ℓ/g,'L');
+  const m=v.match(/([\d.]+)\s*(kg|g|ml|l)?/i); if(!m||!(parseFloat(m[1])>0)) return '';
+  const u=m[2]||(parseSizeUnitLabel(p.size)||(type==='pest'?'ml':'g'));
+  return m[1]+u.replace(/^L$/,'L');
+}
 /* 목록 자재 → 행 (기존 🔍 선택과 같은 필드 채움) */
 function _musNewItem(type,listIdx){
   const p=getListByType(type)[listIdx]; if(!p) return null;
   const it={ id:++matItemIdxCounter, type, brandName:p.name||'', size:p.size||'', form:p.form||'', product:'', series:'', category:'', frac:'', amount:'', _listIdx:listIdx };
   if(type==='pest'){ it.product=p.product||''; it.series=p.series||''; it.category=p.category||''; it.frac=p.frac||''; }
+  it.amount=_matDefAmount(type,p);
   return it;
 }
 function musAddSel(blockId){
@@ -17145,6 +17157,7 @@ function selectMatSearchItem(listIdx){
        분류 칸에는 채우지 않고 비워둔다 — 종류는 별도의 '종류' 칼럼에서 이미 보여줌 */
     item.product=''; item.series=''; item.category=''; item.frac='';
   }
+  if(!String(item.amount||'').trim()) item.amount=_matDefAmount(searchType,p);   /* 비어 있으면 실사용량(없으면 권장량) */
   closeMatSearchModal();
   renderAreaBlocks();
   showToast(p.name+' 선택됨');
