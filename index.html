@@ -11217,6 +11217,7 @@ function checkBackupReminder(){
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
   {date:'2026-11-19',items:[
+    '🧮 희석계산: 기준에 「㎡당 사용량(희석액 L/㎡)」 입력 추가 — 탱크용량과 연동되고 모든 자재가 그 값으로 일괄 계산 · 자재 검색에서 「가디온, 탑라인, 유안」처럼 쉼표로 여러 개를 한 번에 추가 (후보 표시, 목록에 없는 이름은 임의 자재로)',
     '🧮 새 탭 「희석계산」(자재입출고 다음): 처리면적·탱크용량만 넣고 농약/비료를 등록 자재에서 고르거나 임의 이름으로 추가 — ㎡당 사용량 ⇄ 희석배수 양방향, 제품량(1탱크)·20L당·규격 기준 통수, 농약 라벨 희석배수 바로 적용, 희석액 ⇄ 처리면적 계산 (입력값은 이 기기에만 기억)',
   ]},
   {date:'2026-11-18',items:[
@@ -13727,9 +13728,16 @@ function _dilNewRow(type){ return {id:Date.now()+Math.floor(Math.random()*1000),
 const _dilRn=x=>String(Math.round(x*10000)/10000);
 function _dilAmt(n,unit){ if(!(n>0)) return '—'; const big=unit==='ml'?'L':'kg'; return n>=1000?`${fmtMatNum(n/1000)}${big}`:`${fmtMatNum(n)}${unit}`; }
 function _dilReg(r){ const list=r.type==='fert'?getFertList():getPestList(); const nm=String(r.name||'').trim(); return nm?list.find(x=>String(x.name||'').trim()===nm):null; }
+/* 기준값: 면적 + (㎡당 사용량 또는 탱크) — 마지막에 넣은 쪽 기준 */
+function _dilBase(){
+  const area=parseFloat(_dil.area); let tank=parseFloat(_dil.tank), rate=parseFloat(_dil.rate);
+  if(_dil.tankLast==='rate'){ rate=rate>0?rate:null; tank=(rate&&area>0)?rate*area:null; }
+  else { tank=tank>0?tank:null; rate=(tank&&area>0)?tank/area:null; }
+  return {area:area>0?area:null,tank,rate};
+}
 /* 한 행 계산 */
 function _dilCalc(r){
-  const area=parseFloat(_dil.area), tank=parseFloat(_dil.tank), spray=(area>0&&tank>0)?tank/area:null;
+  const B=_dilBase(), area=B.area, tank=B.tank, spray=B.rate;
   let per=parseFloat(r.per), mult=parseFloat(r.mult);
   if(r.last==='mult'){ if(!(mult>0)) mult=null; per=(mult&&spray)?spray*1000/mult:null; }
   else { if(!(per>0)) per=null; mult=(per&&spray)?spray*1000/per:null; }
@@ -13762,7 +13770,7 @@ function _dilRowHtml(r){
     ${info?`<div style="font-size:10.5px;color:#889;margin-top:3px;">${matEscHtml(info)}</div>`:''}
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:7px;">
       <span><span class="dl-lb">규격</span><input class="dl-in" value="${matEscHtml(r.size)}" placeholder="예: 500ml" style="width:84px;" oninput="dilRowSet(${r.id},'size',this.value)"></span>
-      <span><span class="dl-lb">㎡당</span>${inp('per',perV,80,'사용량')}<select class="dl-in" style="padding:5px 4px;margin-left:3px;" onchange="dilRowSet(${r.id},'unit',this.value)"><option value="ml" ${r.unit==='ml'?'selected':''}>ml</option><option value="g" ${r.unit==='g'?'selected':''}>g</option></select></span>
+      <span><span class="dl-lb">㎡당 약량</span>${inp('per',perV,80,'약량')}<select class="dl-in" style="padding:5px 4px;margin-left:3px;" onchange="dilRowSet(${r.id},'unit',this.value)"><option value="ml" ${r.unit==='ml'?'selected':''}>ml</option><option value="g" ${r.unit==='g'?'selected':''}>g</option></select></span>
       <span style="color:#b5c9a5;font-weight:800;">⇄</span>
       <span><span class="dl-lb">희석배수</span>${inp('mult',multV,90,'배수')}<span class="dl-u">배</span></span>
     </div>
@@ -13774,16 +13782,16 @@ function _dilResHtml(r,c){
   const u=r.unit||'ml', out=[];
   if(c.total) out.push(`<span>제품량(면적 전체·1탱크) <b>${_dilAmt(c.total,u)}</b></span>`);
   if(c.per20) out.push(`<span>20L당 <b>${_dilAmt(c.per20,u)}</b></span>`);
-  if(c.per1000&&parseFloat(_dil.tank)!==1000) out.push(`<span>1,000L당 <b>${_dilAmt(c.per1000,u)}</b></span>`);
+  if(c.per1000&&_dilBase().tank!==1000) out.push(`<span>1,000L당 <b>${_dilAmt(c.per1000,u)}</b></span>`);
   if(c.cans) out.push(`<span>규격 기준 <b>${fmtMatNum(c.cans)}통</b></span>`);
   if(!out.length){
     if(!(c.spray)) return `<span style="background:#fff7e6;color:#a66b00;">위에서 처리면적·탱크용량을 넣으면 계산됩니다${r.last==='mult'&&parseFloat(r.mult)>0?' (20L당은 아래)':''}</span>`;
-    return `<span style="background:#f5f5f5;color:#999;">㎡당 사용량 또는 희석배수를 넣으세요</span>`;
+    return `<span style="background:#f5f5f5;color:#999;">㎡당 약량 또는 희석배수를 넣으세요</span>`;
   }
   return out.join('');
 }
 function _dilMixHtml(){
-  const area=parseFloat(_dil.area), tank=parseFloat(_dil.tank);
+  const B=_dilBase(), area=B.area, tank=B.tank;
   if(!(area>0&&tank>0)) return {html:`<div style="font-size:11.5px;color:#999;">위에서 처리면적·탱크용량을 넣으면 계산됩니다</div>`};
   let vol=null, ar=null;
   if(_dil.mixLast==='mixA'&&parseFloat(_dil.mixA)>0){ ar=parseFloat(_dil.mixA); vol=ar*tank/area; }
@@ -13808,8 +13816,11 @@ function dilRender(){
 function dilUpdate(all){
   const P=document.getElementById('panel-dil'); if(!P||!_dil) return;
   const act=document.activeElement, setv=(el,v)=>{ if(el&&el!==act) el.value=v==null?'':v; };
-  ['area','tank'].forEach(k=>setv(P.querySelector(`[data-dl="${k}"]`),_dil[k]));
-  const area=parseFloat(_dil.area), tank=parseFloat(_dil.tank);
+  const B=_dilBase();
+  setv(P.querySelector('[data-dl="area"]'),_dil.area);
+  setv(P.querySelector('[data-dl="rate"]'),_dil.tankLast==='rate'?_dil.rate:(B.rate!=null?_dilRn(B.rate):''));
+  setv(P.querySelector('[data-dl="tank"]'),_dil.tankLast==='rate'?(B.tank!=null?_dilRn(B.tank):''):_dil.tank);
+  const area=B.area, tank=B.tank;
   P.querySelector('#dl-spray').innerHTML=(area>0&&tank>0)?`→ 살포량 <b>${fmtMatNum(tank/area)}L/㎡</b> <span style="color:#889;font-weight:500;">(1,000㎡당 ${fmtMatNum(tank/area*1000)}L)</span>`:'';
   _dil.rows.forEach(r=>{ const c=_dilCalc(r);
     setv(P.querySelector(`[data-row="${r.id}"][data-k="per"]`), r.last==='mult'?(c.per!=null?_dilRn(c.per):''):r.per);
@@ -13820,7 +13831,8 @@ function dilUpdate(all){
   setv(P.querySelector('[data-dl="mixA"]'), _dil.mixLast==='mixA'?_dil.mixA:(m.ar!=null?_dilRn(m.ar):''));
   P.querySelector('#dl-mix').innerHTML=m.html;
 }
-function dilSet(k,v){ _dilLoad(); _dil[k]=v; if(k==='mixV'||k==='mixA'){ _dil.mixLast=k; _dil[k==='mixV'?'mixA':'mixV']=''; } _dilSave(); dilUpdate(); }
+function dilSet(k,v){ _dilLoad(); _dil[k]=v; if(k==='mixV'||k==='mixA'){ _dil.mixLast=k; _dil[k==='mixV'?'mixA':'mixV']=''; }
+  if(k==='rate'||k==='tank'){ _dil.tankLast=k; _dil[k==='rate'?'tank':'rate']=''; } _dilSave(); dilUpdate(); }
 function _dilRow(id){ return _dil&&_dil.rows.find(r=>r.id===id); }
 function dilRowSet(id,k,v){ const r=_dilRow(id); if(!r) return; r[k]=v; if(k==='per'||k==='mult'){ r.last=k; r[k==='per'?'mult':'per']=''; } _dilSave(); dilUpdate(); }
 function dilPick(id,k,v){ const r=_dilRow(id); if(!r) return; r[k]=v; r.last=k; r[k==='per'?'mult':'per']=''; _dilSave(); dilRender(); }
@@ -13834,6 +13846,61 @@ function dilRowName(id,v,commit){
     _dilSave(); setTimeout(dilRender,0); }   /* change는 blur 중에 오므로 다음 틱에 다시 그림 */
   else _dilSave();
 }
+/* ── 자재 여러 개 검색: "가디온, 탑라인, 유안" → 한 번에 추가 ── */
+let _dilUnk='pest';
+function dilUnkType(t){ _dilUnk=t; document.querySelectorAll('#dl-unk-seg button').forEach(b=>b.classList.toggle('on',b.classList.contains(t))); }
+function _dilFind(term){
+  const q=String(term||'').trim().toLowerCase(); if(!q) return {exact:null,list:[]};
+  const all=[...getPestList().map(x=>({type:'pest',p:x})),...getFertList().map(x=>({type:'fert',p:x}))].filter(x=>x.p&&x.p.name);
+  const exact=all.find(x=>String(x.p.name).trim().toLowerCase()===q)||null;
+  const list=all.filter(x=>String(x.p.name).toLowerCase().includes(q));
+  return {exact,list};
+}
+function _dilChip(x,onclick){ const c=x.type==='pest'?'#1a5fa8':'#2d6a1e';
+  return `<span onclick="${onclick}" style="display:inline-block;margin:3px 4px 0 0;padding:3px 9px;border-radius:12px;border:1px solid ${c}55;background:#fff;font-size:11.5px;cursor:pointer;"><b style="color:${c};font-size:10px;">${x.type==='pest'?'농약':'비료'}</b> ${matEscHtml(x.p.name)}${x.p.size?` <span style="color:#99a;">${matEscHtml(x.p.size)}</span>`:''}</span>`; }
+/* 입력 중인(마지막) 이름의 후보 표시 → 누르면 그 이름으로 완성 */
+function dilSearchSuggest(){
+  const el=document.getElementById('dl-search'), box=document.getElementById('dl-sugg'); if(!el||!box) return;
+  const parts=el.value.split(/[,，、]/), last=parts[parts.length-1].trim();
+  if(!last){ box.innerHTML=''; return; }
+  const f=_dilFind(last);
+  box.innerHTML=f.list.length?`<div style="font-size:10.5px;color:#99a;">「${matEscHtml(last)}」 후보 ${f.list.length}개${f.list.length>15?' (앞 15개)':''} — 누르면 입력</div>`+f.list.slice(0,15).map(x=>_dilChip(x,`dilSearchComplete('${x.type}',${JSON.stringify(x.p.name).replace(/"/g,'&quot;')})`)).join('')
+                         :`<div style="font-size:10.5px;color:#a66b00;">「${matEscHtml(last)}」 — 등록된 자재 없음 · 추가하면 임의 자재(${_dilUnk==='pest'?'농약':'비료'})로 들어갑니다</div>`;
+}
+function dilSearchComplete(type,name){
+  const el=document.getElementById('dl-search'); const parts=el.value.split(/[,，、]/); parts[parts.length-1]=' '+name;
+  el.value=parts.map(x=>x.trim()).filter(Boolean).join(', ')+', '; el.focus(); dilSearchSuggest();
+}
+function _dilAddRow(type,name){
+  _dilLoad();
+  const dup=_dil.rows.find(x=>x.type===type&&String(x.name||'').trim()===String(name).trim()); if(dup){ dup._dup=true; return dup; }   /* 이미 있는 자재는 중복 추가 안 함 */
+  const r=_dilNewRow(type); r.name=name;
+  const reg=_dilReg(r);
+  if(reg){ r.size=reg.size||''; r.unit=parseSizeUnitLabel(reg.size)||r.unit; const u=parseGram(reg.realUsage)||parseGram(reg.usage); if(u){ r.per=_dilRn(u); r.last='per'; } }
+  /* 비어 있는 첫 줄은 채워 넣기 */
+  const empty=_dil.rows.findIndex(x=>!String(x.name||'').trim()&&!x.per&&!x.mult);
+  if(empty>=0){ r.id=_dil.rows[empty].id; _dil.rows[empty]=r; } else _dil.rows.push(r);
+  return r;
+}
+function dilSearchAdd(){
+  const el=document.getElementById('dl-search'), box=document.getElementById('dl-sugg'); if(!el) return;
+  const terms=[...new Set(el.value.split(/[,，、]/).map(x=>x.trim()).filter(Boolean))];
+  if(!terms.length){ showToast('자재 이름을 입력하세요 (쉼표로 여러 개)'); return; }
+  const added=[], amb=[], dups=[];
+  terms.forEach(t=>{ const f=_dilFind(t);
+    const add=(ty,nm,lbl)=>{ const r=_dilAddRow(ty,nm); if(r._dup){ delete r._dup; dups.push(nm); } else added.push(lbl||nm); };
+    if(f.exact) add(f.exact.type,f.exact.p.name);
+    else if(f.list.length===1) add(f.list[0].type,f.list[0].p.name);
+    else if(f.list.length>1) amb.push({t,list:f.list});
+    else add(_dilUnk,t,t+'(임의)'); });
+  _dilSave(); dilRender();
+  el.value=amb.map(a=>a.t).join(', ');
+  box.innerHTML=amb.map(a=>`<div style="font-size:10.5px;color:#a66b00;margin-top:4px;">「${matEscHtml(a.t)}」 후보가 ${a.list.length}개 — 골라 주세요${a.list.length>15?' (앞 15개)':''} <span onclick="dilSearchUnknown(${JSON.stringify(a.t).replace(/"/g,'&quot;')})" style="text-decoration:underline;cursor:pointer;color:#888;">임의 자재로 넣기</span></div>`+a.list.slice(0,15).map(x=>_dilChip(x,`dilSearchPick('${x.type}',${JSON.stringify(x.p.name).replace(/"/g,'&quot;')},${JSON.stringify(a.t).replace(/"/g,'&quot;')})`)).join('')).join('');
+  if(added.length||dups.length) showToast((added.length?`✅ ${added.length}개 추가: ${added.join(', ')}`:'')+(dups.length?`${added.length?' · ':''}이미 있음: ${dups.join(', ')}`:''));
+}
+function _dilDropTerm(term){ const el=document.getElementById('dl-search'); if(!el) return; el.value=el.value.split(/[,，、]/).map(x=>x.trim()).filter(x=>x&&x!==term).join(', '); }
+function dilSearchPick(type,name,term){ _dilAddRow(type,name); _dilSave(); dilRender(); _dilDropTerm(term); const el=document.getElementById('dl-search'); if(el&&el.value) dilSearchAdd(); else document.getElementById('dl-sugg').innerHTML=''; }
+function dilSearchUnknown(term){ _dilAddRow(_dilUnk,term); _dilSave(); dilRender(); _dilDropTerm(term); const el=document.getElementById('dl-search'); if(el&&el.value) dilSearchAdd(); else document.getElementById('dl-sugg').innerHTML=''; }
 function dilAdd(t){ _dilLoad(); _dil.rows.push(_dilNewRow(t)); _dilSave(); dilRender();
   setTimeout(()=>{ const el=document.querySelector(`#dl-row-${_dil.rows[_dil.rows.length-1].id} input[list]`); if(el) el.focus(); },30); }
 function dilDel(id){ _dil.rows=_dil.rows.filter(r=>r.id!==id); if(!_dil.rows.length) _dil.rows.push(_dilNewRow('pest')); _dilSave(); dilRender(); }
@@ -18790,12 +18857,14 @@ async function skExportXlsx(){
     <div class="dl-h">🧮 희석 계산 <span style="font-size:11px;color:#889;font-weight:500;">자재 사용 섹션과 같은 계산식 · 등록 자재 또는 임의 자재</span></div>
     <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;">
       <span><span class="dl-lb">처리면적</span><input class="dl-in dl-num" type="number" inputmode="decimal" min="0" step="any" list="dl-area-opts" data-dl="area" oninput="dilSet('area',this.value)"><span class="dl-u">㎡</span></span>
+      <span><span class="dl-lb">㎡당 사용량(희석액)</span><input class="dl-in dl-num" type="number" inputmode="decimal" min="0" step="any" data-dl="rate" oninput="dilSet('rate',this.value)" style="width:80px;border-color:#2d6a1e;"><span class="dl-u">L/㎡</span></span>
+      <span style="color:#b5c9a5;font-weight:800;">⇄</span>
       <span><span class="dl-lb">탱크용량(희석액)</span><input class="dl-in dl-num" type="number" inputmode="decimal" min="0" step="any" list="dl-tank-opts" data-dl="tank" oninput="dilSet('tank',this.value)"><span class="dl-u">L</span></span>
       <span id="dl-spray" style="font-size:12px;color:#2d6a1e;font-weight:700;"></span>
     </div>
     <datalist id="dl-area-opts"></datalist><datalist id="dl-tank-opts"></datalist>
-    <div style="font-size:11px;color:#8a9;margin-top:6px;line-height:1.55;">탱크용량만큼의 희석액으로 처리면적 전체를 처리하는 기준입니다 (살포량 = 탱크 ÷ 면적).<br>
-      제품량 = ㎡당 사용량 × 면적 · 희석배수 = 탱크 × 1000 ÷ 제품량 · 1ml ≈ 1g 근사</div>
+    <div style="font-size:11px;color:#8a9;margin-top:6px;line-height:1.55;"><b>㎡당 사용량(희석액 L/㎡)</b>을 넣으면 탱크용량(= 면적 × ㎡당)이, 탱크용량을 넣으면 ㎡당 사용량이 계산되고, 아래 자재가 모두 그 값으로 한 번에 계산됩니다.<br>
+      제품량 = ㎡당 약량 × 면적 · 희석배수 = 탱크 × 1000 ÷ 제품량 · 1ml ≈ 1g 근사</div>
   </div>
   <div class="dl-card">
     <div class="dl-h">🧴 자재 <span style="flex:1"></span>
@@ -18803,7 +18872,20 @@ async function skExportXlsx(){
       <button class="dl-btn" onclick="dilAdd('fert')">＋ 비료</button>
       <button class="dl-btn" onclick="dilClear()" style="border-color:#ccc;color:#888;">전체 지우기</button>
     </div>
-    <div style="font-size:11px;color:#8a9;">상표명을 입력하면 등록된 자재 목록이 뜹니다. 목록에 없는 이름은 임의 자재로 계산합니다. <b>㎡당 사용량</b>이나 <b>희석배수</b> 중 아는 쪽을 넣으면 나머지가 계산됩니다.</div>
+    <div style="font-size:11px;color:#8a9;">상표명을 입력하면 등록된 자재 목록이 뜹니다. 목록에 없는 이름은 임의 자재로 계산합니다. 자재마다 <b>㎡당 약량</b>이나 <b>희석배수</b> 중 아는 쪽을 넣으면 나머지가 계산됩니다.</div>
+    <div style="margin-top:8px;padding:9px 10px;border:1.5px dashed #c9d9bc;border-radius:10px;background:#fbfdf9;">
+      <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
+        <span style="font-size:12px;font-weight:800;color:#2d6a1e;white-space:nowrap;">🔍 자재 검색</span>
+        <input id="dl-search" class="dl-in" placeholder="예: 가디온, 탑라인, 유안 (쉼표로 여러 개)" style="flex:1;min-width:170px;" oninput="dilSearchSuggest()" onkeydown="if(event.key==='Enter'){event.preventDefault();dilSearchAdd();}">
+        <button class="dl-btn p" onclick="dilSearchAdd()">추가</button>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px;font-size:11px;color:#778;">
+        목록에 없는 이름은 임의 자재로
+        <span class="dl-seg" id="dl-unk-seg"><button class="pest on" onclick="dilUnkType('pest')">농약</button><button class="fert" onclick="dilUnkType('fert')">비료</button></span>
+        추가
+      </div>
+      <div id="dl-sugg" style="margin-top:4px;"></div>
+    </div>
     <div id="dl-rows"></div>
     <datalist id="dl-names-pest"></datalist><datalist id="dl-names-fert"></datalist>
   </div>
