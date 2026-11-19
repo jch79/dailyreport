@@ -1089,6 +1089,11 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
 /* ── 작성 섹션 이동 버튼 ── */
 .write-sec-wrap{position:relative;}
 .write-sec-wrap.sec-locked > *:not(.sec-lock-badge){opacity:.82;filter:none;pointer-events:none;user-select:none;}
+/* 자재 사용 섹션 — 자재 검색 목록 */
+.mus-sg{margin-top:5px;background:#fff;border:1.5px solid #b8d9a0;border-radius:9px;max-height:320px;overflow:auto;box-shadow:0 4px 14px rgba(0,0,0,.08);}
+.mus-h{display:flex;align-items:center;gap:6px;padding:6px 10px;font-size:11px;color:#667;background:#f4f8f0;position:sticky;top:0;z-index:1;border-bottom:1px solid #e3ebdb;}
+.mus-r{display:flex;align-items:center;gap:7px;padding:6px 10px;font-size:12.5px;border-bottom:1px solid #f2f2f2;cursor:pointer;}
+.mus-r:hover{background:#f7fbf3;} .mus-r.added{cursor:default;opacity:.6;}
 /* 희석 계산기는 저장 안 하는 계산용이라 잠긴 섹션(열람자 등)에서도 사용 가능 */
 .write-sec-wrap.sec-locked .mix-calc, .write-sec-wrap.sec-locked .mix-calc *{pointer-events:auto !important;}
 /* 잠긴(읽기 전용) 섹션이라도 좌우 스크롤 영역만큼은 계속 스크롤해서 볼 수 있어야 함 —
@@ -11217,6 +11222,7 @@ function checkBackupReminder(){
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
   {date:'2026-11-19',items:[
+    '🔍 작성 탭 비료·농약·모래 자재 사용: 처리지역마다 「자재 검색」 — 자재입출고 입출고 등록처럼 여러 검색어로 찾아 체크해서 한 번에 추가 (농약/비료/모래 자동 구분, 목록에 없는 이름은 직접 입력 항목으로) · 표 구성은 그대로',
     '🧮 희석계산 탭 새로 구성: 기준은 처리면적·탱크용량만 입력 · 자재는 자재입출고처럼 여러 검색어로 찾아 체크해서 한 번에 추가(농약/비료는 표시만, 목록에 없으면 임의 자재) · 자재마다 ㎡당 사용량(또는 희석배수) 입력 → 제품량·희석배수·20L당·통수 (PC는 표, 모바일은 카드)',
     '🧮 새 탭 「희석계산」(자재입출고 다음) 추가 — 농약·비료 희석배수 계산 (입력값은 이 기기에만 기억)',
   ]},
@@ -13864,6 +13870,64 @@ function dilAddManual(name){
   if(r){ showToast(`「${name}」 임의 자재로 추가 — 규격·단위·㎡당 사용량을 넣으세요`); if(q&&q.value) dilSugg(); else dilSuggClose();
     setTimeout(()=>{ const el=document.querySelector(`#dl-row-${r.id} [data-k="per"]`); if(el) el.focus(); },40); }
   else showToast('이미 추가된 자재입니다');
+}
+/* ══ 🔍 자재 사용 섹션: 다중 검색 + 체크해서 한 번에 추가 (자재입출고 입출고 등록 방식) ══
+   검색어를 띄어쓰기/쉼표로 나누면 그중 하나라도 포함된 농약·비료·모래를 모두 보여줌 → 눌러서 여러 개 체크 → 「선택한 n개 추가」
+   목록에 없는 검색어는 「직접」 항목(상표명=검색어)으로 추가. 추가된 행·표 구성은 기존과 동일 */
+const _musSel={};   /* blockId → Set('type|listIdx') */
+const _musNorm=v=>String(v||'').toLowerCase().replace(/\s+/g,'');
+function _musQ(blockId){ return document.querySelector(`.mus-q[data-block="${blockId}"]`); }
+function musSugg(blockId){
+  const box=document.getElementById('mus-sg-'+blockId), q=_musQ(blockId), block=matAreaBlocks.find(b=>b.id===blockId); if(!box||!q||!block) return;
+  const raw=[...new Set(String(q.value||'').split(/[,，\s]+/).map(x=>x.trim()).filter(Boolean))], terms=raw.map(_musNorm);
+  const sel=_musSel[blockId]=_musSel[blockId]||new Set();
+  const have=new Set(block.items.filter(it=>it.type!=='manual'&&it.brandName).map(it=>it.type+'|'+String(it.brandName).trim()));
+  const hay=p=>_musNorm([p.name,p.product,p.type,p.series,p.target,p.category,p.active,p.form].join(' '));
+  const all=[]; ['pest','fert','sand'].forEach(t=>getListByType(t).forEach((p,i)=>{ if(p&&String(p.name||'').trim()) all.push({t,i,p}); }));
+  const list=all.filter(x=>!terms.length||terms.some(k=>hay(x.p).includes(k))).sort((a,b)=>String(a.p.name).localeCompare(String(b.p.name),'ko')).slice(0,80);
+  const unk=raw.filter(r=>!all.some(x=>hay(x.p).includes(_musNorm(r))));
+  const C={pest:['농약','#185FA5'],fert:['비료','#2d6a1e'],sand:['모래','#B98A3D']}, n=sel.size;
+  const head=`<div class="mus-h" onmousedown="event.preventDefault()">
+      <span style="flex:1;">${terms.length>1?`검색어 ${terms.length}개 · `:''}${list.length}개${list.length>=80?'+':''} 자재 — 눌러서 여러 개 선택${n?` · <b style="color:#185FA5;">${n}개 선택됨</b>`:''}</span>
+      <button onmousedown="event.preventDefault();musAddSel(${blockId})" ${n?'':'disabled'} style="font-size:11.5px;font-weight:800;padding:4px 10px;border-radius:7px;border:none;background:${n?'#2d6a1e':'#ccc'};color:#fff;cursor:${n?'pointer':'default'};">선택한 ${n}개 추가</button>
+      <button onmousedown="event.preventDefault();musClose(${blockId})" style="font-size:11px;padding:4px 8px;border-radius:7px;border:1px solid #ccc;background:#fff;color:#777;cursor:pointer;">닫기</button></div>`;
+  const rows=list.map(x=>{ const k=x.t+'|'+x.i, added=have.has(x.t+'|'+String(x.p.name).trim()), on=sel.has(k), [lb,col]=C[x.t];
+    const sub=(x.t==='pest'?[x.p.type,x.p.product,x.p.usage?('💧 '+x.p.usage+'/㎡'):'']:[x.p.form,x.p.category,x.p.usage?('💧 '+x.p.usage+'/㎡'):'']).filter(v=>v&&v!=='0').join(' · ');
+    return `<div class="mus-r${added?' added':''}" ${added?'':`onmousedown="event.preventDefault();musToggle(${blockId},'${k}')"`} style="${on?'background:#eef6ff;':''}">
+      <span style="font-size:15px;color:${added?'#9c9':on?'#185FA5':'#bbb'};">${added?'✔':on?'☑':'☐'}</span>
+      <span style="background:${col};color:#fff;border-radius:3px;padding:1px 5px;font-size:10.5px;font-weight:700;white-space:nowrap;">${lb}</span>
+      <span style="flex:1;min-width:0;"><b>${matEscHtml(x.p.name)}</b> <span style="color:#889;">${matEscHtml(x.p.size||'')}</span>${sub?`<span style="display:block;font-size:10.5px;color:#99a;">${matEscHtml(sub)}</span>`:''}</span>
+      ${added?'<span style="font-size:10.5px;color:#7a7;white-space:nowrap;">이미 있음</span>':''}</div>`; }).join('');
+  const manual=unk.map(t=>`<div class="mus-r" onmousedown="event.preventDefault();musAddManual(${blockId},${JSON.stringify(t).replace(/"/g,'&quot;')})" style="color:#a66b00;"><span style="font-size:14px;">＋</span><span style="background:#888;color:#fff;border-radius:3px;padding:1px 5px;font-size:10.5px;font-weight:700;">직접</span><span style="flex:1;">「<b>${matEscHtml(t)}</b>」 — 목록에 없음 · 직접 입력 항목으로 추가</span></div>`).join('');
+  box.innerHTML=head+(rows||(!manual?'<div style="padding:10px;color:#999;font-size:12px;">일치하는 자재 없음</div>':''))+manual;
+  box.style.display='block';
+}
+function musClose(blockId){ const b=document.getElementById('mus-sg-'+blockId); if(b) b.style.display='none'; }
+document.addEventListener('click',e=>{ document.querySelectorAll('.mus-sg').forEach(b=>{ if(b.style.display==='none') return; const id=b.id.replace('mus-sg-',''); if(!e.target.closest(`.mus-q[data-block="${id}"]`)&&!e.target.closest('#'+b.id)) b.style.display='none'; }); });
+function musToggle(blockId,k){ const s=_musSel[blockId]=_musSel[blockId]||new Set(); if(s.has(k)) s.delete(k); else s.add(k); musSugg(blockId); }
+/* 목록 자재 → 행 (기존 🔍 선택과 같은 필드 채움) */
+function _musNewItem(type,listIdx){
+  const p=getListByType(type)[listIdx]; if(!p) return null;
+  const it={ id:++matItemIdxCounter, type, brandName:p.name||'', size:p.size||'', form:p.form||'', product:'', series:'', category:'', frac:'', amount:'', _listIdx:listIdx };
+  if(type==='pest'){ it.product=p.product||''; it.series=p.series||''; it.category=p.category||''; it.frac=p.frac||''; }
+  return it;
+}
+function musAddSel(blockId){
+  const block=matAreaBlocks.find(b=>b.id===blockId); const sel=_musSel[blockId]; if(!block||!sel||!sel.size) return;
+  const names=[];
+  [...sel].forEach(k=>{ const [t,i]=k.split('|'); const it=_musNewItem(t,+i); if(!it) return;
+    if(block.items.some(x=>x.type===t&&String(x.brandName).trim()===String(it.brandName).trim())) return;
+    block.items.push(it); names.push(it.brandName); });
+  sel.clear(); renderAreaBlocks();
+  if(names.length) showToast(`✅ ${names.length}개 추가: ${names.join(', ')}`);
+}
+function musAddManual(blockId,name){
+  const block=matAreaBlocks.find(b=>b.id===blockId); if(!block) return;
+  const q=_musQ(blockId), rest=q?String(q.value||'').split(/[,，\s]+/).map(x=>x.trim()).filter(x=>x&&x!==name).join(' '):'';
+  block.items.push({ id:++matItemIdxCounter, type:'manual', brandName:name, size:'', form:'', product:'', series:'', category:'', frac:'', amount:'' });
+  renderAreaBlocks();
+  showToast(`「${name}」 직접 입력 항목으로 추가`);
+  if(rest){ const q2=_musQ(blockId); if(q2){ q2.value=rest; q2.focus(); musSugg(blockId); } }
 }
 /* ══ 💧 희석액 ⇄ 처리면적 계산기 ══
    지금 계산(제품량=㎡당×면적, 희석배수=탱크×1000÷제품량)은 「탱크용량으로 면적 전체를 처리」 기준 → 살포량 = 탱크÷면적(L/㎡)
@@ -16707,7 +16771,7 @@ function buildAreaBlock(block){
     `<div style="padding:4px 2px;font-size:12px;font-weight:700;color:#2d6a1e;text-align:center;">✕</div>`;
 
   const itemsHtml = block.items.length===0
-    ? `<div style="text-align:center;padding:8px;font-size:11px;color:#bbb;">농약 또는 비료를 추가하세요</div>`
+    ? `<div style="text-align:center;padding:8px;font-size:11px;color:#bbb;">위 「🔍 자재 검색」에서 자재를 찾아 체크한 뒤 추가하세요</div>`
     : block.items.map(item=>buildItemRow(block.id,item,order)).join('');
 
   return `<div id="area-block-${block.id}" style="border:1.5px solid #b8d9a0;border-radius:9px;margin-bottom:10px;overflow:hidden;">
@@ -16720,10 +16784,7 @@ function buildAreaBlock(block){
         <button onclick="moveAreaBlock(${block.id},1)" ${isLast?'disabled':''} title="아래로"
           style="padding:0 5px;border:none;background:rgba(255,255,255,${isLast?'.2':'.5'});color:#fff;border-radius:3px;font-size:10px;cursor:${isLast?'default':'pointer'};line-height:1.4;">▼</button>
       </div>
-      <!-- 추가 버튼 (지역명 왼쪽) -->
-      <button onclick="addItemToBlock(${block.id},'pest')" style="padding:4px 11px;border-radius:6px;border:none;background:#185FA5;color:#fff;font-size:11px;font-weight:700;cursor:pointer;">🌿 농약</button>
-      <button onclick="addItemToBlock(${block.id},'fert')" style="padding:4px 11px;border-radius:6px;border:1.5px solid #fff;background:rgba(255,255,255,.15);color:#fff;font-size:11px;font-weight:700;cursor:pointer;">🌱 비료</button>
-      <button onclick="addItemToBlock(${block.id},'sand')" style="padding:4px 11px;border-radius:6px;border:1.5px solid #fff;background:rgba(255,255,255,.15);color:#fff;font-size:11px;font-weight:700;cursor:pointer;">🏖 모래</button>
+      <!-- 추가 버튼 (지역명 왼쪽) — 농약·비료·모래는 아래 「자재 검색」으로 여러 개 한 번에 추가 -->
       <button onclick="addItemToBlock(${block.id},'manual')" style="padding:4px 11px;border-radius:6px;border:1.5px solid rgba(255,255,255,.5);background:none;color:#fff;font-size:11px;font-weight:700;cursor:pointer;">✎ 직접</button>
       <!-- 지역명 (클릭하면 다른 처리지역으로 변경 가능) -->
       <span id="area-name-display-${block.id}" onclick="startEditAreaBlockName(${block.id})"
@@ -16752,6 +16813,13 @@ function buildAreaBlock(block){
         style="padding:4px 9px;border-radius:6px;border:1.5px solid rgba(255,255,255,.6);background:rgba(255,255,255,.15);color:#fff;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">⧉ 복사</button>
       <!-- 삭제 버튼 오른쪽 끝 -->
       <button onclick="removeAreaBlock(${block.id})" style="padding:4px 9px;border-radius:6px;border:none;background:rgba(220,50,50,.65);color:#fff;font-size:11px;font-weight:700;cursor:pointer;">✕</button>
+    </div>
+    <!-- 🔍 자재 검색: 자재입출고 입출고 등록처럼 여러 검색어 → 체크 → 한 번에 추가 -->
+    <div style="padding:6px 10px;background:#f6faf2;border-bottom:1px solid #dcebcf;">
+      <input class="mus-q" data-block="${block.id}" autocomplete="off" placeholder="🔍 자재 검색 — 농약·비료·모래 상표명·품목명·성분 (띄어쓰기·쉼표로 여러 개)"
+        oninput="musSugg(${block.id})" onfocus="musSugg(${block.id})" onkeydown="if(event.key==='Escape')musClose(${block.id});"
+        style="width:100%;box-sizing:border-box;padding:6px 9px;font-size:12.5px;border:1.5px solid #b8d9a0;border-radius:7px;background:#fff;">
+      <div class="mus-sg" id="mus-sg-${block.id}" style="display:none;"></div>
     </div>
     <!-- 💧 희석액 ⇄ 처리면적 계산기 (그 자리에서만 쓰고 저장 안 함) -->
     <div class="mix-calc" data-block="${block.id}">${mixCalcHtml(block)}</div>
