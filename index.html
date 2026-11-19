@@ -253,6 +253,9 @@ async function fbFullSyncFromCloud(){
       if(sh.regLeavePlan) localStorage.setItem('golf_reg_leave_plan_v1', JSON.stringify(sh.regLeavePlan));
       if(sh.weatherManual) localStorage.setItem('golf_weather_stat_manual_v1', JSON.stringify(sh.weatherManual));
       if(sh.matuRef) localStorage.setItem('golf_matu_ref_v1', JSON.stringify(sh.matuRef));
+      if(Array.isArray(sh.renameLog) && typeof _rnMergeLog==='function') _rnMergeLog(sh.renameLog);
+      /* 바뀐 이름이 남아 있는 설정(예전 기기·클라우드)을 새 이름으로 정리 */
+      try{ if(typeof _rnApplyLog==='function' && _rnApplyLog() && _fbRole!=='viewer') setTimeout(()=>fbSaveSharedSettings(),500); }catch(e){ console.warn(e); }
       console.log('[FB] 공유 설정 동기화 완료');
     }
 
@@ -314,7 +317,9 @@ async function fbSaveSharedSettings(){
     const wm=localStorage.getItem('golf_weather_stat_manual_v1'); if(wm) settings.weatherManual=JSON.parse(wm);
     const mrf=localStorage.getItem('golf_matu_ref_v1'); if(mrf) settings.matuRef=JSON.parse(mrf);
     settings._updatedAt = firebase.firestore.FieldValue.serverTimestamp();
-    await _fbDb.collection(FB_COL_SHARED).doc('settings').set(settings, {merge:true});
+    if(typeof _rnGetLog==='function'){ const lg=_rnGetLog(); if(lg.length) settings.renameLog=lg; }
+    /* mergeFields: 보낸 필드는 통째로 교체 (merge:true는 휴무계획·연차설정 같은 객체를 깊게 합쳐서, 지우거나 이름을 바꾼 키가 클라우드에 계속 남았음) */
+    await _fbDb.collection(FB_COL_SHARED).doc('settings').set(settings, {mergeFields:Object.keys(settings)});
     console.log('[FB] 공유 설정 저장 완료');
   }catch(e){
     console.warn('[FB] 공유 설정 저장 실패:', e);
@@ -11222,6 +11227,8 @@ function checkBackupReminder(){
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
   {date:'2026-11-19',items:[
+    '🐞 통계 정규직 근무현황에 바꾸기 전 이름(안치환 주임)이 다시 보이던 문제 — 클라우드 공유 설정 저장이 휴무계획·연차설정을 「합치기」로 저장해서 바꾼(지운) 이름이 남아 있다가 다시 내려왔음. 이제 설정은 통째로 교체 저장',
+    '🔁 이름 변경 기록: 바꾼 이름을 기억해 두고, 예전 이름이 설정에 다시 들어오면(다른 기기·예전 설정) 자동으로 새 이름으로 합침',
     '💾 내보내기/불러오기: 희석계산 탭 입력값도 백업에 포함 · 「이 기기에만 저장」 표시는 백업에서 빼고 내용만 저장',
     '🐞 자재입출고: 「입출고 등록」 일자가 직전에 저장·수정한 날짜로 남아 있던 문제 — 들어올 때와 저장한 뒤 항상 오늘 날짜, 과거 날짜는 필요할 때 직접 선택',
     '✏️ 자재 사용 표: 등록 자재를 추가(또는 행의 🔍로 선택)하면 ㎡당 사용량에 실사용량(없으면 권장사용량)을 미리 채움 — 고쳐 쓸 수 있음, 이미 입력한 값은 그대로',
@@ -11528,7 +11535,7 @@ function exportDataFile(){
   /* 모든 localStorage 키 수집 */
   const allKeys=[SK,PK,RK,CNK,RATE_KEY,DSK,WCK,LOC_KEY,IRR_ZONES_KEY,MAT_PEST_KEY,MAT_FERT_KEY,MAT_SAND_KEY,MAT_AREA_PRESET_KEY,
     TREATAREA_PRESET_KEY,TANKVOL_PRESET_KEY,MAT_COL_ORDER_KEY,
-    TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY,MATU_REF_KEY,DIL_KEY,TDR_ZONE_LABEL_KEY,GP_TARGET_KEY,REG_NAME_ORDER_KEY,WSK,NOTICE_CACHE_KEY,REG_PLAN_KEY];
+    TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY,MATU_REF_KEY,DIL_KEY,RENAME_LOG_KEY,TDR_ZONE_LABEL_KEY,GP_TARGET_KEY,REG_NAME_ORDER_KEY,WSK,NOTICE_CACHE_KEY,REG_PLAN_KEY];
   const exportObj={};
   allKeys.forEach(k=>{
     const v=localStorage.getItem(k);
@@ -11685,7 +11692,7 @@ function importDataFile(event){
       /* 기존 관련 키 지우기 */
       [SK,PK,RK,CNK,RATE_KEY,DSK,WCK,LOC_KEY,IRR_ZONES_KEY,MAT_PEST_KEY,MAT_FERT_KEY,MAT_SAND_KEY,MAT_AREA_PRESET_KEY,
         TREATAREA_PRESET_KEY,TANKVOL_PRESET_KEY,MAT_COL_ORDER_KEY,
-        TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY,MATU_REF_KEY,DIL_KEY,TDR_ZONE_LABEL_KEY,GP_TARGET_KEY,REG_NAME_ORDER_KEY,WSK,NOTICE_CACHE_KEY,REG_PLAN_KEY].forEach(k=>localStorage.removeItem(k));
+        TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY,MATU_REF_KEY,DIL_KEY,RENAME_LOG_KEY,TDR_ZONE_LABEL_KEY,GP_TARGET_KEY,REG_NAME_ORDER_KEY,WSK,NOTICE_CACHE_KEY,REG_PLAN_KEY].forEach(k=>localStorage.removeItem(k));
 
       /* 새 데이터 적재 */
       importedKeys.forEach(k=>{
@@ -13113,6 +13120,32 @@ function _rnDeep(v,oF,nF){
   return v;
 }
 const _RN_KEYS=['golf_presets_v7','golf_reg_leave_meta_v1','reg_name_order_v1','golf_reg_leave_plan_v1','golf_worker_rates_v1'];
+/* ── 이름 변경 기록: 바꾼 이름(예전→새)을 남겨 두고, 설정(휴무계획·연차설정·이름순서·작업자목록·단가)에
+   예전 이름이 다시 들어오면(다른 기기·예전 클라우드 설정) 자동으로 새 이름으로 합침 ── */
+const RENAME_LOG_KEY='golf_rename_log_v1';
+const _RN_SEED=[{from:'안치환 주임',to:'안지환 주임'}];   /* 기록 기능 전에 바꾼 이름 */
+setTimeout(()=>{ try{ _rnApplyLog(); }catch(e){} },0);
+function _rnGetLog(){ let a=[]; try{ a=JSON.parse(localStorage.getItem(RENAME_LOG_KEY)||'[]')||[]; }catch(e){}
+  _RN_SEED.forEach(x=>{ if(!a.some(y=>y.from===x.from&&y.to===x.to)) a.push(x); }); return a; }
+function _rnMergeLog(list){ const a=_rnGetLog(); (list||[]).forEach(x=>{ if(x&&x.from&&x.to&&!a.some(y=>y.from===x.from&&y.to===x.to)) a.push({from:x.from,to:x.to,at:x.at||''}); }); try{ localStorage.setItem(RENAME_LOG_KEY,JSON.stringify(a)); }catch(e){} return a; }
+/* 반환: 바뀐 게 있으면 true */
+function _rnApplyLog(){
+  const log=_rnGetLog(); let changed=false;
+  _RN_KEYS.forEach(k=>{
+    const raw=localStorage.getItem(k); if(!raw) return;
+    if(!log.some(x=>raw.includes(x.from))) return;
+    try{
+      let v=JSON.parse(raw);
+      log.forEach(x=>{ if(JSON.stringify(v).includes(x.from)) v=_rnDeep(v,x.from,x.to); });
+      if(Array.isArray(v)){   /* 이름순서·작업자목록: 합쳐지며 생긴 중복 제거 */
+        const seen=new Set(); v=v.filter(it=>{ const key=typeof it==='string'?it:(it&&it.name?(it.type||'')+'|'+it.name:JSON.stringify(it)); if(seen.has(key)) return false; seen.add(key); return true; });
+      }
+      const nv=JSON.stringify(v); if(nv!==raw){ localStorage.setItem(k,nv); changed=true; }
+    }catch(e){ console.warn('[이름 정리]',k,e); }
+  });
+  if(changed){ try{ renderStats(); }catch(e){} try{ renderPresets(); }catch(e){} try{ renderRegNameOrderList(); }catch(e){} }
+  return changed;
+}
 function openRenameWorker(oF){
   if(_fbUser && _fbRole!=='admin'){ showToast('관리자만 이름을 바꿀 수 있습니다'); return; }
   const nF=(prompt(`「${oF}」의 새 이름을 입력하세요 (직급 포함)\n예: 안지환 주임`, oF)||'').trim();
@@ -13128,7 +13161,8 @@ async function renameWorkerEverywhere(oF,nF){
   const oS=_twShort(oF), nS=_twShort(nF);
   /* 1) 이 기기 */
   const all=gd(); let recN=0; all.forEach((r,i)=>{ const x=_rnRecord(r,oF,nF,oS,nS); if(x.n){ all[i]=x.rec; recN++; } }); sd(all);
-  _RN_KEYS.forEach(k=>{ const raw=localStorage.getItem(k); if(!raw||!raw.includes(oF)) return; try{ localStorage.setItem(k,JSON.stringify(_rnDeep(JSON.parse(raw),oF,nF))); }catch(e){} });
+  _rnMergeLog([{from:oF,to:nF,at:new Date().toISOString()}]);   /* 이후 예전 이름이 설정에 다시 들어와도 자동 정리 */
+  _rnApplyLog();
   /* 작성 화면 */
   try{
     const wasDirty=_isFormDirty();
