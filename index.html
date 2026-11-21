@@ -11227,6 +11227,9 @@ function checkBackupReminder(){
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
   {date:'2026-11-21',items:[
+    '📈 자재사용량 「성분별 월순성분량 추이」: 처음에는 질소(N)만 표시 — 인산·칼리 등은 성분 버튼을 눌러 추가',
+    '📂 자재사용량 탭 지역 선택: 처리지역 목록에 없는 단발성 지역은 「▸ 기타(단발성) n곳 펼치기」로 접어서 표시 (계산·자재 사용 캘린더는 그대로) · ⇅순서편집에서 「기타로」/「＋ 목록에」로 정리, 순서편집을 열 때 기록의 모든 지역이 목록에 자동으로 들어가던 것 없앰',
+    '📍 자재 사용 처리지역을 직접 입력(또는 복사)할 때 「목록에 저장 / 1회만 사용」 선택 — 단발성 지역은 목록에 쌓이지 않음 (일보 기록·자재사용량 분석에는 그대로)',
     '🧮 희석계산 표: 희석배수와 제품량 사이에 「희석%」(기본 100%) — 제품량 = ㎡당 사용량 × 희석% × 면적, 희석배수·20L당·통수·희석액 계산도 함께 바뀜 (100%가 아니면 칸이 주황색)',
   ]},
   {date:'2026-11-19',items:[
@@ -12994,16 +12997,21 @@ function getOrderedAreas(areaList){
   return [...ordered, ...remaining];
 }
 
+/* ── 자재사용량 지역 선택: 「기타(단발성)」 펼치기/접기 항목 처리 ── */
+var _matuOneoffOpen=false, _matuAreaPrev='';   /* var: 시작 중 먼저 호출돼도 안전 */
+function matuAreaChange(sel){
+  if(sel.value==='__oneoff_toggle__'){ _matuOneoffOpen=!_matuOneoffOpen; sel.value=_matuAreaPrev||''; renderMatUsePanel();
+    if(_matuOneoffOpen) setTimeout(()=>{ try{ sel.focus(); if(sel.showPicker) sel.showPicker(); }catch(e){} },30); return; }
+  _matuAreaPrev=sel.value; renderMatUsePanel();
+}
 /* ── 처리지역 순서 편집 모달 (자재사용량 탭) ── */
 function openAreaOrderEditor(){
   /* 기록에 등장한 적 있는 모든 지역 수집 */
   const allAreasSet = new Set();
   gd().forEach(r=>(r.matUseRows||[]).forEach(b=>{ if(b.areaName) allAreasSet.add(String(b.areaName).trim()); }));
-  const ordered = getOrderedAreas([...allAreasSet]);
-  /* 프리셋에 없던 지역은 이 시점에 프리셋 목록에 추가해서 순서 관리 대상이 되게 함 */
-  const preset = getAreaPresets();
-  ordered.forEach(a=>{ if(!preset.includes(a)) preset.push(a); });
-  localStorage.setItem(MAT_AREA_PRESET_KEY, JSON.stringify(preset));
+  /* 예전엔 여기서 기록의 모든 지역을 목록에 자동으로 넣었음 → 단발성 지역까지 목록이 계속 늘어났음.
+     이제 목록 지역만 순서를 정하고, 목록에 없는 지역은 아래 「기타(단발성)」에서 필요하면 목록에 추가 */
+  window._areaOrderAll=[...allAreasSet];
 
   document.getElementById('area-order-modal-wrap')?.remove();
   const wrap = document.createElement('div');
@@ -13017,7 +13025,7 @@ function openAreaOrderEditor(){
         <div style="flex:1;font-size:14px;font-weight:800;color:#fff;">처리지역 표시 순서 편집</div>
         <button id="area-order-close-btn" style="border:none;background:rgba(255,255,255,.2);color:#fff;border-radius:8px;width:32px;height:32px;font-size:18px;cursor:pointer;flex-shrink:0;font-weight:700;line-height:1;">✕</button>
       </div>
-      <div style="font-size:11px;color:#888;padding:10px 16px 0;">여기서 정한 순서가 자재사용량 지역 선택과 자재 사용 캘린더에 동일하게 적용됩니다.</div>
+      <div style="font-size:11px;color:#888;padding:10px 16px 0;line-height:1.55;">여기서 정한 순서가 자재사용량 지역 선택과 자재 사용 캘린더에 동일하게 적용됩니다.<br>「기타로」를 누르면 목록에서 빠져 「기타(단발성)」으로 묶입니다 — 기록·사용량은 그대로입니다.</div>
       <div id="area-order-list" style="flex:1;overflow:auto;padding:10px 16px 16px;"></div>
     </div>`;
   document.body.appendChild(wrap);
@@ -13031,10 +13039,21 @@ function renderAreaOrderList(){
   listEl.innerHTML = preset.map((name,i)=>`
     <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;margin-bottom:5px;background:#f7faf3;border:1px solid #e2ecd6;border-radius:8px;">
       <span style="flex:1;font-size:12.5px;font-weight:700;color:#2d6a1e;">${name}</span>
+      <button onclick="areaOrderDemote(${i})" title="목록에서 빼고 기타(단발성)으로" style="border:1.3px solid #e0c9a8;background:#fffaf2;color:#a66b00;border-radius:6px;padding:0 7px;height:26px;font-size:11px;font-weight:700;cursor:pointer;">기타로</button>
       <button onclick="moveAreaOrderItem(${i},-1)" ${i===0?'disabled':''} style="border:1.3px solid #c2dda8;background:#fff;color:#2d6a1e;border-radius:6px;width:26px;height:26px;font-size:12px;cursor:pointer;${i===0?'opacity:.3;cursor:default;':''}">▲</button>
       <button onclick="moveAreaOrderItem(${i},1)" ${i===preset.length-1?'disabled':''} style="border:1.3px solid #c2dda8;background:#fff;color:#2d6a1e;border-radius:6px;width:26px;height:26px;font-size:12px;cursor:pointer;${i===preset.length-1?'opacity:.3;cursor:default;':''}">▼</button>
     </div>`).join('') || `<div style="text-align:center;padding:20px;color:#bbb;font-size:12px;">등록된 처리지역이 없습니다</div>`;
+  /* 기록에는 있지만 목록에 없는 지역 = 기타(단발성) */
+  const one=(window._areaOrderAll||[]).filter(a=>!preset.includes(a)).sort((a,b)=>a.localeCompare(b,'ko'));
+  if(one.length){
+    listEl.innerHTML+=`<details style="margin-top:10px;border:1px dashed #e0c9a8;border-radius:9px;background:#fffdf8;">
+      <summary style="padding:8px 10px;font-size:12px;font-weight:800;color:#a66b00;cursor:pointer;">📂 기타(단발성) ${one.length}곳 <span style="font-weight:500;color:#999;font-size:11px;">— 자재사용량 지역 선택에서 접혀 보임</span></summary>
+      <div style="padding:2px 10px 8px;">${one.map(a=>{ const sf=encodeURIComponent(a).replace(/'/g,'%27');
+        return `<div style="display:flex;align-items:center;gap:8px;padding:5px 2px;border-bottom:1px solid #f3eadc;"><span style="flex:1;font-size:12px;color:#555;">${matEscHtml(a)}</span><button onclick="areaOrderPromote(decodeURIComponent('${sf}'))" style="border:1.3px solid #c2dda8;background:#fff;color:#2d6a1e;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;cursor:pointer;">＋ 목록에</button></div>`; }).join('')}</div></details>`;
+  }
 }
+function areaOrderDemote(idx){ const arr=getAreaPresets(); const nm=arr[idx]; if(nm==null) return; removeAreaPreset(nm); renderAreaOrderList(); showToast(`「${nm}」 → 기타(단발성)`); }
+function areaOrderPromote(name){ saveAreaPreset(name); renderAreaOrderList(); showToast(`「${name}」 목록에 추가`); }
 function moveAreaOrderItem(idx, dir){
   const arr = getAreaPresets();
   const newIdx = idx+dir;
@@ -13406,10 +13425,13 @@ function addAreaByName(name, saveToPreset){
   closeAreaDropdown();
 }
 
-function addAreaFromInput(){
+async function addAreaFromInput(){
   const inp = document.getElementById('area-dd-input');
   if(!inp || !inp.value.trim()) return;
-  addAreaByName(inp.value.trim(), true);
+  const t=inp.value.trim();
+  if(matAreaBlocks.find(b=>b.areaName===t)){ showToast('"'+t+'" 지역은 이미 추가되어 있습니다'); return; }
+  const how=await _askAreaSave(t); if(!how) return;
+  addAreaByName(t, how==='save');
 }
 
 function removeAreaPresetFromDd(name){
@@ -13418,12 +13440,23 @@ function removeAreaPresetFromDd(name){
   renderAreaDdList(_areaDdFilter);
 }
 
+/* 직접 입력한 지역: 목록에 저장할지 / 이번만 쓸지 (단발성 지역이 목록에 쌓이지 않도록)
+   반환: 'save' | 'once' | null(취소) — 이미 목록에 있으면 묻지 않고 'save' */
+async function _askAreaSave(name){
+  if(getAreaPresets().includes(name)) return 'save';
+  const c=await _askChoice('📍 처리지역 추가',
+    `「<b>${matEscHtml(name)}</b>」을(를) 처리지역 목록에도 저장할까요?<br><span style="color:#888;font-size:11.5px;">「1회만 사용」을 골라도 이 일보에는 그대로 기록되고, 자재사용량 분석에도 나옵니다. 목록(다음에 고르는 선택지)에만 안 남습니다.</span>`,
+    [{v:'save',label:'📌 목록에 저장 (자주 쓰는 지역)',color:'#2d6a1e'},{v:'once',label:'1회만 사용 (목록에 저장 안 함)',color:'#185FA5'},{v:'cancel',label:'취소'}]);
+  return (c==='save'||c==='once')?c:null;
+}
 /* ── 직접 입력 추가 ── */
-function addAreaDirect(){
+async function addAreaDirect(){
   const name = prompt('처리지역 이름 (예: 좌그린, 3번홀 그린)');
   if(!name || !name.trim()) return;
   const t = name.trim();
-  saveAreaPreset(t);
+  if(matAreaBlocks.find(b=>b.areaName===t)){ showToast('"'+t+'" 지역은 이미 추가되어 있습니다'); return; }
+  const how=await _askAreaSave(t); if(!how) return;
+  if(how==='save') saveAreaPreset(t);
   if(matAreaBlocks.find(b=>b.areaName===t)){
     showToast('"'+t+'" 지역은 이미 추가되어 있습니다'); return;
   }
@@ -13435,7 +13468,7 @@ function addAreaDirect(){
 /* ── 블록 복사: 이미 입력한 자재 목록(품목/규격/사용량 등)은 그대로 두고,
    처리지역 이름만 새로 정해서 별도 블록으로 복제한다 — 같은 자재를 여러
    지역에 쓴 경우 지역마다 자재를 처음부터 다시 추가하는 번거로움을 줄이기 위함 */
-function duplicateAreaBlock(blockId){
+async function duplicateAreaBlock(blockId){
   const block = matAreaBlocks.find(b=>b.id===blockId);
   if(!block) return;
   const name = prompt(`"${block.areaName}"의 자재 목록을 그대로 복사합니다.\n새로 만들 처리지역 이름을 입력하세요 (자재 내용은 복사 후에도 그대로 수정 가능합니다)`, '');
@@ -13444,7 +13477,8 @@ function duplicateAreaBlock(blockId){
   if(matAreaBlocks.find(b=>b.areaName===t)){
     showToast('"'+t+'" 지역은 이미 추가되어 있습니다'); return;
   }
-  saveAreaPreset(t);
+  const how=await _askAreaSave(t); if(!how) return;
+  if(how==='save') saveAreaPreset(t);
   const newItems = block.items.map(it=>({...it, id:++matItemIdxCounter}));
   const id = ++matAreaIdxCounter;
   matAreaBlocks.push({ id, areaName:t, items:newItems, memo: block.memo||'', treatArea: block.treatArea||'', tankVol: block.tankVol||'' });
@@ -14487,8 +14521,22 @@ function renderMatUsePanel(page){
   if(areaSel){
     const prevVal = areaSel.value;
     while(areaSel.options.length>3) areaSel.remove(3);
-    getOrderedAreas([...allAreas]).forEach(a=>{ const o=document.createElement('option'); o.value=a; o.textContent=a; areaSel.appendChild(o); });
+    while(areaSel.querySelector('optgroup')) areaSel.querySelector('optgroup').remove();
+    /* 목록(처리지역 목록에 저장된) 지역은 그대로, 나머지 단발성 지역은 「기타(단발성) n곳」으로 접어 둠 — 선택지 표시만 바뀌고 계산·캘린더는 그대로 */
+    const _pre=getAreaPresets(), _all=getOrderedAreas([...allAreas].map(a=>String(a).trim()).filter(Boolean));
+    const _main=_all.filter(a=>_pre.includes(a)), _one=_all.filter(a=>!_pre.includes(a));
+    if(_one.includes(prevVal)) _matuOneoffOpen=true;   /* 단발성 지역을 고른 상태면 펼쳐서 유지 */
+    _main.forEach(a=>{ const o=document.createElement('option'); o.value=a; o.textContent=a; areaSel.appendChild(o); });
+    if(_one.length){
+      if(_matuOneoffOpen){
+        const g=document.createElement('optgroup'); g.label=`기타(단발성) ${_one.length}곳`;
+        _one.forEach(a=>{ const o=document.createElement('option'); o.value=a; o.textContent=a; g.appendChild(o); });
+        const t=document.createElement('option'); t.value='__oneoff_toggle__'; t.textContent='▴ 기타(단발성) 접기'; g.appendChild(t);
+        areaSel.appendChild(g);
+      } else { const t=document.createElement('option'); t.value='__oneoff_toggle__'; t.textContent=`▸ 기타(단발성) ${_one.length}곳 펼치기`; areaSel.appendChild(t); }
+    }
     if([...areaSel.options].some(o=>o.value===prevVal)) areaSel.value = prevVal;
+    else if(prevVal==='__oneoff_toggle__') areaSel.value = _matuAreaPrev||'';
   }
   const selArea = areaSel?.value || '';
   const selType = typeSel?.value || 'fert';
@@ -14978,9 +15026,8 @@ function renderMatUseLineChart(selType, selYear, areaLabel, monthData, keys, col
   const MONTHS_KO  = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
   const NUTR_LABELS = {N:'질소(N)',P:'인산(P)',K:'칼리(K)',Ca:'칼슘(Ca)',Mg:'마그네슘(Mg)',Fe:'철(Fe)',Mn:'망간(Mn)',Si:'규산(Si)',S:'황(S)'};
 
-  /* 처음 등장하는 키는 기본적으로 질소(N)·인산(P)·칼리(K)만 체크 ON, 나머지는 OFF
-     (필요하면 사용자가 직접 클릭해서 추가로 볼 수 있음) */
-  const DEFAULT_ON = {N:true, P:true, K:true};
+  /* 처음에는 질소(N)만 체크 ON, 나머지는 OFF (필요하면 직접 클릭해서 추가로 볼 수 있음) */
+  const DEFAULT_ON = {N:true};
   keys.forEach(k => {
     if(window._matuLineChecked[k] === undefined) window._matuLineChecked[k] = !!DEFAULT_ON[k];
   });
@@ -17336,7 +17383,7 @@ function showPdfGuide(ri){
       <select id="matu-year" onchange="renderMatUsePanel()"
         style="padding:5px 10px;border:1.5px solid #c2dda8;border-radius:7px;font-size:12px;font-weight:700;color:#2d6a1e;background:#f8fff4;">
       </select>
-      <select id="matu-area" onchange="renderMatUsePanel()"
+      <select id="matu-area" onchange="matuAreaChange(this)"
         style="padding:5px 10px;border:1.5px solid #c2dda8;border-radius:7px;font-size:12px;font-weight:700;color:#2d6a1e;background:#f8fff4;">
         <option value="">전체 지역</option>
         <option value="__left_green__">🟦 좌그린 기준 (그린전면+좌그린)</option>
