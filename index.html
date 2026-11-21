@@ -11227,6 +11227,7 @@ function checkBackupReminder(){
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
   {date:'2026-11-21',items:[
+    '🧭 자재사용량 탭: 연도·지역·보기(비료/농약)·과거 자료 비교를 한 줄 「조회 조건」 바로 정리 · 섹션(N·P·K 카드 / 연간 시비 / 월별 차트 / 성분 추이 / 캘린더)마다 ▲▼로 순서 변경 (이 기기에 기억)',
     '📈 자재사용량 「성분별 월순성분량 추이」: 처음에는 질소(N)만 표시 — 인산·칼리 등은 성분 버튼을 눌러 추가',
     '📂 자재사용량 탭 지역 선택: 처리지역 목록에 없는 단발성 지역은 「▸ 기타(단발성) n곳 펼치기」로 접어서 표시 (계산·자재 사용 캘린더는 그대로) · ⇅순서편집에서 「기타로」/「＋ 목록에」로 정리, 순서편집을 열 때 기록의 모든 지역이 목록에 자동으로 들어가던 것 없앰',
     '📍 자재 사용 처리지역을 직접 입력(또는 복사)할 때 「목록에 저장 / 1회만 사용」 선택 — 단발성 지역은 목록에 쌓이지 않음 (일보 기록·자재사용량 분석에는 그대로)',
@@ -11541,7 +11542,7 @@ function exportDataFile(){
   /* 모든 localStorage 키 수집 */
   const allKeys=[SK,PK,RK,CNK,RATE_KEY,DSK,WCK,LOC_KEY,IRR_ZONES_KEY,MAT_PEST_KEY,MAT_FERT_KEY,MAT_SAND_KEY,MAT_AREA_PRESET_KEY,
     TREATAREA_PRESET_KEY,TANKVOL_PRESET_KEY,MAT_COL_ORDER_KEY,
-    TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY,MATU_REF_KEY,DIL_KEY,RENAME_LOG_KEY,TDR_ZONE_LABEL_KEY,GP_TARGET_KEY,REG_NAME_ORDER_KEY,WSK,NOTICE_CACHE_KEY,REG_PLAN_KEY];
+    TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY,MATU_REF_KEY,DIL_KEY,RENAME_LOG_KEY,MATU_SEC_ORDER_KEY,TDR_ZONE_LABEL_KEY,GP_TARGET_KEY,REG_NAME_ORDER_KEY,WSK,NOTICE_CACHE_KEY,REG_PLAN_KEY];
   const exportObj={};
   allKeys.forEach(k=>{
     const v=localStorage.getItem(k);
@@ -11698,7 +11699,7 @@ function importDataFile(event){
       /* 기존 관련 키 지우기 */
       [SK,PK,RK,CNK,RATE_KEY,DSK,WCK,LOC_KEY,IRR_ZONES_KEY,MAT_PEST_KEY,MAT_FERT_KEY,MAT_SAND_KEY,MAT_AREA_PRESET_KEY,
         TREATAREA_PRESET_KEY,TANKVOL_PRESET_KEY,MAT_COL_ORDER_KEY,
-        TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY,MATU_REF_KEY,DIL_KEY,RENAME_LOG_KEY,TDR_ZONE_LABEL_KEY,GP_TARGET_KEY,REG_NAME_ORDER_KEY,WSK,NOTICE_CACHE_KEY,REG_PLAN_KEY].forEach(k=>localStorage.removeItem(k));
+        TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY,MATU_REF_KEY,DIL_KEY,RENAME_LOG_KEY,MATU_SEC_ORDER_KEY,TDR_ZONE_LABEL_KEY,GP_TARGET_KEY,REG_NAME_ORDER_KEY,WSK,NOTICE_CACHE_KEY,REG_PLAN_KEY].forEach(k=>localStorage.removeItem(k));
 
       /* 새 데이터 적재 */
       importedKeys.forEach(k=>{
@@ -12997,6 +12998,33 @@ function getOrderedAreas(areaList){
   return [...ordered, ...remaining];
 }
 
+/* ══ 자재사용량 탭: 섹션 순서 (▲▼) — 이 기기에 기억, 내용이 없는(숨겨진) 섹션은 바도 숨김 ══ */
+const MATU_SEC_ORDER_KEY='golf_matu_sec_order_v1';
+const MATU_SEC_DEFAULT=['cards','annual','chart','line','cal'];
+function _matuSecOrder(){ let o=[]; try{ o=JSON.parse(localStorage.getItem(MATU_SEC_ORDER_KEY)||'[]')||[]; }catch(e){}
+  o=o.filter(k=>MATU_SEC_DEFAULT.includes(k)); MATU_SEC_DEFAULT.forEach(k=>{ if(!o.includes(k)) o.push(k); }); return o; }
+function matuSecSync(){
+  const box=document.getElementById('matu-secs'); if(!box) return;
+  _matuSecOrder().forEach(k=>{ const el=box.querySelector(`.matu-sec[data-sec="${k}"]`); if(el) box.appendChild(el); });
+  const secs=[...box.querySelectorAll('.matu-sec')];
+  secs.forEach(el=>{ const m=el.querySelector('.matu-sec-main'); const off=!m||m.style.display==='none'||!m.innerHTML.trim(); el.classList.toggle('off',off); });
+  const vis=secs.filter(el=>!el.classList.contains('off'));
+  vis.forEach((el,i)=>{ const [up,dn]=el.querySelectorAll('.matu-sec-mv'); if(up) up.disabled=i===0; if(dn) dn.disabled=i===vis.length-1; });
+}
+function matuSecMove(key,dir){
+  const box=document.getElementById('matu-secs'); if(!box) return;
+  /* 보이는 섹션 기준으로 한 칸 이동 (숨은 섹션은 건너뜀) */
+  const order=_matuSecOrder(), vis=[...box.querySelectorAll('.matu-sec:not(.off)')].map(el=>el.dataset.sec);
+  const vi=vis.indexOf(key), tgt=vis[vi+dir]; if(vi<0||!tgt) return;
+  const a=order.indexOf(key), b2=order.indexOf(tgt); [order[a],order[b2]]=[order[b2],order[a]];
+  try{ localStorage.setItem(MATU_SEC_ORDER_KEY,JSON.stringify(order)); }catch(e){}
+  matuSecSync();
+  const el=box.querySelector(`.matu-sec[data-sec="${key}"]`); if(el) el.scrollIntoView({block:'nearest',behavior:'smooth'});
+}
+/* renderMatUsePanel이 그린 뒤 섹션 순서·표시 정리 */
+setTimeout(()=>{ if(window._matuSecWrapped||typeof renderMatUsePanel!=='function') return; window._matuSecWrapped=true;
+  const _orig=renderMatUsePanel; renderMatUsePanel=function(){ const r=_orig.apply(this,arguments); try{ matuSecSync(); }catch(e){} return r; };
+  try{ matuSecSync(); }catch(e){} },0);
 /* ── 자재사용량 지역 선택: 「기타(단발성)」 펼치기/접기 항목 처리 ── */
 var _matuOneoffOpen=false, _matuAreaPrev='';   /* var: 시작 중 먼저 호출돼도 안전 */
 function matuAreaChange(sel){
@@ -17371,38 +17399,65 @@ function showPdfGuide(ri){
 
 <!-- ══════════════ 자재정보 ══════════════ -->
 <div class="panel" id="panel-matuse" style="padding:12px;">
+  <style>
+    /* 조회 조건 바 */
+    #panel-matuse .matu-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;padding:9px 12px;margin-bottom:12px;background:#f6faf1;border:1.5px solid #d5e6c2;border-radius:12px;}
+    #panel-matuse .matu-tb-grp{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+    #panel-matuse .matu-tb-lb{font-size:11px;font-weight:800;color:#6a8a55;white-space:nowrap;}
+    #panel-matuse .matu-toolbar select{width:auto !important;max-width:100%;}
+    #panel-matuse .matu-tb-sep{width:1px;height:24px;background:#d5e6c2;}
+    #panel-matuse .matu-tb-btn{padding:6px 10px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;}
+    /* 섹션 순서 바 */
+    #panel-matuse .matu-sec{margin-bottom:14px;}
+    #panel-matuse .matu-sec-bar{display:flex;align-items:center;gap:4px;margin-bottom:4px;}
+    #panel-matuse .matu-sec-lb{flex:1;font-size:11px;font-weight:800;color:#8aa476;letter-spacing:.2px;}
+    #panel-matuse .matu-sec-mv{width:24px;height:20px;padding:0;border:1px solid #d5e6c2;border-radius:5px;background:#fff;color:#6a8a55;font-size:10px;cursor:pointer;line-height:1;}
+    #panel-matuse .matu-sec-mv:disabled{opacity:.3;cursor:default;}
+    #panel-matuse .matu-sec.off{display:none;}
+    @media(max-width:600px){
+      #panel-matuse .matu-tb-sep{display:none;}
+      #panel-matuse .matu-tb-grp{width:100%;}
+      #panel-matuse .matu-toolbar select{flex:1 1 0;min-width:0;}
+    }
+  </style>
 
-  <!-- 1행: 타이틀 + N·P·K 요약 카드(좌그린/우그린/티전면) + 우측 select 그룹 -->
-  <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:10px 14px;">
-    <div style="font-size:15px;font-weight:800;color:#2d6a1e;display:flex;align-items:center;gap:8px;padding-top:4px;flex-shrink:0;">
-      🧪 자재사용량 분석
+  <div style="font-size:15px;font-weight:800;color:#2d6a1e;display:flex;align-items:center;gap:8px;margin-bottom:8px;">🧪 자재사용량 분석</div>
+
+  <!-- 조회 조건 (연도·지역·종류) — 모든 섹션에 적용 -->
+  <div class="matu-toolbar">
+    <div class="matu-tb-grp">
+      <span class="matu-tb-lb">연도</span>
+      <select id="matu-year" onchange="renderMatUsePanel()" style="padding:6px 10px;border:1.5px solid #c2dda8;border-radius:8px;font-size:12.5px;font-weight:700;color:#2d6a1e;background:#fff;"></select>
     </div>
-    <!-- 처리지역(좌그린/우그린/티전면) 기준 N·P·K 순성분 요약 카드 -->
-    <div id="matu-npk-summary-cards" style="flex:1 1 260px;min-width:208px;"></div>
-    <div class="matu-filter-row" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;flex-shrink:0;max-width:100%;">
-      <select id="matu-year" onchange="renderMatUsePanel()"
-        style="padding:5px 10px;border:1.5px solid #c2dda8;border-radius:7px;font-size:12px;font-weight:700;color:#2d6a1e;background:#f8fff4;">
-      </select>
-      <select id="matu-area" onchange="matuAreaChange(this)"
-        style="padding:5px 10px;border:1.5px solid #c2dda8;border-radius:7px;font-size:12px;font-weight:700;color:#2d6a1e;background:#f8fff4;">
+    <div class="matu-tb-grp">
+      <span class="matu-tb-lb">지역</span>
+      <select id="matu-area" onchange="matuAreaChange(this)" style="padding:6px 10px;border:1.5px solid #c2dda8;border-radius:8px;font-size:12.5px;font-weight:700;color:#2d6a1e;background:#fff;">
         <option value="">전체 지역</option>
         <option value="__left_green__">🟦 좌그린 기준 (그린전면+좌그린)</option>
         <option value="__right_green__">🟩 우그린 기준 (그린전면+우그린)</option>
       </select>
-      <button onclick="openAreaOrderEditor()" title="처리지역 표시 순서 편집"
-        style="padding:5px 9px;border:1.5px solid #c2dda8;border-radius:7px;font-size:12px;font-weight:700;color:#2d6a1e;background:#f8fff4;cursor:pointer;">⇅ 순서편집</button>
-      <select id="matu-type" onchange="renderMatUsePanel()"
-        style="padding:5px 10px;border:1.5px solid #c2dda8;border-radius:7px;font-size:12px;font-weight:700;background:#f8fff4;">
+      <button class="matu-tb-btn" onclick="openAreaOrderEditor()" title="처리지역 표시 순서 편집·정리" style="border:1.5px solid #c2dda8;color:#2d6a1e;background:#fff;">⇅ 지역 정리</button>
+    </div>
+    <span class="matu-tb-sep"></span>
+    <div class="matu-tb-grp">
+      <span class="matu-tb-lb">보기</span>
+      <select id="matu-type" onchange="renderMatUsePanel()" style="padding:6px 10px;border:1.5px solid #c2dda8;border-radius:8px;font-size:12.5px;font-weight:700;color:#2d6a1e;background:#fff;">
         <option value="fert">비료 순성분량</option>
         <option value="pest">농약 사용량</option>
       </select>
-      <button onclick="openMatuRefModal()" title="과거 연도 비료 순성분 자료(엑셀)를 가져와 올해와 비교"
-        style="padding:5px 9px;border:1.5px solid #c9a227;border-radius:7px;font-size:12px;font-weight:700;color:#7B5B00;background:#fffbea;cursor:pointer;">📂 과거 자료 비교</button>
+      <button class="matu-tb-btn" onclick="openMatuRefModal()" title="과거 연도 비료 순성분 자료(엑셀)를 가져와 올해와 비교" style="border:1.5px solid #c9a227;color:#7B5B00;background:#fffbea;">📂 과거 자료 비교</button>
     </div>
   </div>
 
-  <!-- 2행: 연간 시비 클릭 바 (타이틀 아래, select 좌측 끝까지) -->
-  <div id="matu-annual-bar" style="margin-bottom:12px;display:none;">
+  <!-- 섹션들: ▲▼로 순서 변경 (이 기기에 기억) -->
+  <div id="matu-secs">
+    <div class="matu-sec" data-sec="cards">
+      <div class="matu-sec-bar"><span class="matu-sec-lb">🧮 N·P·K 요약 카드</span><button class="matu-sec-mv" onclick="matuSecMove('cards',-1)" title="위로">▲</button><button class="matu-sec-mv" onclick="matuSecMove('cards',1)" title="아래로">▼</button></div>
+      <div id="matu-npk-summary-cards" class="matu-sec-main"></div>
+    </div>
+    <div class="matu-sec" data-sec="annual">
+      <div class="matu-sec-bar"><span class="matu-sec-lb">📋 연간 시비 집계</span><button class="matu-sec-mv" onclick="matuSecMove('annual',-1)" title="위로">▲</button><button class="matu-sec-mv" onclick="matuSecMove('annual',1)" title="아래로">▼</button></div>
+  <div id="matu-annual-bar" class="matu-sec-main" style="display:none;">
     <button id="matu-annual-btn" onclick="showMatUseAnnualNutrPopup()"
       style="width:100%;max-width:calc(100% - 0px);padding:8px 14px;
              border:1.5px solid #97C459;border-radius:9px;
@@ -17426,19 +17481,21 @@ function showPdfGuide(ri){
       </div>
     </button>
   </div>
-
-  <!-- 차트 영역 -->
-  <div id="matu-chart-wrap" style="min-height:200px;"></div>
-
-  <!-- 범례/상세 -->
-  <div id="matu-legend" style="margin-top:10px;"></div>
-
-  <!-- 성분별 월순성분량 가로꺾은선 차트 -->
-  <div id="matu-line-chart-wrap" style="display:none;margin-top:14px;"></div>
-
-
-  <!-- 자재 사용 캘린더 (사용한 날짜·사용자재·사용위치·사용량 확인) — 요청으로 독립된 카드형 섹션으로 분리 -->
-  <div id="matu-calendar-wrap" style="margin-top:16px;padding:14px;background:#fff;border:1.5px solid #d5e6c2;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.05);"></div>
+    </div>
+    <div class="matu-sec" data-sec="chart">
+      <div class="matu-sec-bar"><span class="matu-sec-lb">📊 월별 차트</span><button class="matu-sec-mv" onclick="matuSecMove('chart',-1)" title="위로">▲</button><button class="matu-sec-mv" onclick="matuSecMove('chart',1)" title="아래로">▼</button></div>
+      <div id="matu-chart-wrap" class="matu-sec-main" style="min-height:200px;"></div>
+      <div id="matu-legend" style="margin-top:10px;"></div>
+    </div>
+    <div class="matu-sec" data-sec="line">
+      <div class="matu-sec-bar"><span class="matu-sec-lb">📈 성분별 월순성분량 추이</span><button class="matu-sec-mv" onclick="matuSecMove('line',-1)" title="위로">▲</button><button class="matu-sec-mv" onclick="matuSecMove('line',1)" title="아래로">▼</button></div>
+      <div id="matu-line-chart-wrap" class="matu-sec-main" style="display:none;"></div>
+    </div>
+    <div class="matu-sec" data-sec="cal">
+      <div class="matu-sec-bar"><span class="matu-sec-lb">📅 자재 사용 캘린더</span><button class="matu-sec-mv" onclick="matuSecMove('cal',-1)" title="위로">▲</button><button class="matu-sec-mv" onclick="matuSecMove('cal',1)" title="아래로">▼</button></div>
+      <div id="matu-calendar-wrap" class="matu-sec-main" style="padding:14px;background:#fff;border:1.5px solid #d5e6c2;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.05);"></div>
+    </div>
+  </div>
 
 </div>
 
