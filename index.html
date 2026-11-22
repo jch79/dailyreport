@@ -846,6 +846,11 @@ body{font-family:'맑은 고딕','Apple SD Gothic Neo',sans-serif;font-size:14px
 }
 /* ── 자재사용량 탭: 모바일 세로 화면 ── */
 #panel-matuse select{max-width:100%;min-width:0;}
+/* 자재 사용 캘린더: 상자 안에서만 좌우 스크롤 */
+#matu-calendar-wrap{max-width:100%;box-sizing:border-box;overflow:hidden;}
+.matu-cal-grid > div{min-width:0;overflow-wrap:anywhere;}
+.matu-cal-hint{display:none;font-size:10.5px;color:#8aa476;margin:2px 0 4px;}
+@media (max-width:760px){ .matu-cal-hint{display:block;} }
 @media (max-width:600px){
   .matu-filter-row{width:100%;}
   .matu-filter-row select{flex:1 1 130px;}
@@ -11226,6 +11231,9 @@ function checkBackupReminder(){
    · 관리자 공지: Firestore shared/notices 문서의 items 배열(모든 기기 실시간 공유). 관리자만 작성·수정·삭제. 항상 맨 위 고정
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
+  {date:'2026-11-22',items:[
+    '📅 자재 사용 캘린더: 모바일에서 화면 밖으로 밀려 나가던 문제 — 달력 상자 안에서만 좌우로 스크롤 (날짜 칸 최소 폭 유지, PC는 그대로)',
+  ]},
   {date:'2026-11-21',items:[
     '🧮 N·P·K 요약 카드를 눌러도 월별 차트로 화면이 강제로 내려가지 않고 「자재사용량 분석」 제목이 보이는 위치 유지 (지역만 바뀜)',
     '🧭 자재사용량 탭: 연도·지역·보기(비료/농약)·과거 자료 비교를 한 줄 「조회 조건」 바로 정리 · 섹션(N·P·K 카드 / 연간 시비 / 월별 차트 / 성분 추이 / 캘린더)마다 ▲▼로 순서 변경 (이 기기에 기억)',
@@ -16679,9 +16687,13 @@ function renderMatUseCalendar(){
       </div>
     </div>
     ${areaChipsHtml}
-    <div style="display:grid;grid-template-columns:repeat(7,1fr);border-top:1.5px solid #97C459;">
+    <div class="matu-cal-hint">↔ 달력을 좌우로 밀어서 보세요</div>
+    <!-- 달력은 이 상자 안에서만 좌우 스크롤 (모바일에서 화면 밖으로 밀려 나가지 않도록) -->
+    <div class="matu-cal-scroll" style="overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%;">
+    <div class="matu-cal-grid" style="display:grid;grid-template-columns:repeat(7,minmax(96px,1fr));border-top:1.5px solid #97C459;">
       ${dowNames.map((n,i)=>`<div style="text-align:center;font-size:11px;font-weight:700;padding:4px 0;background:#f0f8e8;color:${i===0?'#c0392b':i===6?'#185FA5':'#2d6a1e'};border:1px solid #eee;">${n}</div>`).join('')}
       ${cells}
+    </div>
     </div>
     <div style="font-size:10px;color:#aaa;margin-top:6px;">날짜를 클릭하면 사용 자재 · 위치 · 사용량 상세를 볼 수 있습니다</div>
   `;
