@@ -1027,6 +1027,10 @@ textarea{resize:vertical;min-height:55px;}
    헤더와 각 행이 같은 스크롤 안에 있어서 스크롤해도 열이 계속 맞음. */
 .task-scroll-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
 .task-block.etc    .task-row:nth-child(even){background:#f5f5f2;}
+/* 모바일: 섹션별로 가장 긴 내용(+여백)에 맞춘 칸 폭 — taskFitCols()가 --tk-cols/--tk-minw 지정 */
+@media (max-width:768px){
+  .task-block.tk-fit .task-col-hdr,.task-block.tk-fit .task-row{grid-template-columns:var(--tk-cols) !important;min-width:var(--tk-minw) !important;}
+}
 
 .task-cell{padding:4px;border-right:1.5px solid #d8d8d8;display:flex;align-items:center;}
 .task-cell:last-child{border-right:none;justify-content:center;}
@@ -2608,8 +2612,48 @@ function renderTasks(){
   });
   document.querySelectorAll('.tw-inp').forEach(twFitW);
   renderTaskAttendChips();
+  taskFitCols();
 }
 
+/* ── 모바일 작업 표 칸 폭: 섹션마다 가장 긴 내용 + 여백에 맞춤 (최대보다 길면 칸 안에서 줄바꿈) ──
+   대상: 항목 · 작업내용 · 장비 · 작업자 · 비고 / 조출·주간·야간·삭제는 고정. PC(769px 이상)는 기존 고정 폭 */
+const _TK_LIM={ work:{name:[70,192],detail:[120,316],equip:[70,140],workers:[120,380],remark:[60,90]},
+                other:{name:[70,120],detail:[120,210],equip:[70,140],workers:[120,350],remark:[60,90]} };
+let _tkCtx=null;
+function _tkTextW(txt,font){ if(!_tkCtx) _tkCtx=document.createElement('canvas').getContext('2d'); _tkCtx.font=font; let m=0; String(txt||'').split('\n').forEach(l=>{ const w=_tkCtx.measureText(l).width; if(w>m) m=w; }); return m; }
+function taskFitCols(){
+  const mobile=window.matchMedia('(max-width:768px)').matches;
+  document.querySelectorAll('#tasks-container .task-block, .task-block').forEach(block=>{
+    if(!mobile){ block.classList.remove('tk-fit'); return; }
+    const L=block.classList.contains('work')?_TK_LIM.work:_TK_LIM.other, M=12;   /* M: 오른쪽 여백 */
+    const rows=[...block.querySelectorAll('.task-row')]; if(!rows.length){ block.classList.remove('tk-fit'); return; }
+    const anyTa=block.querySelector('textarea.task-ta'), taFont=anyTa?getComputedStyle(anyTa).font:'11px sans-serif';
+    const anyNm=block.querySelector('.task-name-cell input'), nmFont=anyNm?getComputedStyle(anyNm).font:'bold 12px sans-serif';
+    const anyTag=block.querySelector('.worker-tag input'), tagFont=anyTag?getComputedStyle(anyTag).font:'12px sans-serif';
+    let wN=_tkTextW('항목',nmFont), wD=_tkTextW('약품명, 수량 등',taFont), wE=_tkTextW('장비/자재',taFont), wR=_tkTextW('비고',taFont), wW=0;
+    rows.forEach(r=>{
+      const nm=r.querySelector('.task-name-cell input'); if(nm) wN=Math.max(wN,_tkTextW(nm.value||nm.placeholder,nmFont));
+      const tas=r.querySelectorAll('textarea.task-ta');   /* 작업내용 · 장비 · 비고 순 */
+      if(tas[0]) wD=Math.max(wD,_tkTextW(tas[0].value,taFont));
+      if(tas[1]) wE=Math.max(wE,_tkTextW(tas[1].value,taFont));
+      if(tas[2]) wR=Math.max(wR,_tkTextW(tas[2].value,taFont));
+      /* 작업자: 칩(글자+32px) + 간격 4px + 「+」 22px + 안쪽 여백 16px — 한 줄에 다 들어가는 폭 */
+      const tags=[...r.querySelectorAll('.worker-tag')]; let w=16+22;
+      tags.forEach(t=>{ const i=t.querySelector('input'); w+=_tkTextW(i?(i.value||i.placeholder||'이름'):t.textContent,tagFont)+32+4; });
+      wW=Math.max(wW,w);
+    });
+    const cl=(v,[a,b])=>Math.round(Math.min(b,Math.max(a,v)));
+    const cN=cl(wN+44+M,L.name), cD=cl(wD+20+M,L.detail), cE=cl(wE+20+M,L.equip), cW=cl(wW+M,L.workers), cR=cl(wR+20+M,L.remark);
+    const cols=[cN,34,34,34,cD,cE,cW,30,cR], sum=cols.reduce((a,b)=>a+b,0);
+    const v=cols.map(x=>x+'px').join(' ');
+    if(block.style.getPropertyValue('--tk-cols')!==v){ block.style.setProperty('--tk-cols',v); block.style.setProperty('--tk-minw',sum+'px');
+      block.classList.add('tk-fit'); requestAnimationFrame(()=>taskTaFitAll(block)); }
+    else block.classList.add('tk-fit');
+  });
+}
+/* 다시 맞추는 때: 표를 그릴 때 · 칸 입력을 마치고 나올 때(입력 중에는 출렁이지 않게) · 화면 회전/크기 변경 */
+document.addEventListener('focusout',e=>{ if(e.target&&e.target.closest&&e.target.closest('.task-block')) setTimeout(taskFitCols,0); });
+window.addEventListener('resize',()=>{ clearTimeout(window._tkRsz); window._tkRsz=setTimeout(taskFitCols,200); });
 /* 작업자 칸 너비를 실제 글자 폭에 맞춤 (예전엔 글자 수×고정폭으로 계산해 이름 뒤 공백이 생김) */
 /* 작업자 칸 너비: 숨은 글자(같은 글꼴)로 브라우저가 직접 폭을 정함 → 글꼴·글자 확대·화면 숨김 상태와 상관없이 잘리지 않음 */
 function twFitW(el){
@@ -2666,6 +2710,7 @@ function refreshSection(si){
   curTasks[si].tasks.forEach((task,ti)=>c.appendChild(buildTaskRow(si,ti,task,curTasks[si].cls)));
   c.querySelectorAll('.tw-inp').forEach(twFitW);
   renderTaskAttendChips();   /* 휴무자 표시 + 출근자 미배정 표시 갱신 */
+  taskFitCols();
   requestAnimationFrame(()=>taskTaFitAll(c));
 }
 function setTask(si,ti,k,v){markDirty();curTasks[si].tasks[ti][k]=v;}
@@ -11231,6 +11276,9 @@ function checkBackupReminder(){
    · 관리자 공지: Firestore shared/notices 문서의 items 배열(모든 기기 실시간 공유). 관리자만 작성·수정·삭제. 항상 맨 위 고정
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
+  {date:'2026-11-25',items:[
+    '📱 작업 표(예초·작업·기타) 모바일: 칸 폭을 섹션마다 가장 긴 내용 + 여백에 맞춤 (항목·작업내용·장비·작업자·비고) — 좌우 스크롤이 크게 줄어듦, 최대 폭보다 긴 내용은 칸 안에서 줄바꿈, 입력을 마치면 다시 맞춤 (PC는 그대로)',
+  ]},
   {date:'2026-11-22',items:[
     '📅 자재 사용 캘린더: 모바일에서 화면 밖으로 밀려 나가던 문제 — 달력 상자 안에서만 좌우로 스크롤 (날짜 칸 최소 폭 유지, PC는 그대로)',
   ]},
