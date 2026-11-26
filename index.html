@@ -1283,7 +1283,18 @@ mark{background:#FAEEDA;color:#633806;border-radius:3px;padding:0 2px;}
       <div id="quick-nav-bar" style="display:flex;gap:6px;flex-shrink:0;"></div>
       <button class="btn" id="btn-clear-top" onclick="clearForm()" style="flex-shrink:0;border-color:#c0392b;color:#c0392b;">&#10006; 초기화</button>
     </div>
-    <style>#write-toolbar::-webkit-scrollbar{display:none;}</style>
+    <style>#write-toolbar::-webkit-scrollbar{display:none;}
+    /* 저장 안 한 변경 표시 */
+    #btn-save-top{position:relative;transition:background .2s,border-color .2s;}
+    #btn-save-top.ds-dirty{background:#c0392b !important;border-color:#c0392b !important;color:#fff !important;}
+    #btn-save-top.ds-dirty::after{content:'';position:absolute;top:-4px;right:-4px;width:11px;height:11px;border-radius:50%;background:#ff3b30;border:2px solid #fff;box-shadow:0 0 0 0 rgba(255,59,48,.6);animation:dsPulse 1.6s infinite;}
+    #btn-save-top.ds-saved{background:#2d8a3e !important;border-color:#2d8a3e !important;color:#fff !important;}
+    @keyframes dsPulse{0%{box-shadow:0 0 0 0 rgba(255,59,48,.55);}70%{box-shadow:0 0 0 7px rgba(255,59,48,0);}100%{box-shadow:0 0 0 0 rgba(255,59,48,0);}}
+    #quick-nav-bar [data-qn]{position:relative;}
+    #quick-nav-bar [data-qn].qn-dirty{border-color:#e07b6e !important;background:#fff4f2 !important;color:#a5281b !important;}
+    #quick-nav-bar [data-qn].qn-dirty::after{content:'';position:absolute;top:-2px;right:-2px;width:8px;height:8px;border-radius:50%;background:#ff3b30;border:1.5px solid #fff;}
+    #write-toolbar{padding-top:5px !important;}
+    </style>
   </div>
 
   <!-- 기본정보 카드 -->
@@ -7114,8 +7125,58 @@ function _formSnap(){
   }catch(e){ return ''; }
 }
 window.addEventListener('load',()=>setTimeout(()=>{ if(_formBase==null) _formMarkClean(); },900));   /* 앱 시작 직후 화면을 기준으로 */
-function _formMarkClean(){ _formDirty=false; _formBase=_formSnap(); }
+function _formMarkClean(){ _formDirty=false; _formBase=_formSnap(); try{ _formBaseSecs=_formSnapSecs(); }catch(e){ _formBaseSecs=null; } setTimeout(()=>{ try{ dirtyUiUpdate(); }catch(e){} },0); }
 function _isFormDirty(){ if(_formBase==null) return _formDirty; const n=_formSnap(); return n!==''&&n!==_formBase; }
+/* ══ 저장 안 한 변경 표시: 저장하기 버튼 빨간 점 · 바뀐 섹션 칩 점 · 탭 제목 「●」 · 창 닫기 경고 ══
+   판단은 기존 _isFormDirty()(마지막으로 불러오거나 저장한 상태와 비교) 그대로, 섹션은 섹션별 스냅샷으로 비교 */
+var _formBaseSecs=null;
+function _formSnapSecs(){
+  const pw=document.getElementById('panel-write'); if(!pw) return null;
+  const NOSNAP=new Set(['inp-course','inp-date-picker','mat-search-modal-kw','gp-area-sel','gp-target-input','reg-name','reg-task','daily-subgroup-sel','daily-row1','daily-row2','daily-name']);
+  const o={}, add=(k,v)=>{ o[k]=(o[k]||'')+v+'\u0001'; };
+  pw.querySelectorAll('input[id],textarea[id],select[id]').forEach(e=>{
+    if(NOSNAP.has(e.id)||e.type==='file'||e.type==='button'||e.closest('[data-nosnap]')) return;
+    const w=e.closest('.write-sec-wrap'), k=w?w.dataset.secId:(e.closest('#sec-basic-info')?'sec-basic-info':null); if(!k) return;
+    add(k,e.id+'='+((e.type==='checkbox'||e.type==='radio')?(e.checked?1:0):e.value));
+  });
+  ['w-temp','w-feel','w-humid','w-wind','w-sky','w-avg','w-minmax'].forEach(id=>{ const e=document.getElementById(id); add('weather',id+'='+(e?e.textContent.trim():'')); });
+  const J=v=>JSON.stringify(v,(k,x)=>(x===false||x===''||x===null)?undefined:x);
+  add('workers',J(curWorkers)); add('tasks',J([curTasks,(typeof yegoData!=='undefined'?yegoData:null)]));
+  if(typeof matAreaBlocks!=='undefined') add('materials_use',J(matAreaBlocks));
+  if(typeof getTdrVals==='function') add('irr',J(getTdrVals()));
+  return o;
+}
+function _dirtyEnabled(){ return !(typeof _fbUser!=='undefined'&&_fbUser&&_fbRole==='viewer'); }
+let _dirtyNow=false;
+function dirtyUiUpdate(){
+  const on=_dirtyEnabled()&&_formBase!=null&&_isFormDirty();
+  _dirtyNow=on;
+  const btn=document.getElementById('btn-save-top');
+  if(btn && !btn.classList.contains('ds-saved')){ btn.classList.toggle('ds-dirty',on); btn.title=on?'저장하지 않은 변경이 있습니다':'저장하기'; }
+  /* 섹션 칩 */
+  let changed=new Set();
+  if(on && _formBaseSecs){ try{ const now=_formSnapSecs()||{}; new Set([...Object.keys(now),...Object.keys(_formBaseSecs)]).forEach(k=>{ if((now[k]||'')!==(_formBaseSecs[k]||'')) changed.add(k); }); }catch(e){} }
+  document.querySelectorAll('#quick-nav-bar [data-qn]').forEach(b=>b.classList.toggle('qn-dirty',changed.has(b.dataset.qn)));
+  /* 브라우저 탭 제목 */
+  const t=document.title.replace(/^● /,''); document.title=on?'● '+t:t;
+}
+/* 입력·클릭 후 잠깐 멈추면 확인, 그 밖의 코드 변경(날씨 불러오기 등)은 1.5초마다 확인 — 작성 탭이 보일 때만 */
+function _dirtyKick(){ clearTimeout(window._dirtyT); window._dirtyT=setTimeout(()=>{ try{ dirtyUiUpdate(); }catch(e){} },500); }
+['input','change','click'].forEach(ev=>document.addEventListener(ev,e=>{ if(e.target&&e.target.closest&&(e.target.closest('#panel-write')||e.target.closest('#write-sticky-top'))) _dirtyKick(); },true));
+setInterval(()=>{ const pw=document.getElementById('panel-write'); if(pw&&pw.style.display!=='none'&&pw.offsetParent!==null){ try{ dirtyUiUpdate(); }catch(e){} } },1500);
+/* 창 닫기·새로 고침 경고 */
+window.addEventListener('beforeunload',e=>{ try{ if(_dirtyEnabled()&&_formBase!=null&&_isFormDirty()){ e.preventDefault(); e.returnValue=''; return ''; } }catch(x){} });
+/* 저장 성공 → 「✓ 저장됨」 잠깐 */
+function dirtySavedFlash(){
+  const btn=document.getElementById('btn-save-top'); if(!btn) return;
+  btn.classList.remove('ds-dirty'); btn.classList.add('ds-saved'); const old=btn.innerHTML; btn.innerHTML='&#10003; 저장됨';
+  setTimeout(()=>{ btn.classList.remove('ds-saved'); btn.innerHTML=old.includes('저장됨')?'&#10003; 저장하기':old; dirtyUiUpdate(); },1600);
+}
+setTimeout(()=>{ if(window._dsWrapped||typeof saveReport!=='function') return; window._dsWrapped=true;
+  const _o=saveReport; saveReport=function(){ const wasDirty=_dirtyNow; const r=_o.apply(this,arguments);
+    const done=ok=>{ if(ok!==false&&ok!==null){ setTimeout(()=>{ try{ if(!_isFormDirty()&&(wasDirty||true)) dirtySavedFlash(); }catch(e){} },150); } return ok; };
+    return (r&&typeof r.then==='function')?r.then(done):done(r); };
+},0);
 /* 날짜 이동 후 작성 탭 차트(기온·볼스피드·강우·GP·관수)를 새 날짜 기준으로 다시 그림
    (기록을 불러온 뒤 그려야 이전 날짜의 날씨칸 값이 새 날짜에 찍히지 않음) */
 function _refreshWriteCharts(){
@@ -11000,9 +11061,10 @@ function renderQuickNavBar(){
     items.push({id:wrap.dataset.secId, label, isSecId:true});
   });
   bar.innerHTML=items.map(it=>
-    `<button onclick="quickNavTo('${it.id}',${!!it.isSecId})"
+    `<button data-qn="${it.id}" onclick="quickNavTo('${it.id}',${!!it.isSecId})"
       style="flex-shrink:0;font-size:11px;font-weight:700;padding:5px 12px;border-radius:100px;border:1.3px solid #97C459;background:#f5faf0;color:#2d6a1e;cursor:pointer;white-space:nowrap;">${it.label}</button>`
   ).join('');
+  setTimeout(()=>{ try{ dirtyUiUpdate(); }catch(e){} },0);
 }
 function quickNavTo(id, isSecId){
   const el = isSecId ? document.querySelector(`.write-sec-wrap[data-sec-id="${id}"]`) : document.getElementById(id);
@@ -11276,6 +11338,9 @@ function checkBackupReminder(){
    · 관리자 공지: Firestore shared/notices 문서의 items 배열(모든 기기 실시간 공유). 관리자만 작성·수정·삭제. 항상 맨 위 고정
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
+  {date:'2026-11-26',items:[
+    '🔴 작성 탭 저장 안 한 변경 표시: 고치거나 추가하면 「저장하기」 버튼이 빨간색 + 빨간 점, 상단 섹션 칩(기본정보·운영/날씨·작업자 등)에서 바뀐 섹션에 점, 브라우저 탭 제목에 「●」, 저장하면 「✓ 저장됨」 — 원래 값으로 되돌리면 표시가 꺼짐 · 저장 안 한 채 창을 닫거나 새로 고치면 경고',
+  ]},
   {date:'2026-11-25',items:[
     '📱 작업 표(예초·작업·기타) 모바일: 칸 폭을 섹션마다 가장 긴 내용 + 여백에 맞춤 (항목·작업내용·장비·작업자·비고) — 좌우 스크롤이 크게 줄어듦, 최대 폭보다 긴 내용은 칸 안에서 줄바꿈, 입력을 마치면 다시 맞춤 (PC는 그대로)',
   ]},
