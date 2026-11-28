@@ -1008,7 +1008,7 @@ textarea{resize:vertical;min-height:55px;}
 .task-block.work   .task-block-hdr{background:#3B6D11;color:#fff;border-radius:7px 7px 0 0;}
 .task-block.etc    .task-block-hdr{background:#5F5E5A;color:#fff;border-radius:7px 7px 0 0;}
 
-.task-col-hdr{display:grid;grid-template-columns:120px 34px 34px 34px 210px 140px 350px 30px 90px;gap:0;font-size:10px;font-weight:700;text-align:center;border-bottom:2px solid #c0c0c0;min-width:1042px;}
+.task-col-hdr{display:grid;grid-template-columns:155px 34px 34px 34px 210px 140px 350px 30px 90px;gap:0;font-size:10px;font-weight:700;text-align:center;border-bottom:2px solid #c0c0c0;min-width:1077px;}
 .task-block.work .task-col-hdr{grid-template-columns:192px 34px 34px 34px 316px 140px 380px 30px 90px;min-width:1292px;}
 .task-block.mowing .task-col-hdr{background:#daeaf9;color:#0C447C;}
 .task-block.work   .task-col-hdr{background:#d4eac0;color:#27500A;}
@@ -1018,7 +1018,7 @@ textarea{resize:vertical;min-height:55px;}
 .task-col-hdr .tl{text-align:left;padding-left:8px;}
 .task-col-hdr .task-remark-hdr{border-left:1.5px solid #c8c8c8;}
 
-.task-row{display:grid;grid-template-columns:120px 34px 34px 34px 210px 140px 350px 30px 90px;gap:0;align-items:stretch;border-top:1.5px solid #d8d8d8;min-width:1042px;}
+.task-row{display:grid;grid-template-columns:155px 34px 34px 34px 210px 140px 350px 30px 90px;gap:0;align-items:stretch;border-top:1.5px solid #d8d8d8;min-width:1077px;}
 .task-block.work .task-row{grid-template-columns:192px 34px 34px 34px 316px 140px 380px 30px 90px;min-width:1292px;}
 .task-block.mowing .task-row:nth-child(even){background:#f2f8fd;}
 .task-block.work   .task-row:nth-child(even){background:#f2f9ec;}
@@ -2642,7 +2642,7 @@ function renderTasks(){
 /* ── 모바일 작업 표 칸 폭: 섹션마다 가장 긴 내용 + 여백에 맞춤 (최대보다 길면 칸 안에서 줄바꿈) ──
    대상: 항목 · 작업내용 · 장비 · 작업자 · 비고 / 조출·주간·야간·삭제는 고정. PC(769px 이상)는 기존 고정 폭 */
 const _TK_LIM={ work:{name:[70,192],detail:[120,316],equip:[70,140],workers:[120,380],remark:[60,90]},
-                other:{name:[70,120],detail:[120,210],equip:[70,140],workers:[120,350],remark:[60,90]} };
+                other:{name:[70,155],detail:[120,210],equip:[70,140],workers:[120,350],remark:[60,90]} };
 let _tkCtx=null;
 function _tkTextW(txt,font){ if(!_tkCtx) _tkCtx=document.createElement('canvas').getContext('2d'); _tkCtx.font=font; let m=0; String(txt||'').split('\n').forEach(l=>{ const w=_tkCtx.measureText(l).width; if(w>m) m=w; }); return m; }
 function taskFitCols(){
@@ -11355,6 +11355,7 @@ function checkBackupReminder(){
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
   {date:'2026-11-28',items:[
+    '↔ 작업 표 Mowing·기타 섹션 항목 칸 폭 120 → 155px (📅 체크가 생긴 뒤 「3갱 진동롤링」 같은 긴 항목명이 잘려 보이던 문제)',
     '⚡ 자재 사용 캘린더 이전달/다음달이 느리던 문제: ① 섹션 정리 기능이 화면 변화를 감지해 끝없이 다시 실행되던 것(초당 30번) 수정 ② 이동할 때마다 일보 전체(수 MB)를 다시 읽던 것을 바뀌었을 때만 읽도록',
     '🐞 자재사용량 탭: 섹션 순서 기능을 넣은 뒤 「자재 사용 캘린더」·「성분별 월순성분량 추이」가 나중에 그려지면서 숨겨진 채로 남던 문제 수정',
     '📌 작성 탭 작업 표: 항목 칸의 📅를 체크하면 그날 그 작업이 자재사용량 탭 「자재 사용 캘린더」에 「📌 작업명」으로 표시 — 캘린더에 「📌 작업」 줄(켜고 끄기·작업별 칩·전체 해제), 날짜를 누르면 작업내용·작업자까지 팝업 · 📅 체크는 그날만(다음날 복사에는 안 따라감)',
