@@ -1047,6 +1047,10 @@ textarea{resize:vertical;min-height:55px;}
 .task-block.mowing .task-name-cell{color:#0C447C;background:#edf5fc;}
 .task-block.work   .task-name-cell{color:#27500A;background:#edf5e5;}
 .task-block.etc    .task-name-cell{color:#444;}
+/* 캘린더 표시 체크 (작업 행 항목 칸) */
+.tk-cal{flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:5px;border:1.3px solid #d6cce8;background:#fff;font-size:11px;cursor:pointer;filter:grayscale(1);opacity:.45;}
+.tk-cal input{display:none;}
+.tk-cal.on{filter:none;opacity:1;border-color:#7b5cc4;background:#f1ecfb;}
 
 /* 작업자 태그 가로 */
 .workers-inline{display:flex;flex-wrap:wrap;align-items:center;gap:4px;padding:4px;min-height:34px;}
@@ -2654,7 +2658,7 @@ function taskFitCols(){
       wW=Math.max(wW,w);
     });
     const cl=(v,[a,b])=>Math.round(Math.min(b,Math.max(a,v)));
-    const cN=cl(wN+44+M,L.name), cD=cl(wD+20+M,L.detail), cE=cl(wE+20+M,L.equip), cW=cl(wW+M,L.workers), cR=cl(wR+20+M,L.remark);
+    const cN=cl(wN+66+M,L.name), cD=cl(wD+20+M,L.detail), cE=cl(wE+20+M,L.equip), cW=cl(wW+M,L.workers), cR=cl(wR+20+M,L.remark);
     const cols=[cN,34,34,34,cD,cE,cW,30,cR], sum=cols.reduce((a,b)=>a+b,0);
     const v=cols.map(x=>x+'px').join(' ');
     if(block.style.getPropertyValue('--tk-cols')!==v){ block.style.setProperty('--tk-cols',v); block.style.setProperty('--tk-minw',sum+'px');
@@ -2691,6 +2695,7 @@ function buildTaskRow(si,ti,task,cls){
         <button onclick="moveTaskRow(${si},${ti},-1)" style="border:none;background:#e8e8e8;border-radius:3px;padding:1px 4px;font-size:9px;cursor:pointer;line-height:1;color:#666;" title="위로">&#9650;</button>
         <button onclick="moveTaskRow(${si},${ti},1)"  style="border:none;background:#e8e8e8;border-radius:3px;padding:1px 4px;font-size:9px;cursor:pointer;line-height:1;color:#666;" title="아래로">&#9660;</button>
       </div>
+      <label class="tk-cal${task.cal?' on':''}" title="자재사용량 탭 「자재 사용 캘린더」에 이 작업을 표시"><input type="checkbox" ${task.cal?'checked':''} onchange="setTask(${si},${ti},'cal',this.checked);this.parentElement.classList.toggle('on',this.checked)">📅</label>
       <input type="text" value="${matEscHtml(task.name)}" title="클릭하여 항목 이름 수정" placeholder="항목이름 기재"
         onchange="renameTaskRow(${si},${ti},this.value)"
         style="flex:1;min-width:0;border:none;background:transparent;font:inherit;color:inherit;font-weight:700;padding:1px 2px;border-radius:3px;cursor:text;"
@@ -7086,6 +7091,7 @@ function copyFormToDate(iso){
   if(typeof calcIrrTotal==='function'){ try{ calcIrrTotal(); }catch(e){} }
   matUseRows=[]; matAreaBlocks=[]; matAreaIdxCounter=0; matItemIdxCounter=0; renderAreaBlocks();
   clearTdrVals();
+  curTasks.forEach(sec=>(sec.tasks||[]).forEach(t=>{ delete t.cal; })); renderTasks();   /* 📅 캘린더 표시는 그날만 */
   curWorkers.forEach(w=>{ w.off=false; w.leave=false; });
   if(typeof _regPlanMarks!=='undefined') _regPlanMarks={iso:'',names:{}};
   renderWorkers(); applyRegPlansToWorkers();
@@ -7389,6 +7395,7 @@ function copyToToday(idx){
   /* 작업내용 복사 */
   if(r.tasks&&r.tasks.length){
     curTasks=JSON.parse(JSON.stringify(r.tasks));
+    curTasks.forEach(sec=>(sec.tasks||[]).forEach(t=>{ delete t.cal; }));   /* 📅 캘린더 표시는 그날만 */
   }else{
     initTasks();
   }
@@ -11338,6 +11345,10 @@ function checkBackupReminder(){
    · 관리자 공지: Firestore shared/notices 문서의 items 배열(모든 기기 실시간 공유). 관리자만 작성·수정·삭제. 항상 맨 위 고정
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
+  {date:'2026-11-28',items:[
+    '🐞 자재사용량 탭: 섹션 순서 기능을 넣은 뒤 「자재 사용 캘린더」·「성분별 월순성분량 추이」가 나중에 그려지면서 숨겨진 채로 남던 문제 수정',
+    '📌 작성 탭 작업 표: 항목 칸의 📅를 체크하면 그날 그 작업이 자재사용량 탭 「자재 사용 캘린더」에 「📌 작업명」으로 표시 — 캘린더에 「📌 작업」 줄(켜고 끄기·작업별 칩·전체 해제), 날짜를 누르면 작업내용·작업자까지 팝업 · 📅 체크는 그날만(다음날 복사에는 안 따라감)',
+  ]},
   {date:'2026-11-26',items:[
     '🔴 작성 탭 저장 안 한 변경 표시: 고치거나 추가하면 「저장하기」 버튼이 빨간색 + 빨간 점, 상단 섹션 칩(기본정보·운영/날씨·작업자 등)에서 바뀐 섹션에 점, 브라우저 탭 제목에 「●」, 저장하면 「✓ 저장됨」 — 원래 값으로 되돌리면 표시가 꺼짐 · 저장 안 한 채 창을 닫거나 새로 고치면 경고',
   ]},
@@ -13127,6 +13138,9 @@ function _matuSecOrder(){ let o=[]; try{ o=JSON.parse(localStorage.getItem(MATU_
   o=o.filter(k=>MATU_SEC_DEFAULT.includes(k)); MATU_SEC_DEFAULT.forEach(k=>{ if(!o.includes(k)) o.push(k); }); return o; }
 function matuSecSync(){
   const box=document.getElementById('matu-secs'); if(!box) return;
+  /* 캘린더·성분 추이처럼 나중에(따로) 그려지는 섹션도 내용이 생기면 바로 보이도록 — 섹션 안 변화를 감지해 다시 정리 */
+  if(!box._mo && window.MutationObserver){ let t=null; box._mo=new MutationObserver(()=>{ clearTimeout(t); t=setTimeout(()=>{ try{ matuSecSync(); }catch(e){} },30); });
+    box._mo.observe(box,{childList:true,subtree:true,attributes:true,attributeFilter:['style']}); }
   _matuSecOrder().forEach(k=>{ const el=box.querySelector(`.matu-sec[data-sec="${k}"]`); if(el) box.appendChild(el); });
   const secs=[...box.querySelectorAll('.matu-sec')];
   secs.forEach(el=>{ const m=el.querySelector('.matu-sec-main'); const off=!m||m.style.display==='none'||!m.innerHTML.trim(); el.classList.toggle('off',off); });
@@ -13146,7 +13160,8 @@ function matuSecMove(key,dir){
 /* renderMatUsePanel이 그린 뒤 섹션 순서·표시 정리 */
 setTimeout(()=>{ if(window._matuSecWrapped||typeof renderMatUsePanel!=='function') return; window._matuSecWrapped=true;
   const _orig=renderMatUsePanel; renderMatUsePanel=function(){ const r=_orig.apply(this,arguments); try{ matuSecSync(); }catch(e){} return r; };
-  try{ matuSecSync(); }catch(e){} },0);
+  try{ matuSecSync(); }catch(e){}
+  },0);
 /* ── 자재사용량 지역 선택: 「기타(단발성)」 펼치기/접기 항목 처리 ── */
 var _matuOneoffOpen=false, _matuAreaPrev='';   /* var: 시작 중 먼저 호출돼도 안전 */
 function matuAreaChange(sel){
@@ -16381,6 +16396,19 @@ let _matuCalShowSand = true;  /* 모래 자재 표시 여부 */
 let _matuCalExcludedAreasFert = {}; /* {지역명: true} → 비료 캘린더에서 제외된 지역 */
 let _matuCalExcludedAreasPest = {}; /* {지역명: true} → 농약 캘린더에서 제외된 지역 */
 let _matuCalExcludedAreasSand = {}; /* {지역명: true} → 모래 캘린더에서 제외된 지역 */
+let _matuCalShowTask = true;  /* 📌 작업(작성 탭에서 📅 체크한 작업) 표시 여부 */
+let _matuCalExcludedTasks = {}; /* {작업명: true} → 캘린더에서 숨긴 작업 */
+/* 작성 탭 작업 표에서 📅 체크한 작업 — 날짜별 [{name, detail, workers}] */
+function _matuCalTasksOf(rec){
+  const out=[]; (rec&&rec.tasks||[]).forEach(sec=>(sec.tasks||[]).forEach(t=>{ if(t&&t.cal&&String(t.name||'').trim()) out.push({name:String(t.name).trim(), detail:String(t.detail||'').trim(), workers:(t.workers||[]).filter(Boolean)}); })); return out;
+}
+function toggleMatuCalTask(enc){ const n=decodeURIComponent(enc); _matuCalExcludedTasks[n]=!_matuCalExcludedTasks[n]; renderMatUseCalendar(); }
+function toggleMatuCalTaskAll(){
+  const names=new Set(); gd().forEach(r=>_matuCalTasksOf(r).forEach(t=>names.add(t.name)));
+  const arr=[...names], allOff=arr.length&&arr.every(n=>_matuCalExcludedTasks[n]);
+  if(allOff) arr.forEach(n=>delete _matuCalExcludedTasks[n]); else arr.forEach(n=>_matuCalExcludedTasks[n]=true);
+  renderMatUseCalendar();
+}
 
 function matuCalExcludedSetFor(kind){
   return kind==='fert' ? _matuCalExcludedAreasFert : kind==='sand' ? _matuCalExcludedAreasSand : _matuCalExcludedAreasPest;
@@ -16389,6 +16417,7 @@ function matuCalExcludedSetFor(kind){
 function toggleMatuCalType(kind){
   if(kind==='fert') _matuCalShowFert = !_matuCalShowFert;
   else if(kind==='sand') _matuCalShowSand = !_matuCalShowSand;
+  else if(kind==='task') _matuCalShowTask = !_matuCalShowTask;
   else _matuCalShowPest = !_matuCalShowPest;
   renderMatUseCalendar();
 }
@@ -16560,6 +16589,12 @@ function renderMatUseCalendar(){
     });
   });
 
+  /* ── 📌 작업: 작성 탭에서 📅 체크한 작업 (처리지역·자재 필터와 무관, 작업 칩으로만 거름) ── */
+  const taskByDate = {}, allTaskNames = new Set(), usedTaskNames = new Set();
+  allRecs.forEach(r=>{ const ts=_matuCalTasksOf(r); if(!ts.length) return; ts.forEach(t=>allTaskNames.add(t.name));
+    const iso=recIsoDate(r.date); if(!iso||!iso.startsWith(monthPrefix)) return;
+    ts.forEach(t=>usedTaskNames.add(t.name)); (taskByDate[iso]=taskByDate[iso]||[]).push(...ts); });
+  const TASK_C='#6a3fb5';
   /* ── 자재명별 고유 색상 (비료: 이름 해시 기반, 같은 자재는 달력 전체에서 항상 같은 색) ── */
   const BRAND_PALETTE = ['#2d6a1e','#8B4513','#185FA5','#c0392b','#7b1fa2','#00838f','#e67e22','#5d4037','#c2185b','#33691e'];
   function brandColor(name){
@@ -16697,7 +16732,11 @@ function renderMatUseCalendar(){
       : `<div style="display:grid;"><div aria-hidden="true" style="grid-area:1/1;visibility:hidden;pointer-events:none;">${linesAll}</div><div style="grid-area:1/1;align-self:start;">${linesShown}</div></div>`;
 
     /* 배경색·클릭 가능 여부는 실제로 "보이는(제외되지 않은)" 항목이 있을 때만 적용 */
-    const visibleItems = items.filter(it=>!it.excluded);
+    const visibleItemsMat = items.filter(it=>!it.excluded);
+    /* 📌 작업 줄 (작업명만, 상세는 팝업) */
+    const dayTasks = (taskByDate[dateStr]||[]).filter(t=>_matuCalShowTask && !_matuCalExcludedTasks[t.name]);
+    const taskLines = dayTasks.length ? `<div style="margin-top:2px;">${[...new Set(dayTasks.map(t=>t.name))].map(n=>`<div style="font-size:9px;line-height:1.4;font-weight:800;color:${TASK_C};white-space:normal;word-break:keep-all;">📌 ${matEscHtml(n)}</div>`).join('')}</div>` : '';
+    const visibleItems = visibleItemsMat.length ? visibleItemsMat : (dayTasks.length ? dayTasks : []);
     const bg = visibleItems.length ? '#f0f8e8' : (dow===0||dow===6 ? '#fbfbfb' : '#fff');
     const wx = wxByDate[dateStr];
     const tp = tempByDate[dateStr];
@@ -16713,6 +16752,7 @@ function renderMatUseCalendar(){
       </div>
       ${wxBadge}
       ${lines}
+      ${taskLines}
     </div>`;
   }
 
@@ -16800,6 +16840,16 @@ function renderMatUseCalendar(){
       </div>
     </div>
     ${areaChipsHtml}
+    ${allTaskNames.size ? (()=>{ const names=[...allTaskNames].sort((a,b)=>a.localeCompare(b,'ko')); const allOff=names.every(n=>_matuCalExcludedTasks[n]);
+      return `<div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:-4px 0 10px;">
+        <label style="display:flex;align-items:center;gap:4px;font-size:11px;font-weight:800;color:${TASK_C};cursor:pointer;flex-shrink:0;min-width:52px;" title="작성 탭 작업 표에서 📅 체크한 작업">
+          <input type="checkbox" ${_matuCalShowTask?'checked':''} onchange="toggleMatuCalType('task')" style="cursor:pointer;width:14px;height:14px;">📌 작업
+        </label>
+        <button onclick="toggleMatuCalTaskAll()" style="font-size:9.5px;font-weight:700;padding:1px 8px;border-radius:100px;cursor:pointer;border:1.3px dashed #b9a5e3;background:#fff;color:${TASK_C};flex-shrink:0;">${allOff?'전체 표시':'전체 해제'}</button>
+        <div style="display:flex;flex-wrap:wrap;gap:5px;opacity:${_matuCalShowTask?1:0.35};">${names.map(n=>{ const ex=!!_matuCalExcludedTasks[n], used=usedTaskNames.has(n);
+          return `<button onclick="toggleMatuCalTask('${encodeURIComponent(n).replace(/'/g,'%27')}')" title="${used?'이번 달 있음 · ':'이번 달 없음 · '}클릭하면 ${ex?'다시 표시':'숨김'}"
+            style="font-size:9.5px;font-weight:${used&&!ex?700:500};padding:1px 9px;border-radius:100px;cursor:pointer;border:1.3px solid ${used?TASK_C:'#e4e4e4'};background:${used?'#f1ecfb':'#fff'};color:${used?TASK_C:'#c2c2c2'};opacity:${ex?(used?0.45:0.6):1};text-decoration:${ex?'line-through':'none'};">${matEscHtml(n)}</button>`; }).join('')}</div>
+      </div>`; })() : ''}
     <div class="matu-cal-hint">↔ 달력을 좌우로 밀어서 보세요</div>
     <!-- 달력은 이 상자 안에서만 좌우 스크롤 (모바일에서 화면 밖으로 밀려 나가지 않도록) -->
     <div class="matu-cal-scroll" style="overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%;">
@@ -16906,6 +16956,8 @@ function showMatUseDayDetail(dateStr){
     }
   });
 
+  /* 📌 작업 (작성 탭에서 📅 체크한 작업) */
+  const dayTasks = _matuCalShowTask ? _matuCalTasksOf(rec).filter(t=>!_matuCalExcludedTasks[t.name]) : [];
   const [y,m,d] = dateStr.split('-');
   const dow = ['일','월','화','수','목','금','토'][new Date(dateStr+'T00:00:00').getDay()];
   const fertTotal = rows.filter(r=>r.kind==='fert').reduce((s,r)=>s+(r.amount||0),0);
@@ -16937,7 +16989,7 @@ function showMatUseDayDetail(dateStr){
       </td>
       <td style="padding:5px 8px;font-size:11.5px;font-weight:600;color:${r.content?'#555':'#ccc'};text-align:center;border:1px solid #eee;white-space:nowrap;">${r.content||'-'}</td>
       <td style="padding:5px 8px;font-size:12px;font-weight:700;color:${r.amount!=null?'#2d6a1e':'#ccc'};text-align:right;border:1px solid #eee;white-space:nowrap;">${r.amount!=null?`${fmtAmt(r.amount)} ${r.unit}`:'미기재'}</td>
-    </tr>`).join('') : `<tr><td colspan="5" style="text-align:center;padding:24px;color:#bbb;font-size:13px;">해당 조건의 사용 기록이 없습니다</td></tr>`;
+    </tr>`).join('') : `<tr><td colspan="5" style="text-align:center;padding:${dayTasks.length?10:24}px;color:#bbb;font-size:${dayTasks.length?11.5:13}px;">${dayTasks.length?'자재 사용 기록 없음':'해당 조건의 사용 기록이 없습니다'}</td></tr>`;
 
   wrap.innerHTML = `
     <div style="background:#fff;border-radius:14px;width:100%;max-width:700px;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.3);overflow:hidden;">
@@ -16979,6 +17031,16 @@ function showMatUseDayDetail(dateStr){
           </tr></thead>
           <tbody>${tbody}</tbody>
         </table>
+        ${dayTasks.length?`
+        <div style="margin-top:12px;">
+          <div style="font-size:11px;font-weight:700;color:#6a3fb5;margin-bottom:5px;">📌 작업</div>
+          ${dayTasks.map(t=>`
+            <div style="padding:7px 10px;background:#f6f2fd;border:1px solid #e3d9f6;border-radius:7px;margin-bottom:5px;">
+              <div style="font-size:12px;font-weight:800;color:#6a3fb5;">${matEscHtml(t.name)}</div>
+              ${t.detail?`<div style="font-size:11.5px;color:#444;line-height:1.45;white-space:pre-wrap;word-break:break-word;margin-top:2px;">${matEscHtml(t.detail)}</div>`:''}
+              ${t.workers.length?`<div style="font-size:10.5px;color:#7a6aa0;margin-top:3px;">👷 ${t.workers.map(matEscHtml).join(', ')}</div>`:''}
+            </div>`).join('')}
+        </div>`:''}
         ${memoEntries.length?`
         <div style="margin-top:12px;">
           <div style="font-size:11px;font-weight:700;color:#2d6a1e;margin-bottom:5px;">📝 처리지역 메모</div>
