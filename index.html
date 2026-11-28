@@ -11355,6 +11355,7 @@ function checkBackupReminder(){
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
   {date:'2026-11-28',items:[
+    '📂 작성 탭 자재 사용 처리지역 선택 목록 맨 아래에 「기타(단발성) n곳」 — 누르면 목록에 없는 지역(사용 횟수·최근 날짜 표시)을 골라 이 일보에 추가 (목록에는 저장 안 함)',
     '↔ 작업 표 Mowing·기타 섹션 항목 칸 폭 120 → 155px (📅 체크가 생긴 뒤 「3갱 진동롤링」 같은 긴 항목명이 잘려 보이던 문제)',
     '⚡ 자재 사용 캘린더 이전달/다음달이 느리던 문제: ① 섹션 정리 기능이 화면 변화를 감지해 끝없이 다시 실행되던 것(초당 30번) 수정 ② 이동할 때마다 일보 전체(수 MB)를 다시 읽던 것을 바뀌었을 때만 읽도록',
     '🐞 자재사용량 탭: 섹션 순서 기능을 넣은 뒤 「자재 사용 캘린더」·「성분별 월순성분량 추이」가 나중에 그려지면서 숨겨진 채로 남던 문제 수정',
@@ -13559,8 +13560,16 @@ function renderAreaDdList(filter){
   const trimmed  = inputVal.trim();
   const showNew  = trimmed && !pool.some(n=>n===trimmed);
 
+  /* 기타(단발성): 기록에는 있지만 목록에 없는 지역 → 맨 아래 한 줄, 누르면 골라서 추가 */
+  const oneoff=_areaOneoffList(), oneMatch=f?oneoff.filter(o=>o.name.toLowerCase().includes(f)):oneoff;
+  const oneRow=oneoff.length?`<div onclick="openAreaOneoffPicker()"
+      style="display:flex;align-items:center;gap:8px;padding:9px 14px;cursor:pointer;background:#fffaf2;border-top:1px dashed #e0c9a8;"
+      onmouseenter="this.style.background='#fff1dc'" onmouseleave="this.style.background='#fffaf2'">
+      <span style="font-size:13px;">📂</span>
+      <span style="font-size:12px;font-weight:800;color:#a66b00;flex:1;">기타(단발성) ${oneoff.length}곳${f?` <span style="font-weight:500;color:#c49a5a;">· 「${matEscHtml(filter.trim())}」 ${oneMatch.length}곳</span>`:''}</span>
+      <span style="font-size:12px;color:#c49a5a;">›</span></div>`:'';
   if(filtered.length===0 && !showNew){
-    list.innerHTML = '<div style="padding:12px;text-align:center;font-size:11px;color:#bbb;">일치하는 지역 없음</div>';
+    list.innerHTML = '<div style="padding:12px;text-align:center;font-size:11px;color:#bbb;">일치하는 지역 없음</div>'+oneRow;
     return;
   }
 
@@ -13589,8 +13598,45 @@ function renderAreaDdList(filter){
           title="목록에서 제거" style="padding:1px 5px;border:none;background:none;color:#ddd;font-size:12px;cursor:pointer;font-weight:700;"
           onmouseenter="this.style.color='#e74c3c'" onmouseleave="this.style.color='#ddd'">×</button>` : ''}
       </div>`;
-    }).join('');
+    }).join('') + oneRow;
 }
+/* 기록에 있지만 처리지역 목록에 없는 지역 (사용 횟수·마지막 날짜) */
+function _areaOneoffList(){
+  const pre=new Set(getAreaPresets()), m=new Map();
+  (typeof gdRO==='function'?gdRO():gd()).forEach(r=>{ const iso=recIsoDate(r.date)||''; (r.matUseRows||[]).forEach(b=>{ const n=String(b.areaName||'').trim(); if(!n||pre.has(n)) return;
+    const o=m.get(n)||{name:n,cnt:0,last:''}; o.cnt++; if(iso>o.last) o.last=iso; m.set(n,o); }); });
+  return [...m.values()].sort((a,b)=>b.last.localeCompare(a.last)||a.name.localeCompare(b.name,'ko'));
+}
+/* 「기타(단발성)」 선택 팝업 — 누르면 이 일보에 처리지역으로 추가 (목록에는 저장 안 함) */
+function openAreaOneoffPicker(){
+  closeAreaDropdown && closeAreaDropdown();
+  document.getElementById('area-oneoff-modal')?.remove();
+  const w=document.createElement('div'); w.id='area-oneoff-modal';
+  w.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10400;display:flex;align-items:center;justify-content:center;padding:14px;';
+  w.innerHTML=`<div style="background:#fff;border-radius:14px;width:100%;max-width:420px;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.3);overflow:hidden;">
+    <div style="background:linear-gradient(135deg,#B8690A,#e0962f);color:#fff;padding:12px 16px;display:flex;align-items:center;gap:8px;">
+      <span style="font-size:14px;font-weight:800;flex:1;">📂 기타(단발성) 처리지역</span>
+      <button onclick="document.getElementById('area-oneoff-modal').remove()" style="border:none;background:rgba(255,255,255,.25);color:#fff;border-radius:7px;width:30px;height:30px;font-size:16px;cursor:pointer;">✕</button></div>
+    <div style="padding:10px 14px 4px;"><input id="area-oneoff-q" placeholder="🔍 지역 이름 검색" oninput="_areaOneoffRender()" style="width:100%;box-sizing:border-box;padding:7px 10px;font-size:13px;border:1.5px solid #e0c9a8;border-radius:8px;"></div>
+    <div style="font-size:10.5px;color:#999;padding:2px 16px 6px;">누르면 이 일보에 처리지역으로 추가됩니다 (처리지역 목록에는 저장되지 않음)</div>
+    <div id="area-oneoff-list" style="flex:1;overflow:auto;padding:0 8px 10px;"></div></div>`;
+  w.onclick=e=>{ if(e.target===w) w.remove(); };
+  document.body.appendChild(w); _areaOneoffRender();
+  setTimeout(()=>{ const q=document.getElementById('area-oneoff-q'); if(q&&window.innerWidth>700) q.focus(); },30);
+}
+function _areaOneoffRender(){
+  const box=document.getElementById('area-oneoff-list'); if(!box) return;
+  const q=(document.getElementById('area-oneoff-q')?.value||'').trim().toLowerCase();
+  const used=new Set(matAreaBlocks.map(b=>b.areaName));
+  const list=_areaOneoffList().filter(o=>!q||o.name.toLowerCase().includes(q));
+  box.innerHTML=list.length?list.map(o=>{ const u=used.has(o.name), enc=encodeURIComponent(o.name).replace(/'/g,'%27');
+    return `<div ${u?'':`onclick="pickAreaOneoff('${enc}')"`} style="display:flex;align-items:center;gap:8px;padding:9px 10px;border-bottom:1px solid #f3eadc;cursor:${u?'default':'pointer'};${u?'opacity:.55;':''}" ${u?'':`onmouseenter="this.style.background='#fff6e8'" onmouseleave="this.style.background=''"`}>
+      <span style="font-size:13px;">${u?'✅':'📍'}</span>
+      <span style="flex:1;font-size:13px;font-weight:700;color:#5a4a2a;">${matEscHtml(o.name)}</span>
+      <span style="font-size:10.5px;color:#a89a80;white-space:nowrap;">${u?'추가됨':`${o.cnt}회 · 최근 ${o.last?o.last.slice(2).replace(/-/g,'/'):'-'}`}</span></div>`; }).join('')
+    :'<div style="padding:20px;text-align:center;color:#bbb;font-size:12px;">해당하는 지역이 없습니다</div>';
+}
+function pickAreaOneoff(enc){ const n=decodeURIComponent(enc); document.getElementById('area-oneoff-modal')?.remove(); addAreaByName(n,false); }
 
 function addAreaByName(name, saveToPreset){
   if(saveToPreset) saveAreaPreset(name);
