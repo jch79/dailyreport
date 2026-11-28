@@ -2381,6 +2381,15 @@ const TPRESET_DEFAULT={
 function getTaskPresets(cls){try{const s=localStorage.getItem(TPRESET_KEY);const d=s?JSON.parse(s):TPRESET_DEFAULT;return d[cls]||[];}catch(e){return TPRESET_DEFAULT[cls]||[];}}
 function saveTaskPresets(cls,arr){try{const s=localStorage.getItem(TPRESET_KEY);const d=s?JSON.parse(s):{...TPRESET_DEFAULT};d[cls]=arr;localStorage.setItem(TPRESET_KEY,JSON.stringify(d));if(typeof fbSaveSharedSettings==='function') setTimeout(fbSaveSharedSettings,300);}catch(e){}} /* 개인별 단가 저장 키 */
 const gd=()=>{try{return JSON.parse(localStorage.getItem(SK)||'[]');}catch(e){return[];}};
+/* 읽기 전용 일보 목록 (캘린더처럼 자주 다시 그리는 곳용): 일보 저장소가 바뀌지 않았으면 다시 해석하지 않음.
+   gd()는 매번 전체(수 MB)를 JSON 해석해서 휴대폰에서 이전달/다음달 이동이 느렸음. 결과는 고치지 말 것(읽기만) */
+var _gdRoVer=0, _gdRoCache=null, _gdRoCacheVer=-1;
+(function(){ try{ const o=Storage.prototype.setItem, r=Storage.prototype.removeItem, c=Storage.prototype.clear;
+  Storage.prototype.setItem=function(k,v){ if(k===SK) _gdRoVer++; return o.apply(this,arguments); };
+  Storage.prototype.removeItem=function(k){ if(k===SK) _gdRoVer++; return r.apply(this,arguments); };
+  Storage.prototype.clear=function(){ _gdRoVer++; return c.apply(this,arguments); };
+  window.addEventListener('storage',e=>{ if(!e.key||e.key===SK) _gdRoVer++; }); }catch(e){} })();
+function gdRO(){ if(_gdRoCache&&_gdRoCacheVer===_gdRoVer) return _gdRoCache; _gdRoCache=gd(); _gdRoCacheVer=_gdRoVer; return _gdRoCache; }
 const sd=d=>localStorage.setItem(SK,JSON.stringify(d));
 /* "YY년 MM월 DD일(요일)" 형식의 기록 날짜 문자열을 ISO(YYYY-MM-DD)로 변환 */
 function recIsoDate(dateStr){
@@ -11346,6 +11355,7 @@ function checkBackupReminder(){
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
   {date:'2026-11-28',items:[
+    '⚡ 자재 사용 캘린더 이전달/다음달이 느리던 문제: ① 섹션 정리 기능이 화면 변화를 감지해 끝없이 다시 실행되던 것(초당 30번) 수정 ② 이동할 때마다 일보 전체(수 MB)를 다시 읽던 것을 바뀌었을 때만 읽도록',
     '🐞 자재사용량 탭: 섹션 순서 기능을 넣은 뒤 「자재 사용 캘린더」·「성분별 월순성분량 추이」가 나중에 그려지면서 숨겨진 채로 남던 문제 수정',
     '📌 작성 탭 작업 표: 항목 칸의 📅를 체크하면 그날 그 작업이 자재사용량 탭 「자재 사용 캘린더」에 「📌 작업명」으로 표시 — 캘린더에 「📌 작업」 줄(켜고 끄기·작업별 칩·전체 해제), 날짜를 누르면 작업내용·작업자까지 팝업 · 📅 체크는 그날만(다음날 복사에는 안 따라감)',
   ]},
@@ -13141,7 +13151,9 @@ function matuSecSync(){
   /* 캘린더·성분 추이처럼 나중에(따로) 그려지는 섹션도 내용이 생기면 바로 보이도록 — 섹션 안 변화를 감지해 다시 정리 */
   if(!box._mo && window.MutationObserver){ let t=null; box._mo=new MutationObserver(()=>{ clearTimeout(t); t=setTimeout(()=>{ try{ matuSecSync(); }catch(e){} },30); });
     box._mo.observe(box,{childList:true,subtree:true,attributes:true,attributeFilter:['style']}); }
-  _matuSecOrder().forEach(k=>{ const el=box.querySelector(`.matu-sec[data-sec="${k}"]`); if(el) box.appendChild(el); });
+  /* 순서가 실제로 다를 때만 옮김 — 매번 옮기면 변화 감지가 다시 이 함수를 불러 끝없이 반복됨(화면이 느려졌던 원인) */
+  const want=_matuSecOrder(), cur=[...box.children].filter(el=>el.classList&&el.classList.contains('matu-sec')).map(el=>el.dataset.sec);
+  if(want.filter(k=>cur.includes(k)).join(',')!==cur.join(',')) want.forEach(k=>{ const el=box.querySelector(`.matu-sec[data-sec="${k}"]`); if(el) box.appendChild(el); });
   const secs=[...box.querySelectorAll('.matu-sec')];
   secs.forEach(el=>{ const m=el.querySelector('.matu-sec-main'); const off=!m||m.style.display==='none'||!m.innerHTML.trim(); el.classList.toggle('off',off); });
   const vis=secs.filter(el=>!el.classList.contains('off'));
@@ -16404,7 +16416,7 @@ function _matuCalTasksOf(rec){
 }
 function toggleMatuCalTask(enc){ const n=decodeURIComponent(enc); _matuCalExcludedTasks[n]=!_matuCalExcludedTasks[n]; renderMatUseCalendar(); }
 function toggleMatuCalTaskAll(){
-  const names=new Set(); gd().forEach(r=>_matuCalTasksOf(r).forEach(t=>names.add(t.name)));
+  const names=new Set(); gdRO().forEach(r=>_matuCalTasksOf(r).forEach(t=>names.add(t.name)));
   const arr=[...names], allOff=arr.length&&arr.every(n=>_matuCalExcludedTasks[n]);
   if(allOff) arr.forEach(n=>delete _matuCalExcludedTasks[n]); else arr.forEach(n=>_matuCalExcludedTasks[n]=true);
   renderMatUseCalendar();
@@ -16436,7 +16448,7 @@ function toggleMatuCalArea(kind, area){
 function toggleMatuCalAreaAll(kind){
   const set = matuCalExcludedSetFor(kind);
   const areasSet = new Set();
-  gd().forEach(r=>(r.matUseRows||[]).forEach(b=>{ if(b.areaName) areasSet.add(String(b.areaName).trim()); }));
+  gdRO().forEach(r=>(r.matUseRows||[]).forEach(b=>{ if(b.areaName) areasSet.add(String(b.areaName).trim()); }));
   const areas = getOrderedAreas([...areasSet]);
   const allOff = areas.length && areas.every(a=>set[a]);
   if(allOff){
@@ -16460,7 +16472,7 @@ function renderMatUseCalendar(){
 
   const selArea    = document.getElementById('matu-area')?.value || '';
   const selYearSel = document.getElementById('matu-year')?.value;
-  const allRecs    = gd();
+  const allRecs    = gdRO();   /* 읽기 전용 캐시 — 이전달/다음달 이동 때 수 MB를 매번 다시 해석하지 않음 */
 
   /* 상단 연도 선택값은 "26년 " 형태(2자리 연도 포함 문자열)일 수 있으므로,
      recIsoDate와 동일한 규칙(50 미만은 2000년대)으로 실제 4자리 연도 숫자를 뽑아낸다 */
