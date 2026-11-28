@@ -251,6 +251,7 @@ async function fbFullSyncFromCloud(){
       if(sh.matColOrder) localStorage.setItem('mat_col_order_v1', JSON.stringify(sh.matColOrder));
       if(sh.regNameOrder) localStorage.setItem('reg_name_order_v1', JSON.stringify(sh.regNameOrder));
       if(sh.regLeavePlan) localStorage.setItem('golf_reg_leave_plan_v1', JSON.stringify(sh.regLeavePlan));
+      if(sh.regRetired) localStorage.setItem('golf_reg_retired_v1', JSON.stringify(sh.regRetired));
       if(sh.weatherManual) localStorage.setItem('golf_weather_stat_manual_v1', JSON.stringify(sh.weatherManual));
       if(sh.matuRef) localStorage.setItem('golf_matu_ref_v1', JSON.stringify(sh.matuRef));
       if(Array.isArray(sh.renameLog) && typeof _rnMergeLog==='function') _rnMergeLog(sh.renameLog);
@@ -314,6 +315,7 @@ async function fbSaveSharedSettings(){
     const mco=localStorage.getItem('mat_col_order_v1'); if(mco) settings.matColOrder=JSON.parse(mco);
     const rno=localStorage.getItem('reg_name_order_v1'); if(rno) settings.regNameOrder=JSON.parse(rno);
     const rlp=localStorage.getItem('golf_reg_leave_plan_v1'); if(rlp) settings.regLeavePlan=JSON.parse(rlp);
+    const rrt=localStorage.getItem('golf_reg_retired_v1'); if(rrt) settings.regRetired=JSON.parse(rrt);
     const wm=localStorage.getItem('golf_weather_stat_manual_v1'); if(wm) settings.weatherManual=JSON.parse(wm);
     const mrf=localStorage.getItem('golf_matu_ref_v1'); if(mrf) settings.matuRef=JSON.parse(mrf);
     settings._updatedAt = firebase.firestore.FieldValue.serverTimestamp();
@@ -8045,7 +8047,7 @@ function renderStats(){
     filtered.forEach(r=>(r.workers||[]).filter(w=>w.type==='정규직').forEach(w=>nameSet.add(w.name)));
     /* 아직 기록이 없는 달(앞으로의 달)도 계획이 있는 직원은 표시 */
     if(_days.length){ const d0=_days[0], d1=_days[_days.length-1]; Object.keys(getRegPlans()).forEach(k=>{ const [nm,dt]=k.split('|'); if(dt>=d0&&dt<=d1) nameSet.add(nm); }); }
-    const names=getOrderedRegNames([...nameSet]);
+    const names=getOrderedRegNames([...nameSet].filter(n=>!regHiddenRetired(n)));   /* 퇴사자: 퇴사한 달까지만, 「전체」에서는 제외 */
     if(!names.length){matEl.innerHTML='<div style="font-size:11px;color:#aaa;padding:8px 0;">정규직 데이터 없음</div>';return;}
     const days=_days;
     if(!days.length){matEl.innerHTML='<div style="font-size:11px;color:#aaa;padding:8px 0;">기간을 선택하세요</div>';return;}
@@ -8247,7 +8249,7 @@ function renderStats(){
   const allWorkers=Object.values(workerMap);
 
   /* 타입별 분리 */
-  const regW=allWorkers.filter(w=>w.type==='정규직').sort((a,b)=>b.days-a.days);
+  const regW=allWorkers.filter(w=>w.type==='정규직'&&!regHiddenRetired(w.name)).sort((a,b)=>b.days-a.days);
   const dailyW=allWorkers.filter(w=>w.type==='일용').sort((a,b)=>b.days-a.days);
   const constW=allWorkers.filter(w=>w.type==='공사').sort((a,b)=>b.days-a.days);
 
@@ -11359,6 +11361,7 @@ function checkBackupReminder(){
    · 앱 업데이트 내역: 아래 APP_CHANGELOG에 수정 사항을 간단히 메모 (새 기능을 넣을 때마다 맨 위에 추가) */
 const APP_CHANGELOG=[
   {date:'2026-11-28',items:[
+    '👋 정규직 이름 표시 순서 편집: 이름마다 「퇴사」 — 퇴사일(기본값: 마지막 근무 날짜)을 정하면 기록은 그대로 두고, 월별 통계는 퇴사한 달까지만·「전체」 기간 통계에서는 바로 빠짐, 작업자 기본 목록에서 빠지고 퇴사일 이후 계획 정리(확인 후) · 「퇴사자」 묶음에서 「복귀」로 되돌리기',
     '🐞 11월 근무현황에 「안치환」이 다시 보이던 문제: 11월 예상표에 직급 없는 예전 이름 「안치환」이 남아 있어 계획을 다시 불러올 때 새 이름과 따로 등록됐음 — 예상표 이름 수정, 예상표 붙여넣기에서 바꾼 이름은 새 이름으로 연결, 남아 있는 「안치환」 계획은 「안지환 주임」으로 자동 정리',
     '📋 12월 휴무·연차 예상표 추가 — 통계 → 휴무·연차 계획 일괄 입력에서 적용 월을 2026-12로 두면 자동으로 채워짐 (허문희 12/1 「반」은 계획에 반차가 없어 제외)',
     '📂 작성 탭 자재 사용 처리지역 선택 목록 맨 아래에 「기타(단발성) n곳」 — 누르면 목록에 없는 지역(사용 횟수·최근 날짜 표시)을 골라 이 일보에 추가 (목록에는 저장 안 함)',
@@ -11693,7 +11696,7 @@ function exportDataFile(){
   /* 모든 localStorage 키 수집 */
   const allKeys=[SK,PK,RK,CNK,RATE_KEY,DSK,WCK,LOC_KEY,IRR_ZONES_KEY,MAT_PEST_KEY,MAT_FERT_KEY,MAT_SAND_KEY,MAT_AREA_PRESET_KEY,
     TREATAREA_PRESET_KEY,TANKVOL_PRESET_KEY,MAT_COL_ORDER_KEY,
-    TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY,MATU_REF_KEY,DIL_KEY,RENAME_LOG_KEY,MATU_SEC_ORDER_KEY,TDR_ZONE_LABEL_KEY,GP_TARGET_KEY,REG_NAME_ORDER_KEY,WSK,NOTICE_CACHE_KEY,REG_PLAN_KEY];
+    TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY,MATU_REF_KEY,DIL_KEY,RENAME_LOG_KEY,MATU_SEC_ORDER_KEY,REG_RETIRED_KEY,TDR_ZONE_LABEL_KEY,GP_TARGET_KEY,REG_NAME_ORDER_KEY,WSK,NOTICE_CACHE_KEY,REG_PLAN_KEY];
   const exportObj={};
   allKeys.forEach(k=>{
     const v=localStorage.getItem(k);
@@ -11850,7 +11853,7 @@ function importDataFile(event){
       /* 기존 관련 키 지우기 */
       [SK,PK,RK,CNK,RATE_KEY,DSK,WCK,LOC_KEY,IRR_ZONES_KEY,MAT_PEST_KEY,MAT_FERT_KEY,MAT_SAND_KEY,MAT_AREA_PRESET_KEY,
         TREATAREA_PRESET_KEY,TANKVOL_PRESET_KEY,MAT_COL_ORDER_KEY,
-        TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY,MATU_REF_KEY,DIL_KEY,RENAME_LOG_KEY,MATU_SEC_ORDER_KEY,TDR_ZONE_LABEL_KEY,GP_TARGET_KEY,REG_NAME_ORDER_KEY,WSK,NOTICE_CACHE_KEY,REG_PLAN_KEY].forEach(k=>localStorage.removeItem(k));
+        TPRESET_KEY,YEGO_KEY,STATS_ORDER_KEY,WRITE_SEC_ORDER_KEY,MAT_USE_KEY,ELAPSED_KEY,REG_LEAVE_META_KEY,NPK_CARDS_KEY,MATU_REF_KEY,DIL_KEY,RENAME_LOG_KEY,MATU_SEC_ORDER_KEY,REG_RETIRED_KEY,TDR_ZONE_LABEL_KEY,GP_TARGET_KEY,REG_NAME_ORDER_KEY,WSK,NOTICE_CACHE_KEY,REG_PLAN_KEY].forEach(k=>localStorage.removeItem(k));
 
       /* 새 데이터 적재 */
       importedKeys.forEach(k=>{
@@ -13258,6 +13261,38 @@ function saveRegNameOrder(arr){
   localStorage.setItem(REG_NAME_ORDER_KEY, JSON.stringify(arr));
   if(typeof fbSaveSharedSettings==='function') setTimeout(fbSaveSharedSettings,300);
 }
+/* ══ 정규직 퇴사 처리 (기록은 그대로) ══
+   {이름: 'YYYY-MM-DD'} — 월별 통계는 퇴사한 달까지만, 「전체」(여러 달) 통계에서는 바로 빠짐.
+   이름 순서 목록에서는 「퇴사자」 묶음으로, 작업자 기본 목록에서는 빠짐 */
+const REG_RETIRED_KEY='golf_reg_retired_v1';
+function getRegRetired(){ try{ return JSON.parse(localStorage.getItem(REG_RETIRED_KEY)||'{}')||{}; }catch(e){ return {}; } }
+function saveRegRetired(o){ localStorage.setItem(REG_RETIRED_KEY,JSON.stringify(o)); if(typeof fbSaveSharedSettings==='function') setTimeout(fbSaveSharedSettings,300); }
+/* 통계에서 숨길지: 선택 월이 퇴사한 달 이후이거나 「전체」 기간이면 숨김 */
+function regHiddenRetired(name,ym){
+  const d=getRegRetired()[name]; if(!d) return false;
+  if(ym===undefined){ const el=document.getElementById('stats-month'); ym=el?el.value:''; }
+  return !ym || ym>String(d).slice(0,7);
+}
+function _regLastWorkDate(name){ let last=''; gd().forEach(r=>{ if((r.workers||[]).some(w=>w.type==='정규직'&&w.name===name)){ const iso=recIsoDate(r.date)||''; if(iso>last) last=iso; } }); return last; }
+async function retireRegWorker(enc){
+  const name=decodeURIComponent(enc);
+  const last=_regLastWorkDate(name);
+  const d=prompt(`「${name}」 퇴사일 (YYYY-MM-DD)\n마지막 근무 기록: ${last||'없음'}\n\n· 기록(일보·연차)은 그대로 남습니다\n· 월별 통계는 퇴사한 달까지만, 「전체」 기간 통계에서는 바로 빠집니다\n· 작업자 기본 목록에서 빠집니다`, last||new Date().toISOString().slice(0,10));
+  if(d===null) return;
+  const dd=String(d).trim(); if(!/^\d{4}-\d{2}-\d{2}$/.test(dd)){ showToast('날짜 형식은 2026-05-31처럼 넣어 주세요'); return; }
+  const o=getRegRetired(); o[name]=dd; saveRegRetired(o);
+  /* 작업자 기본 목록에서 제외 */
+  try{ const pr=JSON.parse(localStorage.getItem('golf_presets_v7')||'[]'); const np=pr.filter(w=>!(w&&w.name===name&&(w.type==='정규직'||!w.type))); if(np.length!==pr.length){ localStorage.setItem('golf_presets_v7',JSON.stringify(np)); try{ renderPresets(); }catch(e){} } }catch(e){}
+  /* 퇴사일 이후 휴무·연차 계획 정리 */
+  const P=getRegPlans(), later=Object.keys(P).filter(k=>{ const [n,dt]=k.split('|'); return n===name&&dt>dd; });
+  if(later.length && confirm(`퇴사일 이후 휴무·연차 계획 ${later.length}건도 지울까요?`)){ later.forEach(k=>delete P[k]); localStorage.setItem('golf_reg_leave_plan_v1',JSON.stringify(P)); }
+  if(typeof fbSaveSharedSettings==='function') setTimeout(fbSaveSharedSettings,400);
+  renderRegNameOrderList(); showToast(`「${name}」 퇴사 처리 (${dd})`);
+}
+function unretireRegWorker(enc){
+  const name=decodeURIComponent(enc); if(!confirm(`「${name}」 퇴사 처리를 취소할까요?\n(작업자 기본 목록에는 필요하면 다시 추가해 주세요)`)) return;
+  const o=getRegRetired(); delete o[name]; saveRegRetired(o); renderRegNameOrderList(); showToast(`「${name}」 복귀`);
+}
 function getOrderedRegNames(nameList){
   const order = getRegNameOrder();
   const set = new Set(nameList);
@@ -13297,14 +13332,27 @@ function openRegNameOrderEditor(){
 function renderRegNameOrderList(){
   const listEl = document.getElementById('reg-name-order-list');
   if(!listEl) return;
-  const order = getRegNameOrder();
+  const RET = getRegRetired();
+  const fullOrder = getRegNameOrder();
+  const order = fullOrder.filter(n=>!RET[n]);   /* 재직자만 순서 편집 (퇴사자는 아래 묶음) */
+  window._regOrderView = order;
   listEl.innerHTML = order.map((name,i)=>`
     <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;margin-bottom:5px;background:#f3f9ff;border:1px solid #cfe4f8;border-radius:8px;">
       <span style="flex:1;font-size:12.5px;font-weight:700;color:#0C447C;">${name}</span>
       ${_fbRole==='admin'||!_fbUser?`<button onclick="openRenameWorker('${String(name).replace(/'/g,"\\'")}')" title="이름 바꾸기 (모든 기록·계획·설정에 반영)" style="border:1.3px solid #c9a227;background:#fffbea;color:#7B5B00;border-radius:6px;height:26px;padding:0 7px;font-size:11px;font-weight:700;cursor:pointer;">✏️ 이름</button>`:''}
+      ${_fbRole==='admin'||_fbRole==='member'||!_fbUser?`<button onclick="retireRegWorker('${encodeURIComponent(name).replace(/'/g,'%27')}')" title="퇴사 처리 — 기록은 그대로, 퇴사 이후 통계·작업자 목록에서 빠짐" style="border:1.3px solid #e0b4ae;background:#fff6f5;color:#c0392b;border-radius:6px;padding:0 7px;height:26px;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0;">퇴사</button>`:''}
       <button onclick="moveRegNameOrderItem(${i},-1)" ${i===0?'disabled':''} style="border:1.3px solid #85B7EB;background:#fff;color:#185FA5;border-radius:6px;width:26px;height:26px;font-size:12px;cursor:pointer;${i===0?'opacity:.3;cursor:default;':''}">▲</button>
       <button onclick="moveRegNameOrderItem(${i},1)" ${i===order.length-1?'disabled':''} style="border:1.3px solid #85B7EB;background:#fff;color:#185FA5;border-radius:6px;width:26px;height:26px;font-size:12px;cursor:pointer;${i===order.length-1?'opacity:.3;cursor:default;':''}">▼</button>
     </div>`).join('') || `<div style="text-align:center;padding:20px;color:#bbb;font-size:12px;">등록된 정규직 이름이 없습니다</div>`;
+  const retired = Object.keys(RET).sort((a,b)=>String(RET[b]).localeCompare(String(RET[a])));
+  if(retired.length){
+    listEl.innerHTML += `<details style="margin-top:10px;border:1px dashed #e0b4ae;border-radius:9px;background:#fffafa;">
+      <summary style="padding:8px 10px;font-size:12px;font-weight:800;color:#a5281b;cursor:pointer;">👋 퇴사자 ${retired.length}명 <span style="font-weight:500;color:#999;font-size:11px;">— 기록은 보존, 퇴사 이후 통계에서 빠짐</span></summary>
+      <div style="padding:2px 10px 8px;">${retired.map(n=>`<div style="display:flex;align-items:center;gap:8px;padding:6px 2px;border-bottom:1px solid #f6e3e0;">
+        <span style="flex:1;font-size:12.5px;color:#777;">${matEscHtml(n)} <span style="font-size:10.5px;color:#b98;">· ${String(RET[n]).slice(2).replace(/-/g,'.')} 퇴사</span></span>
+        ${_fbRole==='admin'||_fbRole==='member'||!_fbUser?`<button onclick="unretireRegWorker('${encodeURIComponent(n).replace(/'/g,'%27')}')" style="border:1.3px solid #9cc6ee;background:#fff;color:#185FA5;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;cursor:pointer;">복귀</button>`:''}
+      </div>`).join('')}</div></details>`;
+  }
 }
 /* ══════════════════════════════════════════════════════
    직원 이름 바꾸기 (예: 안치환 주임 → 안지환 주임) — 관리자
@@ -13326,7 +13374,7 @@ function _rnDeep(v,oF,nF){
   if(v&&typeof v==='object'){ const o={}; Object.keys(v).forEach(k=>{ let nk=k; if(k===oF) nk=nF; else if(k.startsWith(oF+'|')) nk=nF+k.slice(oF.length); o[nk]=_rnDeep(v[k],oF,nF); }); return o; }
   return v;
 }
-const _RN_KEYS=['golf_presets_v7','golf_reg_leave_meta_v1','reg_name_order_v1','golf_reg_leave_plan_v1','golf_worker_rates_v1'];
+const _RN_KEYS=['golf_presets_v7','golf_reg_leave_meta_v1','reg_name_order_v1','golf_reg_leave_plan_v1','golf_worker_rates_v1','golf_reg_retired_v1'];
 /* ── 이름 변경 기록: 바꾼 이름(예전→새)을 남겨 두고, 설정(휴무계획·연차설정·이름순서·작업자목록·단가)에
    예전 이름이 다시 들어오면(다른 기기·예전 클라우드 설정) 자동으로 새 이름으로 합침 ── */
 const RENAME_LOG_KEY='golf_rename_log_v1';
@@ -13409,9 +13457,10 @@ async function renameWorkerEverywhere(oF,nF){
 function moveRegNameOrderItem(idx, dir){
   if(!guardMemberOrAdmin('정규직 이름순서 변경'))return;
   const arr = getRegNameOrder();
-  const newIdx = idx+dir;
-  if(newIdx<0||newIdx>=arr.length) return;
-  [arr[idx],arr[newIdx]] = [arr[newIdx],arr[idx]];
+  const view = window._regOrderView || arr;   /* 화면(재직자) 기준 위치 → 전체 순서에서 두 이름 자리 바꿈 */
+  const a=view[idx], b=view[idx+dir]; if(a==null||b==null) return;
+  const ia=arr.indexOf(a), ib=arr.indexOf(b); if(ia<0||ib<0) return;
+  [arr[ia],arr[ib]] = [arr[ib],arr[ia]];
   saveRegNameOrder(arr);
   renderRegNameOrderList();
 }
